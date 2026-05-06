@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Claude Code per-user settings (개인 권한 허용 목록)
+.claude/settings.local.json
