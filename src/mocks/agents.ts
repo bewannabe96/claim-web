@@ -3,7 +3,7 @@ import type { Agent } from "@/features/agents/schema";
 /**
  * 풀 — 어드민이 사전 등록·검증한 설계사.
  *
- * 매칭 분포 확인을 위해 카테고리/노출/제출 이력을 의도적으로 다양화.
+ * 매칭 분포 확인을 위해 노출/제출 이력을 의도적으로 다양화.
  * MVP: dev 서버 동안에만 mutable.
  */
 export const MOCK_AGENTS: Agent[] = [
@@ -11,7 +11,6 @@ export const MOCK_AGENTS: Agent[] = [
     id: "agent-001",
     name: "김민수",
     avatarUrl: "https://i.pravatar.cc/200?img=12",
-    specialties: ["life", "pension"],
     bio: "은퇴 설계 전문. 30~50대 가장의 자산 보호를 함께 합니다.",
     yearsOfExperience: 12,
     trustMetric: "고객 96%가 계속 함께하고 있어요",
@@ -25,7 +24,6 @@ export const MOCK_AGENTS: Agent[] = [
     id: "agent-002",
     name: "이지영",
     avatarUrl: "https://i.pravatar.cc/200?img=47",
-    specialties: ["health", "child"],
     bio: "워킹맘 설계사. 자녀·가족 보장을 꼼꼼히 비교해드려요.",
     yearsOfExperience: 8,
     trustMetric: "설명 꼼꼼도 업계 상위 5%",
@@ -39,7 +37,6 @@ export const MOCK_AGENTS: Agent[] = [
     id: "agent-003",
     name: "박상현",
     avatarUrl: "https://i.pravatar.cc/200?img=33",
-    specialties: ["auto", "fire"],
     bio: "손해보험 베테랑. 자동차/화재 보장 분석에 강점.",
     yearsOfExperience: 15,
     trustMetric: "재계약율 90% 이상 유지",
@@ -53,7 +50,6 @@ export const MOCK_AGENTS: Agent[] = [
     id: "agent-004",
     name: "최유나",
     avatarUrl: "https://i.pravatar.cc/200?img=45",
-    specialties: ["life", "health"],
     bio: "사회 초년생/신혼부부 맞춤 설계. 부담 없는 보장 구성.",
     yearsOfExperience: 4,
     trustMetric: "20·30대 고객 만족도 98%",
@@ -67,7 +63,6 @@ export const MOCK_AGENTS: Agent[] = [
     id: "agent-005",
     name: "정대현",
     avatarUrl: "https://i.pravatar.cc/200?img=15",
-    specialties: ["pension", "life"],
     bio: "20년 경력. 연금/종신 위주, 장기 자산 설계 전문.",
     yearsOfExperience: 20,
     trustMetric: "한 곳에서 20년째 고객을 관리해요",
@@ -81,7 +76,6 @@ export const MOCK_AGENTS: Agent[] = [
     id: "agent-006",
     name: "한소연",
     avatarUrl: "https://i.pravatar.cc/200?img=49",
-    specialties: ["child", "health"],
     bio: "어린이 보험 다수 설계 경험. 보장 누락 없이 구성.",
     yearsOfExperience: 7,
     trustMetric: "어린이 보험 설계 500건 이상",
@@ -95,7 +89,6 @@ export const MOCK_AGENTS: Agent[] = [
     id: "agent-007",
     name: "윤재호",
     avatarUrl: "https://i.pravatar.cc/200?img=68",
-    specialties: ["auto", "fire"],
     bio: "운전자/사업장 종합 보장 설계.",
     yearsOfExperience: 11,
     trustMetric: "사업장 보장 컨설팅 전문",
@@ -109,7 +102,6 @@ export const MOCK_AGENTS: Agent[] = [
     id: "agent-008",
     name: "오미래",
     avatarUrl: "https://i.pravatar.cc/200?img=29",
-    specialties: ["health", "life"],
     bio: "신규 등록 설계사 — 꼼꼼하게 한 분 한 분 응대드립니다.",
     yearsOfExperience: 2,
     trustMetric: "꼼꼼함을 무기로 응대드립니다",

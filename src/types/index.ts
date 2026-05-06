@@ -1,3 +1,11 @@
+/**
+ * 도메인 타입 — zod 에서 derive 못 하는 union literal / 라벨 매핑.
+ *
+ * NOTE (dormant): `INSURANCE_CATEGORIES` 와 `AGE_RANGES` 는 현 모델에서 사용처
+ * 0건이지만 정의는 보존. 추후 재도입 (전문 분야 부활, 연령대 chip 등) 시
+ * 즉시 import 만 살리면 됨. dead code 가 아닌 의도된 cold storage.
+ */
+
 export type InsuranceCategory =
   | "life"
   | "health"
@@ -26,7 +34,13 @@ export const INSURANCE_CATEGORY_LABEL: Record<InsuranceCategory, string> = {
 
 export type AgeRange = "20s" | "30s" | "40s" | "50s" | "60s+";
 
-export const AGE_RANGES = ["20s", "30s", "40s", "50s", "60s+"] as const satisfies readonly AgeRange[];
+export const AGE_RANGES = [
+  "20s",
+  "30s",
+  "40s",
+  "50s",
+  "60s+",
+] as const satisfies readonly AgeRange[];
 
 export const AGE_RANGE_LABEL: Record<AgeRange, string> = {
   "20s": "20대",

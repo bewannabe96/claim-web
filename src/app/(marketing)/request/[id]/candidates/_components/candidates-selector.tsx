@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { submitStep2 } from "@/features/requests/actions";
 import type { AgentCard } from "@/features/agents/schema";
 import { cn } from "@/lib/utils";
-import { INSURANCE_CATEGORY_LABEL } from "@/types";
 
 export function CandidatesSelector({
   requestId,
@@ -119,10 +118,10 @@ function CandidateCard({
 }) {
   const initial = card.name.charAt(0);
 
-  // 하단 강조 pill — 신규 등록 설계사면 별도 라벨, 아니면 전문 분야 + 경력
+  // 하단 강조 pill — 신규 등록 설계사면 별도 라벨, 아니면 경력 강조
   const highlightLabel = card.isNew
     ? "새로운 추천 설계사"
-    : `${INSURANCE_CATEGORY_LABEL[card.specialties[0]]} 전문 · ${card.yearsOfExperience}년 경력`;
+    : `경력 ${card.yearsOfExperience}년 설계사`;
 
   return (
     <button
@@ -177,13 +176,6 @@ function CandidateCard({
               경력 {card.yearsOfExperience}년
             </span>
           </div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {card.specialties.map((s) => (
-              <SpecialtyPill key={s}>
-                {INSURANCE_CATEGORY_LABEL[s]}
-              </SpecialtyPill>
-            ))}
-          </div>
         </div>
       </div>
 
@@ -203,14 +195,6 @@ function CandidateCard({
         </div>
       </div>
     </button>
-  );
-}
-
-function SpecialtyPill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#efefef] text-black">
-      {children}
-    </span>
   );
 }
 

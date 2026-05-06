@@ -8,13 +8,14 @@ import {
   type AssignmentStatus,
 } from "@/features/proposals/schema";
 import { getRequestById } from "@/features/requests/queries";
-import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
-import { cn } from "@/lib/utils";
 import {
-  AGE_RANGE_LABEL,
-  GENDER_LABEL,
-  INSURANCE_CATEGORY_LABEL,
-} from "@/types";
+  TREATMENT_PERIOD_LABEL,
+  type MedicalHistoryEntry,
+} from "@/features/requests/schema";
+import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
+import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
+import { cn } from "@/lib/utils";
+import { GENDER_LABEL } from "@/types";
 
 import {
   BackLink,
@@ -37,6 +38,8 @@ export default async function AdminRequestDetailPage({
   const submittedCount = details.filter(
     (d) => d.assignment.status === "submitted",
   ).length;
+
+  const age = ageFromBirthDate(request.step1.birthDate);
 
   return (
     <div className="flex flex-col gap-8">
@@ -61,29 +64,21 @@ export default async function AdminRequestDetailPage({
         />
       </div>
 
-      {/* 가입자 요청 정보 */}
+      {/* 요청서 — Step1 (진설계 정보) + Step3 (본인 식별) */}
       <div className="grid grid-cols-2 gap-6">
         <Card>
-          <CardHeader title="요청서 (Step1)" />
+          <CardHeader title="기본 정보" />
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <Field label="보장 분야">
-              <div className="flex flex-wrap gap-1.5">
-                {request.step1.categories.map((c) => (
-                  <span
-                    key={c}
-                    className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#efefef] text-black"
-                  >
-                    {INSURANCE_CATEGORY_LABEL[c]}
-                  </span>
-                ))}
-              </div>
-            </Field>
-            <Field label="연령대">
-              {AGE_RANGE_LABEL[request.step1.ageRange]}
-            </Field>
             <Field label="성별">{GENDER_LABEL[request.step1.gender]}</Field>
             <Field label="거주 지역">{request.step1.region}</Field>
-            <Field label="월 예상 보험료" wide>
+            <Field label="생년월일">
+              {request.step1.birthDate}{" "}
+              <span className="text-xs text-[#4b4b4b]">
+                (만 {age}세 / {ageDecadeLabel(age)})
+              </span>
+            </Field>
+            <Field label="직업">{request.step1.occupation}</Field>
+            <Field label="월 예상 보험료">
               {request.step1.monthlyBudgetMin.toLocaleString("ko-KR")}원 ~{" "}
               {request.step1.monthlyBudgetMax.toLocaleString("ko-KR")}원
             </Field>
@@ -91,41 +86,65 @@ export default async function AdminRequestDetailPage({
         </Card>
 
         <Card>
-          <CardHeader title="진설계 정보 (Step3)" />
+          <CardHeader title="본인 인증 / 동의" />
           {request.step3 ? (
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
-              <Field label="생년월일">{request.step3.birthDate}</Field>
-              <Field label="직업">{request.step3.occupation}</Field>
-              <Field label="흡연">
-                {request.step3.smoker ? "흡연" : "비흡연"}
-              </Field>
-              <Field label="키 / 몸무게">
-                {request.step3.heightCm}cm · {request.step3.weightKg}kg
-              </Field>
-              <Field label="기존 보험">
-                {request.step3.hasExistingInsurance ? "있음" : "없음"}
-              </Field>
+            <dl className="grid grid-cols-1 gap-y-4">
+              <Field label="이름">{request.step3.name}</Field>
               <Field label="휴대폰">{formatPhone(request.step3.phone)}</Field>
-              {request.step3.existingInsuranceNote && (
-                <Field label="기존 보험 메모" wide>
-                  <span className="text-[#4b4b4b] leading-relaxed">
-                    {request.step3.existingInsuranceNote}
-                  </span>
-                </Field>
-              )}
-              {request.step3.medicalHistory && (
-                <Field label="병력" wide>
-                  <span className="text-[#4b4b4b] leading-relaxed">
-                    {request.step3.medicalHistory}
-                  </span>
-                </Field>
-              )}
+              <Field label="제3자 정보 제공 동의">
+                {request.step3.consentThirdParty === "on" ? "동의" : "—"}
+              </Field>
+              <Field label="알림톡 수신 동의">
+                {request.step3.consentMessaging === "on" ? "동의" : "—"}
+              </Field>
             </dl>
           ) : (
-            <p className="text-sm text-[#afafaf]">아직 입력 전</p>
+            <p className="text-sm text-[#afafaf]">아직 본인 인증 전</p>
           )}
         </Card>
       </div>
+
+      {/* 희망 담보 + 추가 요청사항 */}
+      <Card>
+        <CardHeader title="희망 담보 / 추가 요청사항" />
+        <div className="flex flex-col gap-5">
+          <div>
+            <p className="text-xs text-[#afafaf] mb-1.5">희망하시는 담보</p>
+            <p className="text-sm text-black leading-relaxed whitespace-pre-wrap">
+              {request.step1.desiredCoverage}
+            </p>
+          </div>
+          {request.step1.additionalNotes && (
+            <div>
+              <p className="text-xs text-[#afafaf] mb-1.5">추가 요청사항</p>
+              <p className="text-sm text-[#4b4b4b] leading-relaxed whitespace-pre-wrap">
+                {request.step1.additionalNotes}
+              </p>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* 병력 */}
+      <Card>
+        <CardHeader
+          title="병력"
+          meta={
+            request.step1.medicalHistory.length > 0
+              ? `${request.step1.medicalHistory.length}건`
+              : "없음"
+          }
+        />
+        {request.step1.medicalHistory.length === 0 ? (
+          <p className="text-sm text-[#afafaf]">병력 없음</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {request.step1.medicalHistory.map((e, i) => (
+              <MedicalRow key={i} entry={e} />
+            ))}
+          </ul>
+        )}
+      </Card>
 
       {/* 후보 / 선택 */}
       <Card>
@@ -189,7 +208,7 @@ export default async function AdminRequestDetailPage({
         )}
       </Card>
 
-      {/* 결과 토큰 (가입자 결과 페이지 진입 링크) */}
+      {/* 결과 토큰 */}
       {request.resultToken && (
         <Card>
           <CardHeader title="결과 페이지" />
@@ -205,6 +224,38 @@ export default async function AdminRequestDetailPage({
   );
 }
 
+/* ============================================================
+ * 보조 컴포넌트
+ * ============================================================ */
+
+function MedicalRow({ entry }: { entry: MedicalHistoryEntry }) {
+  return (
+    <li className="rounded-lg border border-[#efefef] bg-white px-4 py-3 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-bold text-black">{entry.diagnosis}</span>
+        <span className="text-xs text-[#4b4b4b] whitespace-nowrap">
+          {TREATMENT_PERIOD_LABEL[entry.treatmentPeriod]} ·{" "}
+          {entry.treatmentStartDate}
+        </span>
+      </div>
+      <p className="text-xs text-[#4b4b4b]">
+        입원{" "}
+        <span className="font-medium text-black">
+          {entry.hospitalizationDays}일
+        </span>{" "}
+        · 외래{" "}
+        <span className="font-medium text-black">
+          {entry.outpatientVisits}회
+        </span>{" "}
+        ·{" "}
+        <span className="font-medium text-black">
+          {entry.hadSurgery ? "수술 있음" : "수술 없음"}
+        </span>
+      </p>
+    </li>
+  );
+}
+
 function AssignmentItem({
   detail,
 }: {
@@ -215,7 +266,6 @@ function AssignmentItem({
 
   return (
     <li className="py-4 flex items-start gap-4">
-      {/* 아바타 */}
       <div className="flex items-center justify-center w-10 h-10 rounded-full bg-black text-white text-sm font-bold shrink-0">
         {initial}
       </div>
@@ -297,14 +347,12 @@ function AssignmentStatusPill({ status }: { status: AssignmentStatus }) {
 function Field({
   label,
   children,
-  wide,
 }: {
   label: string;
   children: React.ReactNode;
-  wide?: boolean;
 }) {
   return (
-    <div className={cn("flex flex-col gap-0.5", wide && "col-span-2")}>
+    <div className="flex flex-col gap-0.5">
       <dt className="text-xs text-[#afafaf]">{label}</dt>
       <dd className="text-sm text-black">{children}</dd>
     </div>

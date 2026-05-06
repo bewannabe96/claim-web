@@ -1,9 +1,10 @@
+import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
 import { listAllRequests } from "@/features/requests/queries";
 import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
-import { AGE_RANGE_LABEL, INSURANCE_CATEGORY_LABEL } from "@/types";
+import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
 
 import {
   DataTable,
@@ -13,7 +14,7 @@ import {
 
 const COLUMNS = [
   { key: "id", label: "요청 ID" },
-  { key: "summary", label: "요청 내용" },
+  { key: "customer", label: "요청자" },
   { key: "status", label: "상태" },
   { key: "submission", label: "제출 진행", align: "center" as const },
   { key: "createdAt", label: "생성", align: "right" as const },
@@ -21,9 +22,11 @@ const COLUMNS = [
 ];
 
 export default async function AdminRequestsPage() {
+  // 나이 계산 (ageFromBirthDate) 이 wall-clock 의존 — dynamic 인디케이터.
+  await cookies();
+
   const requests = await listAllRequests();
 
-  // 각 request 의 assignment 진행도를 미리 계산 (병렬)
   const summaries = await Promise.all(
     requests.map(async (r) => {
       const details = await listAssignmentDetailsForRequest(r.id);
@@ -43,11 +46,12 @@ export default async function AdminRequestsPage() {
 
       <DataTable columns={COLUMNS}>
         {summaries.map(({ request, submitted, total }) => {
-          const primaryCategory =
-            INSURANCE_CATEGORY_LABEL[request.step1.categories[0]];
-          const extra = request.step1.categories.length - 1;
+          const age = ageFromBirthDate(request.step1.birthDate);
           return (
-            <tr key={request.id} className="hover:bg-[#fafafa] transition-colors">
+            <tr
+              key={request.id}
+              className="hover:bg-[#fafafa] transition-colors"
+            >
               <Td>
                 <Link
                   href={`/admin/requests/${request.id}`}
@@ -57,17 +61,18 @@ export default async function AdminRequestsPage() {
                 </Link>
               </Td>
               <Td>
-                <span className="text-sm text-black">
-                  {primaryCategory}
-                  {extra > 0 && (
-                    <span className="text-[#4b4b4b]"> 외 {extra}건</span>
-                  )}
-                </span>
-                <span className="ml-2 text-xs text-[#4b4b4b]">
-                  {AGE_RANGE_LABEL[request.step1.ageRange]} ·{" "}
-                  {request.step1.gender === "male" ? "남" : "여"} ·{" "}
-                  {request.step1.region}
-                </span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium text-black">
+                    {request.step3?.name ?? (
+                      <span className="text-[#afafaf]">미입력</span>
+                    )}
+                  </span>
+                  <span className="text-xs text-[#4b4b4b]">
+                    {ageDecadeLabel(age)} ·{" "}
+                    {request.step1.gender === "male" ? "남" : "여"} ·{" "}
+                    {request.step1.region}
+                  </span>
+                </div>
               </Td>
               <Td>
                 <RequestStatusBadge status={request.status} />

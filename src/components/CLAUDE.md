@@ -19,12 +19,23 @@ Nova preset은 **Base UI** 기반 (Radix 아님). 가장 큰 차이:
 // ❌ asChild는 없음 (옛 Radix 패턴)
 <Button asChild><Link href="/x">Go</Link></Button>
 
-// ✅ render prop, 또는 buttonVariants() 직접 사용
+// ✅ render prop으로 underlying element 교체
 <Button render={<Link href="/x" />}>Go</Button>
-<Link href="/x" className={buttonVariants()}>Go</Link>
 ```
 
-이 프로젝트는 **buttonVariants() 패턴 통일**. 이미 [src/app/(marketing)/page.tsx](../app/(marketing)/page.tsx)에서 사용.
+**이 프로젝트는 `<Button render={...}>` 패턴으로 통일** — 라우트 이동 / 외부 링크 모두
+Button 컴포넌트로 감싸 hover · radius · disabled 동작이 일관되게 유지됨.
+
+`Link + buttonVariants()` 직접 합치는 대안은 사용 금지:
+- 템플릿 리터럴 (`${buttonVariants()} my-class`) 로 합치면 cn() (tailwind-merge) 가
+  안 끼어서 base 의 `rounded-lg` 와 추가한 `rounded-full` 이 둘 다 적용 → CSS source
+  순서로 의도와 다른 radius 가 박힘. 같은 함정이 height/text-size 에도 발생.
+- `[a]:hover:` 같은 anchor-only selector 로 인해 `<Button>` (button 요소) 과
+  hover 동작이 달라져 시각적 이질감 발생.
+
+**예외**: 외부 라이브러리 (next-intl 의 `Link`, framer 의 motion 컴포넌트 등) 와
+조합할 때만 `Link href={...} className={cn(buttonVariants(), "...")}` 패턴 허용 —
+반드시 `cn()` 으로 감쌀 것.
 
 ## 새 컴포넌트 추가 시 체크리스트
 

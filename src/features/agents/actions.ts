@@ -28,7 +28,6 @@ export async function createAgent(
   const parsed = AgentInputSchema.safeParse({
     name: formData.get("name"),
     avatarUrl: formData.get("avatarUrl"),
-    specialties: formData.getAll("specialties"),
     bio: formData.get("bio"),
     yearsOfExperience: Number(formData.get("yearsOfExperience")),
     trustMetric: formData.get("trustMetric"),
@@ -65,7 +64,6 @@ export async function updateAgent(
   const parsed = AgentInputSchema.safeParse({
     name: formData.get("name"),
     avatarUrl: formData.get("avatarUrl"),
-    specialties: formData.getAll("specialties"),
     bio: formData.get("bio"),
     yearsOfExperience: Number(formData.get("yearsOfExperience")),
     trustMetric: formData.get("trustMetric"),

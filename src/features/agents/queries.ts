@@ -1,25 +1,22 @@
 import "server-only";
 
 import { MOCK_AGENTS } from "@/mocks/agents";
-import type { InsuranceCategory } from "@/types";
 
 import type { Agent, AgentCard } from "./schema";
 
 /**
  * 매칭 후보 추출 — PRD §5.2.
  *
- * 필터: 활성 상태 + 전문보험에 요청 카테고리 1개 이상 일치
+ * 현재는 보장 분야 필터가 없음 (Step1 에서 categories 제거됨).
+ * 필터: 활성 상태
  * 정렬: 누적 노출 적은 순 → 미제출률 낮은 순 → 랜덤
  *
  * 카드 뷰만 반환 (운영 필드 노출 차단).
  */
 export async function findMatchCandidates(
-  categories: InsuranceCategory[],
   limit: number,
 ): Promise<AgentCard[]> {
-  const eligible = MOCK_AGENTS.filter(
-    (a) => a.active && a.specialties.some((s) => categories.includes(s)),
-  );
+  const eligible = MOCK_AGENTS.filter((a) => a.active);
 
   const ranked = eligible
     .map((a) => ({
@@ -71,7 +68,6 @@ function toCard(a: Agent): AgentCard {
     id: a.id,
     name: a.name,
     avatarUrl: a.avatarUrl,
-    specialties: a.specialties,
     bio: a.bio,
     yearsOfExperience: a.yearsOfExperience,
     trustMetric: a.trustMetric,

@@ -4,34 +4,33 @@ import type { MatchRequest } from "@/features/requests/schema";
  * MVP — Server Action이 push하는 in-memory 스토어.
  * dev 서버 재시작 시 초기화.
  *
- * 시드 1건: `/result/demo-result-token` 으로 진입하면 결과 페이지 데모 가능.
- * 가입자 흐름이 끝까지 돌지 않은 상태에서도 결과 화면을 검토할 수 있도록 준비.
- */
-/**
- * 결과(완료) 데모: `/result/demo-result-token`
- * 진설계 제출 데모: `/agent/assignments/tok-demo-pending` (demo-req-002 의 pending assignment)
+ * 시드:
+ * - demo-req-001 (completed) — 결과 페이지 데모: `/result/demo-result-token`
+ * - demo-req-002 (dispatched) — 설계사 진설계 데모: `/agent/assignments/tok-demo-pending`
+ * - demo-req-003 (analyzing) — 어드민 모니터링 다양성
+ * - demo-req-004 (rematching) — 0명 제출 별표 케이스
+ * - demo-req-005 (selecting) — 후보 선택 진행 중 케이스
  */
 export const MOCK_MATCH_REQUESTS: MatchRequest[] = [
   {
     id: "demo-req-001",
     step1: {
-      categories: ["health", "life"],
-      ageRange: "30s",
       gender: "male",
       region: "서울",
-      monthlyBudgetMin: 100000,
-      monthlyBudgetMax: 200000,
-    },
-    step3: {
       birthDate: "1992-08-14",
       occupation: "회사원",
-      smoker: false,
-      heightCm: 178,
-      weightKg: 72,
-      hasExistingInsurance: false,
+      monthlyBudgetMin: 100000,
+      monthlyBudgetMax: 200000,
+      desiredCoverage:
+        "암 진단금 위주로 보장 받고 싶고, 입원/수술비도 함께 봤으면 합니다.",
+      medicalHistory: [],
+      additionalNotes: "갱신형보다는 비갱신형을 선호해요.",
+    },
+    step3: {
+      name: "박지훈",
+      phone: "01099998888",
       consentThirdParty: "on",
       consentMessaging: "on",
-      phone: "01099998888",
     },
     candidateAgentIds: [
       "agent-001",
@@ -55,26 +54,32 @@ export const MOCK_MATCH_REQUESTS: MatchRequest[] = [
   {
     id: "demo-req-002",
     step1: {
-      categories: ["health", "child"],
-      ageRange: "30s",
       gender: "female",
       region: "경기",
-      monthlyBudgetMin: 50000,
-      monthlyBudgetMax: 100000,
-    },
-    step3: {
       birthDate: "1991-03-22",
       occupation: "프리랜서 디자이너",
-      smoker: false,
-      heightCm: 162,
-      weightKg: 53,
-      hasExistingInsurance: true,
-      existingInsuranceNote:
+      monthlyBudgetMin: 50000,
+      monthlyBudgetMax: 100000,
+      desiredCoverage:
+        "자녀(7세) 어린이 보험과 본인 여성 질환 보장을 함께 구성하고 싶어요.",
+      medicalHistory: [
+        {
+          diagnosis: "갑상선 결절",
+          treatmentPeriod: "within_10y",
+          treatmentStartDate: "2022-09-15",
+          hospitalizationDays: 0,
+          outpatientVisits: 4,
+          hadSurgery: false,
+        },
+      ],
+      additionalNotes:
         "10년 전 가입한 실손 1세대가 있는데 자녀 보험은 처음이에요.",
-      medicalHistory: "특이사항 없음",
+    },
+    step3: {
+      name: "이수진",
+      phone: "01077776666",
       consentThirdParty: "on",
       consentMessaging: "on",
-      phone: "01077776666",
     },
     candidateAgentIds: [
       "agent-002",
@@ -87,7 +92,6 @@ export const MOCK_MATCH_REQUESTS: MatchRequest[] = [
     status: "dispatched",
     createdAt: "2026-05-04T22:00:00.000Z",
     dispatchedAt: "2026-05-04T22:05:00.000Z",
-    // 마감까지 약 36시간 (2026-05-06 10:05Z = 19:05 KST)
     deadlineAt: "2026-05-06T10:05:00.000Z",
     rematchCount: 0,
     resultToken: "tok-demo-result-002",
@@ -98,23 +102,30 @@ export const MOCK_MATCH_REQUESTS: MatchRequest[] = [
   {
     id: "demo-req-003",
     step1: {
-      categories: ["pension"],
-      ageRange: "50s",
       gender: "male",
       region: "부산",
-      monthlyBudgetMin: 200000,
-      monthlyBudgetMax: 300000,
-    },
-    step3: {
       birthDate: "1972-11-09",
       occupation: "자영업",
-      smoker: true,
-      heightCm: 173,
-      weightKg: 78,
-      hasExistingInsurance: true,
+      monthlyBudgetMin: 200000,
+      monthlyBudgetMax: 300000,
+      desiredCoverage:
+        "노후 연금 + 사망보장 결합형으로 자녀에게 부담 없이 자산 이전.",
+      medicalHistory: [
+        {
+          diagnosis: "고혈압",
+          treatmentPeriod: "within_10y",
+          treatmentStartDate: "2018-04-10",
+          hospitalizationDays: 0,
+          outpatientVisits: 24,
+          hadSurgery: false,
+        },
+      ],
+    },
+    step3: {
+      name: "최영수",
+      phone: "01066665555",
       consentThirdParty: "on",
       consentMessaging: "on",
-      phone: "01066665555",
     },
     candidateAgentIds: ["agent-005", "agent-001", "agent-008"],
     selectedAgentIds: ["agent-005", "agent-001"],
@@ -131,23 +142,20 @@ export const MOCK_MATCH_REQUESTS: MatchRequest[] = [
   {
     id: "demo-req-004",
     step1: {
-      categories: ["fire"],
-      ageRange: "40s",
       gender: "female",
       region: "제주",
-      monthlyBudgetMin: 30000,
-      monthlyBudgetMax: 50000,
-    },
-    step3: {
       birthDate: "1981-06-14",
       occupation: "교사",
-      smoker: false,
-      heightCm: 168,
-      weightKg: 60,
-      hasExistingInsurance: false,
+      monthlyBudgetMin: 30000,
+      monthlyBudgetMax: 50000,
+      desiredCoverage: "자가 + 자동차 화재 통합 보장.",
+      medicalHistory: [],
+    },
+    step3: {
+      name: "한미경",
+      phone: "01055554444",
       consentThirdParty: "on",
       consentMessaging: "on",
-      phone: "01055554444",
     },
     candidateAgentIds: ["agent-003", "agent-007"],
     selectedAgentIds: ["agent-003", "agent-007"],
@@ -163,12 +171,15 @@ export const MOCK_MATCH_REQUESTS: MatchRequest[] = [
   {
     id: "demo-req-005",
     step1: {
-      categories: ["health"],
-      ageRange: "20s",
       gender: "female",
       region: "서울",
+      birthDate: "2000-01-30",
+      occupation: "대학원생",
       monthlyBudgetMin: 50000,
       monthlyBudgetMax: 100000,
+      desiredCoverage:
+        "20대 여성 기준 실손 + 암 진단금 기본 구성으로 가성비 좋게.",
+      medicalHistory: [],
     },
     candidateAgentIds: ["agent-002", "agent-004", "agent-008", "agent-006"],
     selectedAgentIds: [],

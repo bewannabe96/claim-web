@@ -3,7 +3,6 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { listAllAgents } from "@/features/agents/queries";
 import { cn } from "@/lib/utils";
-import { INSURANCE_CATEGORY_LABEL } from "@/types";
 
 import {
   DataTable,
@@ -13,7 +12,7 @@ import {
 
 const COLUMNS = [
   { key: "name", label: "설계사" },
-  { key: "specialties", label: "전문 보험" },
+  { key: "bio", label: "소개" },
   { key: "experience", label: "경력", align: "right" as const },
   { key: "exposure", label: "누적 노출", align: "right" as const },
   { key: "missRate", label: "미제출률", align: "right" as const },
@@ -63,16 +62,9 @@ export default async function AdminAgentsPage() {
                 </Link>
               </Td>
               <Td>
-                <div className="flex flex-wrap gap-1">
-                  {a.specialties.map((s) => (
-                    <span
-                      key={s}
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#efefef] text-black"
-                    >
-                      {INSURANCE_CATEGORY_LABEL[s]}
-                    </span>
-                  ))}
-                </div>
+                <span className="text-xs text-[#4b4b4b] line-clamp-1 max-w-[280px] block">
+                  {a.bio}
+                </span>
               </Td>
               <Td align="right">
                 <span className="text-sm text-black">

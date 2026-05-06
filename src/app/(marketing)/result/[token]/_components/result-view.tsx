@@ -8,7 +8,6 @@ import {
   RENEWAL_TYPE_LABEL,
 } from "@/features/proposals/schema";
 import { cn } from "@/lib/utils";
-import { INSURANCE_CATEGORY_LABEL } from "@/types";
 
 type SortKey = "premium" | "coverage";
 
@@ -141,16 +140,9 @@ function ProposalCardView({
               경력 {agent.yearsOfExperience}년
             </span>
           </div>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {agent.specialties.map((s) => (
-              <span
-                key={s}
-                className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#efefef] text-black"
-              >
-                {INSURANCE_CATEGORY_LABEL[s]}
-              </span>
-            ))}
-          </div>
+          <p className="mt-1 text-xs text-[#4b4b4b] leading-snug truncate">
+            {agent.trustMetric}
+          </p>
         </div>
         {rank === 0 && (
           <span className="shrink-0 inline-flex items-center px-2 py-1 rounded-full text-[11px] font-bold bg-black text-white">

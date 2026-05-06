@@ -86,7 +86,6 @@ export default async function AdminAgentDetailPage({
         initial={{
           name: agent.name,
           avatarUrl: agent.avatarUrl,
-          specialties: agent.specialties,
           bio: agent.bio,
           yearsOfExperience: agent.yearsOfExperience,
           trustMetric: agent.trustMetric,

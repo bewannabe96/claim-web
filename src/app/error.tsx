@@ -2,6 +2,7 @@
 
 import { BrandMark } from "@/components/brand-mark";
 import { AlertIcon } from "@/components/status-screen";
+import { Button } from "@/components/ui/button";
 
 /**
  * 루트 에러 boundary.
@@ -36,13 +37,12 @@ export default function RootError({
       </div>
 
       <div className="mt-auto pt-10">
-        <button
-          type="button"
+        <Button
           onClick={reset}
-          className="w-full h-14 rounded-full text-base font-medium bg-black text-white hover:bg-[#1a1a1a] transition-colors"
+          className="w-full h-14 rounded-full text-base font-medium"
         >
           다시 시도
-        </button>
+        </Button>
       </div>
     </main>
   );

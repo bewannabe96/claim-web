@@ -1,9 +1,10 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { getAgentCardsByIds } from "@/features/agents/queries";
 import { getRequestById } from "@/features/requests/queries";
+import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
 import { getSettings } from "@/server/settings";
-import { AGE_RANGE_LABEL, INSURANCE_CATEGORY_LABEL } from "@/types";
 
 import { CandidatesSelector } from "./_components/candidates-selector";
 
@@ -12,6 +13,9 @@ export default async function CandidatesPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  // 나이 계산이 wall-clock 의존 — dynamic 인디케이터.
+  await cookies();
+
   const { id } = await params;
   const req = await getRequestById(id);
   if (!req || req.status !== "selecting") notFound();
@@ -19,10 +23,8 @@ export default async function CandidatesPage({
   const candidates = await getAgentCardsByIds(req.candidateAgentIds);
   const { selectLimit } = getSettings();
 
-  // 헤더 부제: "건강보험 · 30대 기준 추천"
-  const primaryCategoryLabel = INSURANCE_CATEGORY_LABEL[req.step1.categories[0]];
-  const ageLabel = AGE_RANGE_LABEL[req.step1.ageRange];
-  const subtitle = `${primaryCategoryLabel} · ${ageLabel} 기준 추천`;
+  const age = ageFromBirthDate(req.step1.birthDate);
+  const subtitle = `${req.step1.region} · ${ageDecadeLabel(age)} 기준 추천`;
 
   return (
     <CandidatesSelector

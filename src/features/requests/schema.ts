@@ -1,20 +1,11 @@
 import { z } from "zod";
 
 import {
-  AGE_RANGES,
-  INSURANCE_CATEGORIES,
   KOREAN_REGIONS,
-  type AgeRange,
   type Gender,
-  type InsuranceCategory,
   type KoreanRegion,
 } from "@/types";
 
-const CATEGORY_TUPLE = INSURANCE_CATEGORIES as unknown as [
-  InsuranceCategory,
-  ...InsuranceCategory[],
-];
-const AGE_TUPLE = AGE_RANGES as unknown as [AgeRange, ...AgeRange[]];
 const REGION_TUPLE = KOREAN_REGIONS as unknown as [
   KoreanRegion,
   ...KoreanRegion[],
@@ -25,19 +16,70 @@ const PHONE = z
   .regex(/^01[0-9]{8,9}$/, "올바른 휴대폰 번호 형식이 아닙니다.");
 
 /* ============================================================
- * Step 1 — 매칭용 요청서
+ * 병력 — 1건당 구조화된 입력. Step1 의 medicalHistory[] 원소.
+ * ============================================================ */
+
+export const TREATMENT_PERIODS = [
+  "within_3m",
+  "within_5m",
+  "within_10y",
+] as const;
+export type TreatmentPeriod = (typeof TREATMENT_PERIODS)[number];
+
+export const TREATMENT_PERIOD_LABEL: Record<TreatmentPeriod, string> = {
+  within_3m: "3개월 이내",
+  within_5m: "5개월 이내",
+  within_10y: "10년 이내",
+};
+
+const TREATMENT_TUPLE = TREATMENT_PERIODS as unknown as [
+  TreatmentPeriod,
+  ...TreatmentPeriod[],
+];
+
+export const MedicalHistoryEntrySchema = z.object({
+  diagnosis: z
+    .string()
+    .min(1, "진단명을 입력해주세요.")
+    .max(100, "진단명은 100자 이내로 입력해주세요."),
+  treatmentPeriod: z.enum(TREATMENT_TUPLE),
+  treatmentStartDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD 형식으로 입력해주세요."),
+  hospitalizationDays: z.coerce.number().int().min(0).max(3650),
+  outpatientVisits: z.coerce.number().int().min(0).max(10000),
+  hadSurgery: z.coerce.boolean(),
+});
+
+export type MedicalHistoryEntry = z.infer<typeof MedicalHistoryEntrySchema>;
+
+/* ============================================================
+ * Step 1 — 후보 매칭 + 진설계 정보 (전화번호 제외, 모든 식별/상세 정보 수집)
  * ============================================================ */
 
 export const Step1Schema = z
   .object({
-    categories: z
-      .array(z.enum(CATEGORY_TUPLE))
-      .min(1, "관심 보장 분야를 1개 이상 선택해주세요."),
-    ageRange: z.enum(AGE_TUPLE),
     gender: z.enum(["male", "female"] satisfies [Gender, Gender]),
     region: z.enum(REGION_TUPLE),
+    birthDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD 형식으로 입력해주세요."),
+    occupation: z
+      .string()
+      .min(1, "직업을 입력해주세요.")
+      .max(50, "직업은 50자 이내로 입력해주세요."),
     monthlyBudgetMin: z.coerce.number().int().min(0),
     monthlyBudgetMax: z.coerce.number().int().min(0),
+    desiredCoverage: z
+      .string()
+      .min(1, "희망하시는 담보를 알려주세요.")
+      .max(500, "희망 담보는 500자 이내로 입력해주세요."),
+    /** 최대 20건 — 빈 배열 허용 (병력 없음) */
+    medicalHistory: z.array(MedicalHistoryEntrySchema).max(20),
+    additionalNotes: z
+      .string()
+      .max(1000, "추가 요청사항은 1000자 이내로 입력해주세요.")
+      .optional(),
   })
   .refine((v) => v.monthlyBudgetMax >= v.monthlyBudgetMin, {
     message: "최대 보험료는 최소 보험료보다 커야 합니다.",
@@ -76,31 +118,20 @@ export type Step2State =
   | undefined;
 
 /* ============================================================
- * Step 3 — 진설계용 정보 + 동의 + OTP
+ * Step 3 — 본인 식별 (이름 + 전화번호) + OTP + 동의
+ *
+ * 가입자 식별 정보(이름·전화번호)와 동의는 본인 인증 시점에 함께 받음 —
+ * 진설계 정보(생년월일/직업/병력 등)는 Step1 에서 이미 수집됨.
  * ============================================================ */
 
-/**
- * Step3 — 동의 단계에서 한번에 수집되는 모든 정보:
- * 진설계 정보 + 동의 + 휴대폰 번호 + OTP 코드.
- *
- * 휴대폰 번호는 OTP 발송 시점에 받기 때문에 step1 에서 빠지고 여기로 이동.
- */
 export const Step3Schema = z.object({
-  birthDate: z
+  name: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD 형식으로 입력해주세요."),
-  occupation: z.string().min(1, "직업을 입력해주세요.").max(50),
-  smoker: z.coerce.boolean(),
-  heightCm: z.coerce.number().int().min(100).max(230),
-  weightKg: z.coerce.number().int().min(20).max(200),
-  hasExistingInsurance: z.coerce.boolean(),
-  existingInsuranceNote: z.string().max(500).optional(),
-  medicalHistory: z.string().max(500).optional(),
-  consentThirdParty: z
-    .literal("on", { message: "정보 제공 동의가 필요합니다." }),
-  consentMessaging: z
-    .literal("on", { message: "통신 수신 동의가 필요합니다." }),
+    .min(1, "이름을 입력해주세요.")
+    .max(20, "이름은 20자 이내로 입력해주세요."),
   phone: PHONE,
+  consentThirdParty: z.literal("on", { message: "정보 제공 동의가 필요합니다." }),
+  consentMessaging: z.literal("on", { message: "통신 수신 동의가 필요합니다." }),
 });
 
 export type Step3Input = z.infer<typeof Step3Schema>;
@@ -133,10 +164,7 @@ export const OtpSchema = z.object({
 
 export type OtpInput = z.infer<typeof OtpSchema>;
 
-/**
- * 최종 확정 — Step3 데이터 + OTP 코드 한꺼번에 받아 검증/저장/디스패치.
- * Step3State 에 OTP 에러를 결합한 형태로 반환.
- */
+/** 최종 확정 — Step3 데이터 + OTP 코드 한꺼번에 받아 검증/저장/디스패치. */
 export type FinalizeState =
   | {
       ok?: false;
@@ -153,7 +181,7 @@ export type FinalizeState =
 export const MATCH_REQUEST_STATUSES = [
   "draft",        // 1단계 완료, 후보 보는 중
   "selecting",    // 후보 선택 화면
-  "confirming",   // 3단계 입력 + OTP 진행 중
+  "confirming",   // 본인 인증 진행 중
   "dispatched",   // 설계사들에게 송부 완료
   "analyzing",    // AI 분석 중
   "completed",    // 결과 알림톡 발송 완료

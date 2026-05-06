@@ -1,28 +1,20 @@
 import { z } from "zod";
 
-import { INSURANCE_CATEGORIES, type InsuranceCategory } from "@/types";
-
-const CATEGORY_TUPLE = INSURANCE_CATEGORIES as unknown as [
-  InsuranceCategory,
-  ...InsuranceCategory[],
-];
-
-export const CategoryEnum = z.enum(CATEGORY_TUPLE);
-
 /**
  * Agent — 풀에 등록된 보험 설계사.
  *
- * 가입자 노출: avatarUrl, name, specialties, bio
- * 매칭 사용 : specialties (필터), exposureCount (형평성), recentSubmissions (페널티)
+ * 가입자 노출: avatarUrl, name, bio, yearsOfExperience, trustMetric
+ * 매칭 사용 : exposureCount (형평성), recentSubmissions (페널티)
  * 운영 사용 : phone(알림톡), email(로그인), active
+ *
+ * NOTE: 과거에 있던 `specialties` (전문 보험 카테고리 2개) 는 현재 도메인에서
+ * 제거. 매칭 알고리즘은 활성 + 노출 적은 순으로 단순화. 추후 재도입 시 schema +
+ * findMatchCandidates + 카드 UI 만 복구하면 됨.
  */
 export const AgentSchema = z.object({
   id: z.string(),
   name: z.string().min(1).max(20),
   avatarUrl: z.string().url(),
-  specialties: z
-    .array(CategoryEnum)
-    .length(2, "전문 보험은 정확히 2개여야 합니다."),
   bio: z.string().min(1).max(60, "한줄 소개는 60자 이내로 작성해주세요."),
   /** 경력 연차 — 후보 카드에 "경력 N년" 으로 노출 */
   yearsOfExperience: z.number().int().min(0).max(60),
@@ -65,7 +57,6 @@ export type AgentCard = Pick<
   | "id"
   | "name"
   | "avatarUrl"
-  | "specialties"
   | "bio"
   | "yearsOfExperience"
   | "trustMetric"

@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Route } from "next";
 
 import { BrandMark } from "@/components/brand-mark";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type Href = Route | URL;
@@ -67,23 +67,21 @@ export function StatusScreen({
       {(primary || secondary) && (
         <div className="mt-auto pt-10 flex flex-col gap-2.5">
           {primary && (
-            <Link
-              href={primary.href}
-              className={cn(
-                buttonVariants({ size: "lg" }),
-                "w-full h-14 rounded-full text-base font-medium",
-              )}
+            <Button
+              render={<Link href={primary.href} />}
+              className="w-full h-14 rounded-full text-base font-medium"
             >
               {primary.label}
-            </Link>
+            </Button>
           )}
           {secondary && (
-            <Link
-              href={secondary.href}
-              className="w-full h-14 inline-flex items-center justify-center rounded-full text-base font-medium bg-[#efefef] text-black hover:bg-[#e2e2e2] transition-colors"
+            <Button
+              variant="secondary"
+              render={<Link href={secondary.href} />}
+              className="w-full h-14 rounded-full text-base font-medium"
             >
               {secondary.label}
-            </Link>
+            </Button>
           )}
         </div>
       )}

@@ -14,6 +14,7 @@ import {
   Step2Schema,
   Step3Schema,
   type FinalizeState,
+  type MedicalHistoryEntry,
   type SendOtpState,
   type Step1State,
   type Step2State,
@@ -21,7 +22,7 @@ import {
 import { hasActiveRequestForPhone } from "./queries";
 
 /* ============================================================
- * Step 1 — 요청서 작성 (휴대폰 번호는 동의 단계로 이동)
+ * Step 1 — 요청서 작성 (전화번호 제외 모든 정보)
  * ============================================================
  *
  * 주의: "최종 생성"은 OTP 검증 시점이지만, 후보 노출 → 선택 단계는
@@ -35,13 +36,26 @@ export async function submitStep1(
   _prev: Step1State,
   formData: FormData,
 ): Promise<Step1State> {
+  // 병력 리스트는 클라가 JSON 직렬화하여 단일 hidden input 으로 전송.
+  const medicalHistoryRaw = formData.get("medicalHistory");
+  const medicalHistory = parseMedicalHistory(medicalHistoryRaw);
+  if (medicalHistory === "INVALID") {
+    return {
+      ok: false,
+      errors: { medicalHistory: ["병력 데이터가 올바르지 않습니다."] },
+    };
+  }
+
   const parsed = Step1Schema.safeParse({
-    categories: formData.getAll("categories"),
-    ageRange: formData.get("ageRange"),
     gender: formData.get("gender"),
     region: formData.get("region"),
+    birthDate: formData.get("birthDate"),
+    occupation: formData.get("occupation"),
     monthlyBudgetMin: formData.get("monthlyBudgetMin"),
     monthlyBudgetMax: formData.get("monthlyBudgetMax"),
+    desiredCoverage: formData.get("desiredCoverage"),
+    medicalHistory,
+    additionalNotes: formData.get("additionalNotes") || undefined,
   });
 
   if (!parsed.success) {
@@ -49,10 +63,7 @@ export async function submitStep1(
   }
 
   const settings = getSettings();
-  const candidates = await findMatchCandidates(
-    parsed.data.categories,
-    settings.candidateCount,
-  );
+  const candidates = await findMatchCandidates(settings.candidateCount);
 
   const id = `req-${Date.now()}`;
   MOCK_MATCH_REQUESTS.push({
@@ -67,6 +78,26 @@ export async function submitStep1(
 
   revalidatePath("/admin/requests");
   return { ok: true, requestId: id };
+}
+
+/**
+ * 클라이언트가 보낸 medicalHistory JSON 문자열을 배열로 풀어냄.
+ * 빈 입력 → 빈 배열, JSON 파싱 실패 → "INVALID" 마커. zod 가 각 원소 검증.
+ */
+function parseMedicalHistory(
+  raw: FormDataEntryValue | null,
+): MedicalHistoryEntry[] | "INVALID" {
+  if (!raw || typeof raw !== "string" || raw.trim() === "") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return "INVALID";
+    if (!parsed.every((e) => typeof e === "object" && e !== null)) {
+      return "INVALID";
+    }
+    return parsed as MedicalHistoryEntry[];
+  } catch {
+    return "INVALID";
+  }
 }
 
 /* ============================================================
@@ -124,8 +155,6 @@ const DEMO_OTP = "000000";
 /**
  * 인증번호 전송 — MVP 에서는 실제 SMS 발송 없이 휴대폰 번호 형식만 검증.
  * 같은 번호로 진행 중인 다른 요청이 있으면 차단 (현재 요청은 제외).
- *
- * 실제 환경: SMS 게이트웨이 호출 + 코드 저장(Redis 등 5분 TTL).
  */
 export async function sendOtp(
   requestId: string,
@@ -156,7 +185,7 @@ export async function sendOtp(
 }
 
 /**
- * 동의 단계 최종 제출 — Step3 데이터 + OTP 코드 + 휴대폰 번호 한꺼번에 검증/저장.
+ * 동의 단계 최종 제출 — 동의 + 휴대폰 번호 + OTP 코드 한꺼번에 검증/저장.
  *
  * 검증 통과 시 status="dispatched" 로 전환, 결과 토큰 발급, 알림톡/Assignment
  * 생성 (TODO). MVP DEMO_OTP="000000" 로 모든 검증 통과.
@@ -166,19 +195,12 @@ export async function finalizeRequest(
   _prev: FinalizeState,
   formData: FormData,
 ): Promise<FinalizeState> {
-  // 1) Step3 + phone 검증
+  // 1) 이름 + 전화번호 + 동의 검증
   const parsed = Step3Schema.safeParse({
-    birthDate: formData.get("birthDate"),
-    occupation: formData.get("occupation"),
-    smoker: formData.get("smoker") === "yes",
-    heightCm: formData.get("heightCm"),
-    weightKg: formData.get("weightKg"),
-    hasExistingInsurance: formData.get("hasExistingInsurance") === "yes",
-    existingInsuranceNote: formData.get("existingInsuranceNote") || undefined,
-    medicalHistory: formData.get("medicalHistory") || undefined,
+    name: formData.get("name"),
+    phone: formData.get("phone"),
     consentThirdParty: formData.get("consentThirdParty"),
     consentMessaging: formData.get("consentMessaging"),
-    phone: formData.get("phone"),
   });
 
   if (!parsed.success) {
@@ -224,7 +246,6 @@ export async function finalizeRequest(
   req.resultToken = randomToken();
 
   // TODO: 선택된 설계사들에게 알림톡 발송 + Assignment 생성
-  // (features/proposals/actions.ts의 createAssignmentsForRequest를 호출)
 
   revalidatePath("/admin/requests");
   redirect(`/request/${requestId}/dispatched`);

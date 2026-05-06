@@ -17,13 +17,14 @@ import {
   Chip,
   ChipGroup,
 } from "@/features/requests/ui/wizard-primitives";
-import type { MatchRequest } from "@/features/requests/schema";
-import { cn } from "@/lib/utils";
 import {
-  AGE_RANGE_LABEL,
-  GENDER_LABEL,
-  INSURANCE_CATEGORY_LABEL,
-} from "@/types";
+  TREATMENT_PERIOD_LABEL,
+  type MatchRequest,
+  type MedicalHistoryEntry,
+} from "@/features/requests/schema";
+import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
+import { cn } from "@/lib/utils";
+import { GENDER_LABEL } from "@/types";
 
 /**
  * 설계사 진설계 작성 폼.
@@ -255,12 +256,17 @@ function ClockIcon() {
 }
 
 /* ============================================================
- * 가입자 컨텍스트 — 익명화된 요약. 휴대폰/생년월일 등 PII 제외.
+ * 가입자 컨텍스트 — 휴대폰만 가린 가입자 요청 요약.
+ * 이름은 노출 (PRD §5.6 의 "마음에 드는 설계사에게 즉시 문자" relay 가
+ * 이미 가입자 ↔ 설계사 1:1 컨택 의사를 전제).
  * ============================================================ */
 
 function CustomerContext({ request }: { request: MatchRequest }) {
   const { step1, step3 } = request;
+  const age = ageFromBirthDate(step1.birthDate);
   const budgetLabel = `${formatBudget(step1.monthlyBudgetMin)}~${formatBudget(step1.monthlyBudgetMax)}`;
+  // 설계사가 보는 시점은 dispatched 이후라 step3 가 항상 존재. 방어적 fallback.
+  const customerName = step3?.name ?? "이름 미상";
 
   return (
     <section className="mt-6 rounded-xl border border-[#e2e2e2] p-5 flex flex-col gap-4">
@@ -268,48 +274,29 @@ function CustomerContext({ request }: { request: MatchRequest }) {
         가입자 요청
       </p>
 
-      {/* 보장 분야 chips */}
-      <div className="flex flex-wrap gap-1.5">
-        {step1.categories.map((c) => (
-          <span
-            key={c}
-            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-black text-white"
-          >
-            {INSURANCE_CATEGORY_LABEL[c]}
-          </span>
-        ))}
+      {/* 헤더: 이름 + 한 줄 요약 */}
+      <div className="flex flex-col gap-1">
+        <h3 className="text-base font-bold text-black">{customerName}</h3>
+        <p className="text-sm text-[#4b4b4b]">
+          만 {age}세 ({ageDecadeLabel(age)}) · {GENDER_LABEL[step1.gender]} ·{" "}
+          {step1.region} · {step1.occupation}
+        </p>
       </div>
+
+      <div className="h-px bg-[#efefef]" />
 
       {/* 그리드 메타 */}
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-        <Meta label="연령대" value={AGE_RANGE_LABEL[step1.ageRange]} />
-        <Meta label="성별" value={GENDER_LABEL[step1.gender]} />
-        <Meta label="거주 지역" value={step1.region} />
+        <Meta label="생년월일" value={step1.birthDate} />
         <Meta label="월 예상 보험료" value={budgetLabel} />
-        {step3 && (
-          <>
-            <Meta label="직업" value={step3.occupation} />
-            <Meta
-              label="흡연"
-              value={step3.smoker ? "흡연" : "비흡연"}
-            />
-            <Meta
-              label="키 / 몸무게"
-              value={`${step3.heightCm}cm · ${step3.weightKg}kg`}
-            />
-            <Meta
-              label="기존 보험"
-              value={step3.hasExistingInsurance ? "있음" : "없음"}
-            />
-          </>
-        )}
       </dl>
 
-      {step3?.existingInsuranceNote && (
-        <ContextNote label="기존 보험 메모" body={step3.existingInsuranceNote} />
-      )}
-      {step3?.medicalHistory && (
-        <ContextNote label="병력" body={step3.medicalHistory} />
+      <ContextNote label="희망하시는 담보" body={step1.desiredCoverage} />
+
+      <MedicalHistorySection entries={step1.medicalHistory} />
+
+      {step1.additionalNotes && (
+        <ContextNote label="추가 요청사항" body={step1.additionalNotes} />
       )}
     </section>
   );
@@ -328,7 +315,49 @@ function ContextNote({ label, body }: { label: string; body: string }) {
   return (
     <div className="rounded-lg bg-[#f8f8f8] px-3 py-2.5">
       <p className="text-[11px] text-[#afafaf]">{label}</p>
-      <p className="mt-1 text-sm text-[#4b4b4b] leading-relaxed">{body}</p>
+      <p className="mt-1 text-sm text-[#4b4b4b] leading-relaxed whitespace-pre-wrap">
+        {body}
+      </p>
+    </div>
+  );
+}
+
+function MedicalHistorySection({
+  entries,
+}: {
+  entries: MedicalHistoryEntry[];
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-[11px] text-[#afafaf]">
+        병력 {entries.length > 0 ? `(${entries.length}건)` : ""}
+      </p>
+      {entries.length === 0 ? (
+        <p className="text-sm text-[#4b4b4b]">병력 없음</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {entries.map((e, i) => (
+            <li
+              key={i}
+              className="rounded-lg bg-[#f8f8f8] px-3 py-2.5 flex flex-col gap-1"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-black">
+                  {e.diagnosis}
+                </span>
+                <span className="text-[11px] text-[#4b4b4b] whitespace-nowrap">
+                  {TREATMENT_PERIOD_LABEL[e.treatmentPeriod]} ·{" "}
+                  {e.treatmentStartDate}
+                </span>
+              </div>
+              <p className="text-xs text-[#4b4b4b]">
+                입원 {e.hospitalizationDays}일 · 외래 {e.outpatientVisits}회 ·{" "}
+                {e.hadSurgery ? "수술 있음" : "수술 없음"}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

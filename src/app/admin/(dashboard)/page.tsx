@@ -9,9 +9,9 @@ import {
   type MatchRequest,
 } from "@/features/requests/schema";
 import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
+import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
 import { nowMs } from "@/lib/wall-clock";
 import { getSettings } from "@/server/settings";
-import { INSURANCE_CATEGORY_LABEL } from "@/types";
 
 import { Card, CardHeader, Kpi, PageHeader } from "./_components/page-shell";
 
@@ -152,7 +152,7 @@ async function RequestRowItem({ request }: { request: MatchRequest }) {
     (d) => d.assignment.status === "submitted",
   ).length;
   const total = details.length;
-  const primaryCategory = INSURANCE_CATEGORY_LABEL[request.step1.categories[0]];
+  const age = ageFromBirthDate(request.step1.birthDate);
 
   return (
     <li className="py-3 flex items-center justify-between gap-3">
@@ -162,15 +162,15 @@ async function RequestRowItem({ request }: { request: MatchRequest }) {
             href={`/admin/requests/${request.id}`}
             className="text-sm font-medium text-black hover:underline truncate"
           >
-            {primaryCategory}
-            {request.step1.categories.length > 1
-              ? ` 외 ${request.step1.categories.length - 1}건`
-              : ""}
+            {request.step3?.name ?? (
+              <span className="text-[#afafaf]">미입력</span>
+            )}
           </Link>
           <RequestStatusBadge status={request.status} />
         </div>
         <p className="text-xs text-[#4b4b4b]">
-          {formatDateTime(request.createdAt)} · {request.id}
+          {ageDecadeLabel(age)} · {request.step1.region} ·{" "}
+          {formatDateTime(request.createdAt)}
         </p>
       </div>
       {total > 0 && (
@@ -193,7 +193,6 @@ function DueSoonRow({
     ? Date.parse(request.deadlineAt) - nowMs
     : 0;
   const hours = Math.max(0, Math.floor(remaining / (3600 * 1000)));
-  const primaryCategory = INSURANCE_CATEGORY_LABEL[request.step1.categories[0]];
 
   return (
     <li className="py-3 flex items-center justify-between gap-3">
@@ -201,7 +200,7 @@ function DueSoonRow({
         href={`/admin/requests/${request.id}`}
         className="text-sm text-black hover:underline truncate"
       >
-        {primaryCategory} · {request.id}
+        {request.step3?.name ?? request.id}
       </Link>
       <span className="text-xs font-medium text-black whitespace-nowrap">
         {hours}시간 남음

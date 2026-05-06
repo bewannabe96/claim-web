@@ -10,22 +10,13 @@ import {
   type AgentMutationState,
 } from "@/features/agents/actions";
 import type { AgentInput } from "@/features/agents/schema";
-import {
-  Chip,
-  ChipGroup,
-} from "@/features/requests/ui/wizard-primitives";
 import { cn } from "@/lib/utils";
-import {
-  INSURANCE_CATEGORIES,
-  INSURANCE_CATEGORY_LABEL,
-  type InsuranceCategory,
-} from "@/types";
 
 /**
  * 설계사 등록/편집 폼 — 어드민.
  *
  * `initial` 가 주어지면 update 모드 (수정), 없으면 create 모드 (신규).
- * 카테고리는 정확히 2개 선택 (PRD §5.8) — 클라이언트 한도 + 서버 zod refine 양쪽 검증.
+ * 전문 보험(specialties) 필드는 현 도메인에서 제거됨 — 매칭은 활성 + 노출 분포로만 수행.
  */
 export function AgentForm({
   agentId,
@@ -42,21 +33,10 @@ export function AgentForm({
     FormData
   >(action as (s: AgentMutationState, fd: FormData) => Promise<AgentMutationState>, undefined);
 
-  const [specialties, setSpecialties] = useState<InsuranceCategory[]>(
-    initial?.specialties ?? [],
-  );
   const [active, setActive] = useState<boolean>(initial?.active ?? true);
 
   const errors = state && "errors" in state ? state.errors : undefined;
   const success = state && "ok" in state && state.ok;
-
-  function toggleSpecialty(c: InsuranceCategory) {
-    setSpecialties((prev) => {
-      if (prev.includes(c)) return prev.filter((x) => x !== c);
-      if (prev.length >= 2) return prev;
-      return [...prev, c];
-    });
-  }
 
   return (
     <form action={formAction} className="flex flex-col gap-8">
@@ -116,33 +96,6 @@ export function AgentForm({
             />
           </Field>
         </div>
-      </Section>
-
-      <Section
-        title="전문 보험 (정확히 2개)"
-        helper={`현재 ${specialties.length}/2 선택`}
-      >
-        <ChipGroup>
-          {INSURANCE_CATEGORIES.map((c) => {
-            const selected = specialties.includes(c);
-            const disabled = !selected && specialties.length >= 2;
-            return (
-              <Chip
-                key={c}
-                selected={selected}
-                onClick={() => !disabled && toggleSpecialty(c)}
-              >
-                {INSURANCE_CATEGORY_LABEL[c]}
-              </Chip>
-            );
-          })}
-        </ChipGroup>
-        {specialties.map((s) => (
-          <input key={s} type="hidden" name="specialties" value={s} />
-        ))}
-        {errors?.specialties && (
-          <p className="text-xs text-red-600">{errors.specialties[0]}</p>
-        )}
       </Section>
 
       <Section title="연락처 (운영 — 가입자 비노출)">
@@ -208,7 +161,7 @@ export function AgentForm({
       <div className="flex justify-end">
         <Button
           type="submit"
-          disabled={pending || specialties.length !== 2}
+          disabled={pending}
           className="h-11 rounded-full px-8 text-sm font-medium"
         >
           {pending ? "저장 중..." : isEdit ? "변경 저장" : "등록"}
@@ -224,19 +177,14 @@ export function AgentForm({
 
 function Section({
   title,
-  helper,
   children,
 }: {
   title: string;
-  helper?: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-xl border border-[#efefef] bg-white p-6 flex flex-col gap-5">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-bold text-black tracking-tight">{title}</h2>
-        {helper && <span className="text-xs text-[#4b4b4b]">{helper}</span>}
-      </div>
+      <h2 className="text-sm font-bold text-black tracking-tight">{title}</h2>
       {children}
     </section>
   );

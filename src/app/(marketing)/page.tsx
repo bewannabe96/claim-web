@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { BrandMark } from "@/components/brand-mark";
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 
 export default function Home() {
   return (
@@ -29,12 +29,12 @@ export default function Home() {
       </div>
 
       <div className="mt-auto pt-10">
-        <Link
-          href="/request/new"
-          className={`${buttonVariants({ size: "lg" })} w-full h-14 rounded-full text-base font-medium`}
+        <Button
+          render={<Link href="/request/new" />}
+          className="w-full h-14 rounded-full text-base font-medium"
         >
           시작하기
-        </Link>
+        </Button>
       </div>
     </main>
   );
