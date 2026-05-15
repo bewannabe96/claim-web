@@ -69,6 +69,7 @@ export function StatusScreen({
           {primary && (
             <Button
               render={<Link href={primary.href} />}
+              nativeButton={false}
               className="w-full h-14 rounded-full text-base font-medium"
             >
               {primary.label}
@@ -78,6 +79,7 @@ export function StatusScreen({
             <Button
               variant="secondary"
               render={<Link href={secondary.href} />}
+              nativeButton={false}
               className="w-full h-14 rounded-full text-base font-medium"
             >
               {secondary.label}

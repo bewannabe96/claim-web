@@ -1,15 +1,6 @@
 import { z } from "zod";
 
-import {
-  KOREAN_REGIONS,
-  type Gender,
-  type KoreanRegion,
-} from "@/types";
-
-const REGION_TUPLE = KOREAN_REGIONS as unknown as [
-  KoreanRegion,
-  ...KoreanRegion[],
-];
+import { type Gender } from "@/types";
 
 const PHONE = z
   .string()
@@ -54,28 +45,90 @@ export const MedicalHistoryEntrySchema = z.object({
 export type MedicalHistoryEntry = z.infer<typeof MedicalHistoryEntrySchema>;
 
 /* ============================================================
- * Step 1 — 후보 매칭 + 진설계 정보 (전화번호 제외, 모든 식별/상세 정보 수집)
+ * Coverage — 가입자 의도 + (focused 시) 대비하고 싶은 질병/상황
+ *
+ * "보장을 어떻게 알아보고 있나" 를 정형화한 입력. 자유 텍스트 단일 필드 대신
+ * 분기형 구조로 두어 매칭 / AI 비교 단계에서 활용 가능하게 함.
+ *
+ * - broad:   특정 보장에 매이지 않고 종합적으로 검토 중
+ * - focused: 대비하고 싶은 구체적 질병/상황이 있음 (preset chips 다중 선택, 최소 1개)
+ *
+ * 자유 텍스트 보충은 Step1 의 `additionalNotes` 가 담당 — coverage 분기 내부에는 두지 않음.
+ * ============================================================ */
+
+export const COVERAGE_INTENTS = ["broad", "focused"] as const;
+export type CoverageIntent = (typeof COVERAGE_INTENTS)[number];
+
+export const FOCUSED_CONCERN_IDS = [
+  "cancer",
+  "cerebro",
+  "cardio",
+  "dental",
+  "hospitalization",
+  "death",
+  "disability",
+  "longterm",
+  "surgery",
+] as const;
+export type FocusedConcernId = (typeof FOCUSED_CONCERN_IDS)[number];
+
+export const FOCUSED_CONCERN_LABEL: Record<FocusedConcernId, string> = {
+  cancer: "암",
+  cerebro: "뇌혈관",
+  cardio: "심혈관",
+  dental: "치아",
+  hospitalization: "입원비",
+  death: "사망",
+  disability: "장해",
+  longterm: "간병",
+  surgery: "수술",
+};
+
+const FOCUSED_CONCERN_TUPLE = FOCUSED_CONCERN_IDS as unknown as [
+  FocusedConcernId,
+  ...FocusedConcernId[],
+];
+
+export const CoverageRequestSchema = z.discriminatedUnion("intent", [
+  z.object({ intent: z.literal("broad") }),
+  z.object({
+    intent: z.literal("focused"),
+    concerns: z
+      .array(z.enum(FOCUSED_CONCERN_TUPLE))
+      .min(1, "대비하고 싶은 질병이나 상황을 하나 이상 골라주세요."),
+  }),
+]);
+
+export type CoverageRequest = z.infer<typeof CoverageRequestSchema>;
+
+/**
+ * CoverageRequest → 사람이 읽는 한 줄 텍스트.
+ * 어드민 상세 / 설계사 작성 화면처럼 구조화 렌더링이 필요 없는 곳에서 사용.
+ */
+export function coverageRequestToText(coverage: CoverageRequest): string {
+  if (coverage.intent === "broad") {
+    return "종합적으로 알아보고 있어요";
+  }
+  return coverage.concerns.map((id) => FOCUSED_CONCERN_LABEL[id]).join(", ");
+}
+
+/* ============================================================
+ * Step 1 — 요청서 본문 (전화번호 제외, 매칭 및 제안서 작성에 필요한 모든 정보)
  * ============================================================ */
 
 export const Step1Schema = z
   .object({
     gender: z.enum(["male", "female"] satisfies [Gender, Gender]),
-    region: z.enum(REGION_TUPLE),
-    birthDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD 형식으로 입력해주세요."),
     occupation: z
       .string()
       .min(1, "직업을 입력해주세요.")
       .max(50, "직업은 50자 이내로 입력해주세요."),
+    coverage: CoverageRequestSchema,
     monthlyBudgetMin: z.coerce.number().int().min(0),
     monthlyBudgetMax: z.coerce.number().int().min(0),
-    desiredCoverage: z
-      .string()
-      .min(1, "희망하시는 담보를 알려주세요.")
-      .max(500, "희망 담보는 500자 이내로 입력해주세요."),
     /** 최대 20건 — 빈 배열 허용 (병력 없음) */
     medicalHistory: z.array(MedicalHistoryEntrySchema).max(20),
+    /** 그외 요청사항 — 자유 텍스트, 선택 */
     additionalNotes: z
       .string()
       .max(1000, "추가 요청사항은 1000자 이내로 입력해주세요.")
@@ -121,7 +174,7 @@ export type Step2State =
  * Step 3 — 본인 식별 (이름 + 전화번호) + OTP + 동의
  *
  * 가입자 식별 정보(이름·전화번호)와 동의는 본인 인증 시점에 함께 받음 —
- * 진설계 정보(생년월일/직업/병력 등)는 Step1 에서 이미 수집됨.
+ * 제안서 정보(생년월일/직업/병력 등)는 Step1 에서 이미 수집됨.
  * ============================================================ */
 
 export const Step3Schema = z.object({
@@ -175,10 +228,10 @@ export type FinalizeState =
   | undefined;
 
 /* ============================================================
- * MatchRequest 도메인 객체 (서버 저장 형태)
+ * PlanRequest 도메인 객체 (서버 저장 형태)
  * ============================================================ */
 
-export const MATCH_REQUEST_STATUSES = [
+export const PLAN_REQUEST_STATUSES = [
   "draft",        // 1단계 완료, 후보 보는 중
   "selecting",    // 후보 선택 화면
   "confirming",   // 본인 인증 진행 중
@@ -189,10 +242,10 @@ export const MATCH_REQUEST_STATUSES = [
   "failed",       // 재매칭도 실패
 ] as const;
 
-export type MatchRequestStatus = (typeof MATCH_REQUEST_STATUSES)[number];
+export type PlanRequestStatus = (typeof PLAN_REQUEST_STATUSES)[number];
 
 /** 진행 중으로 간주되는 상태 — 같은 번호 신규 요청 차단 기준 */
-export const ACTIVE_STATUSES: readonly MatchRequestStatus[] = [
+export const ACTIVE_STATUSES: readonly PlanRequestStatus[] = [
   "draft",
   "selecting",
   "confirming",
@@ -201,13 +254,13 @@ export const ACTIVE_STATUSES: readonly MatchRequestStatus[] = [
   "rematching",
 ];
 
-export type MatchRequest = {
+export type PlanRequest = {
   id: string;
   step1: Step1Input;
   step3?: Step3Input;
   candidateAgentIds: string[];   // N명 후보
   selectedAgentIds: string[];    // K명까지 선택
-  status: MatchRequestStatus;
+  status: PlanRequestStatus;
   createdAt: string;
   dispatchedAt?: string;
   deadlineAt?: string;

@@ -9,28 +9,29 @@ export default function Home() {
       <BrandMark />
 
       <h1 className="mt-6 text-[2rem] font-bold leading-[1.22] tracking-tight text-black">
-        나에게 딱 맞는
+        설계사가 제안하고,
         <br />
-        보험 설계사를
+        AI가 비교하고,
         <br />
-        찾아드립니다
+        당신은 선택합니다.
       </h1>
 
       <p className="mt-4 text-sm text-[#4b4b4b] leading-relaxed">
         30초 안에 나와 맞는 설계사를 추천해드려요.
         <br />
-        진설계는 한 자리에서 비교하세요.
+        제안서는 한 자리에서 비교하세요.
       </p>
 
       <div className="mt-10 flex flex-col gap-3 text-sm text-[#4b4b4b]">
         <Bullet>관심 보장만 입력하면 끝</Bullet>
-        <Bullet>여러 설계사의 진설계를 비교</Bullet>
+        <Bullet>여러 설계사의 제안서를 비교</Bullet>
         <Bullet>광고비를 받지 않는 중립 추천</Bullet>
       </div>
 
       <div className="mt-auto pt-10">
         <Button
           render={<Link href="/request/new" />}
+          nativeButton={false}
           className="w-full h-14 rounded-full text-base font-medium"
         >
           시작하기

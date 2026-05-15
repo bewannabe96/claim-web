@@ -6,13 +6,18 @@ import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { finalizeRequest, sendOtp } from "@/features/requests/actions";
+import {
+  FOCUSED_CONCERN_LABEL,
+  type CoverageRequest,
+  type Step1Input,
+} from "@/features/requests/schema";
 import { cn } from "@/lib/utils";
 
 /**
  * 본인 인증 + 동의 (단일 페이지).
  *
  * 흐름: 후보 선택 → 이 화면 → dispatched.
- * 진설계 정보는 모두 Step1 에서 수집되므로 여기서는 휴대폰 번호 + 동의 + OTP 만 받음.
+ * 제안서 정보는 모두 Step1 에서 수집되므로 여기서는 휴대폰 번호 + 동의 + OTP 만 받음.
  */
 
 type FormState = {
@@ -39,9 +44,11 @@ function isValidPhone(p: string): boolean {
 export function ConfirmWizard({
   requestId,
   selectedCount,
+  step1,
 }: {
   requestId: string;
   selectedCount: number;
+  step1: Step1Input;
 }) {
   const [data, setData] = useState<FormState>({
     name: "",
@@ -104,7 +111,7 @@ export function ConfirmWizard({
       <p className="mt-2 text-xs text-[#4b4b4b]">
         선택하신{" "}
         <span className="font-semibold text-black">설계사 {selectedCount}명</span>
-        에게 진설계를 요청해요
+        에게 제안서를 요청해요
       </p>
 
       <div className="mt-10 flex flex-col gap-2">
@@ -115,6 +122,8 @@ export function ConfirmWizard({
           휴대폰 번호로 인증하면 결과를 카카오 알림톡으로 받을 수 있어요
         </p>
       </div>
+
+      <RequestSummary step1={step1} />
 
       <div className="mt-8 flex flex-col gap-5">
         {/* 이름 */}
@@ -201,14 +210,14 @@ export function ConfirmWizard({
             onChange={(v) => setData((d) => ({ ...d, consentThirdParty: v }))}
             label="선택한 설계사에게 정보 제공"
             required
-            description="입력한 정보가 선택한 설계사들에게 전달됩니다. 설계사는 진설계 작성 목적으로만 사용해요."
+            description="입력한 정보가 선택한 설계사들에게 전달됩니다. 설계사는 제안서 작성 목적으로만 사용해요."
           />
           <ConsentRow
             checked={data.consentMessaging}
             onChange={(v) => setData((d) => ({ ...d, consentMessaging: v }))}
             label="결과 알림톡 수신"
             required
-            description="진설계 결과를 카카오 알림톡으로 받아요."
+            description="제안서 결과를 카카오 알림톡으로 받아요."
           />
         </div>
       </div>
@@ -235,7 +244,7 @@ export function ConfirmWizard({
           disabled={!canSubmit || pending}
           className="w-full h-14 rounded-full text-base font-medium"
         >
-          {pending ? "확인 중..." : "본인 인증 완료"}
+          {pending ? "확인 중..." : "본인 인증하고 요청 보내기"}
         </Button>
       </form>
     </main>
@@ -259,6 +268,93 @@ function Field({
       {children}
     </div>
   );
+}
+
+/**
+ * 요청 요약 — OTP 전송 직전, 설계사에게 곧 전달될 내용을 가입자가 마지막으로
+ * 검토할 자리. 길이가 적당하도록 핵심 fact 만: 직업·예산·보장·병력 개수·추가 메모.
+ *
+ * 작성 단계로 되돌릴 link 없음 — 후보 선택까지 끝난 시점이라 본문 수정 = 처음부터.
+ * 잘못 적었으면 본인 인증 안 하고 이탈하면 됨.
+ */
+function RequestSummary({ step1 }: { step1: Step1Input }) {
+  const budgetLabel = `${formatBudget(step1.monthlyBudgetMin)}~${formatBudget(step1.monthlyBudgetMax)}`;
+
+  return (
+    <section className="mt-6 rounded-xl border border-[#e2e2e2] p-5 flex flex-col gap-4">
+      <p className="text-xs font-medium tracking-wide text-[#4b4b4b]">
+        설계사에게 전달될 내용
+      </p>
+
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+        <SummaryItem label="직업" value={step1.occupation} />
+        <SummaryItem label="월 예상 보험료" value={budgetLabel} />
+      </dl>
+
+      <CoverageSummary coverage={step1.coverage} />
+
+      <div className="flex flex-col gap-1">
+        <p className="text-[11px] text-[#afafaf]">병력</p>
+        <p className="text-sm text-black">
+          {step1.medicalHistory.length === 0
+            ? "없음"
+            : `${step1.medicalHistory.length}건`}
+        </p>
+      </div>
+
+      {step1.additionalNotes && step1.additionalNotes.trim().length > 0 && (
+        <div className="rounded-lg bg-[#f8f8f8] px-3 py-2.5">
+          <p className="text-[11px] text-[#afafaf]">추가 요청사항</p>
+          <p className="mt-1 text-sm text-[#4b4b4b] leading-relaxed whitespace-pre-wrap">
+            {step1.additionalNotes.trim()}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <dt className="text-[11px] text-[#afafaf]">{label}</dt>
+      <dd className="text-sm font-medium text-black truncate">{value}</dd>
+    </div>
+  );
+}
+
+function CoverageSummary({ coverage }: { coverage: CoverageRequest }) {
+  if (coverage.intent === "broad") {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-[11px] text-[#afafaf]">대비하고 싶은 보장</p>
+        <p className="text-sm text-black">종합적으로 알아보고 있어요</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-[11px] text-[#afafaf]">대비하고 싶은 보장</p>
+      <ul className="flex flex-wrap gap-1.5">
+        {coverage.concerns.map((id) => (
+          <li
+            key={id}
+            className="px-2.5 py-1 rounded-full bg-[#efefef] text-xs font-medium text-black"
+          >
+            {FOCUSED_CONCERN_LABEL[id]}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function formatBudget(n: number): string {
+  if (n >= 10000) {
+    const man = n / 10000;
+    return Number.isInteger(man) ? `${man}만원` : `${man.toFixed(1)}만원`;
+  }
+  return `${n.toLocaleString("ko-KR")}원`;
 }
 
 function ConsentRow({

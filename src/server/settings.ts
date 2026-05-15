@@ -14,7 +14,7 @@ type Settings = {
   candidateCount: number;
   /** K — 가입자가 선택 가능한 최대 인원 */
   selectLimit: number;
-  /** T — 설계사 진설계 제출 제한시간 (시간 단위) */
+  /** T — 설계사 제안서 제출 제한시간 (시간 단위) */
   submissionDeadlineHours: number;
   /** 미제출률 페널티 산정 윈도우 (최근 N건) */
   penaltyWindow: number;

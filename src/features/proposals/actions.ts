@@ -12,7 +12,7 @@ import {
 } from "./schema";
 
 /**
- * 진설계 제출 — 설계사 측. 일회용 토큰으로 인증.
+ * 제안서 제출 — 설계사 측. 일회용 토큰으로 인증.
  */
 export async function submitProposal(
   token: string,
@@ -35,16 +35,8 @@ export async function submitProposal(
   const pdfFileName = pdf instanceof File && pdf.size > 0 ? pdf.name : "";
 
   const parsed = ProposalSubmissionSchema.safeParse({
-    monthlyPremium: formData.get("monthlyPremium"),
-    paymentYears: formData.get("paymentYears"),
-    totalCoverage: formData.get("totalCoverage"),
-    keyBenefit1: formData.get("keyBenefit1"),
-    keyBenefit2: formData.get("keyBenefit2"),
-    keyBenefit3: formData.get("keyBenefit3"),
-    renewalType: formData.get("renewalType"),
-    refundType: formData.get("refundType"),
     pdfFileName,
-    note: formData.get("note") || undefined,
+    note: formData.get("note"),
   });
 
   if (!parsed.success) {

@@ -30,7 +30,7 @@ export const AgentSchema = z.object({
   active: z.boolean(),
   // 매칭 가중치 — 운영 데이터
   exposureCount: z.number().int().nonnegative(),
-  // 최근 N건의 진설계 제출 이력 (true = 제출, false = 미제출).
+  // 최근 N건의 제안서 제출 이력 (true = 제출, false = 미제출).
   // 페널티 윈도우 K 안에서 미제출률 = (false 개수) / length.
   recentSubmissions: z.array(z.boolean()),
 });

@@ -1,17 +1,17 @@
 import "server-only";
 
-import { MOCK_MATCH_REQUESTS } from "@/mocks/requests";
+import { MOCK_PLAN_REQUESTS } from "@/mocks/requests";
 
-import { ACTIVE_STATUSES, type MatchRequest } from "./schema";
+import { ACTIVE_STATUSES, type PlanRequest } from "./schema";
 
-export async function getRequestById(id: string): Promise<MatchRequest | null> {
-  return MOCK_MATCH_REQUESTS.find((r) => r.id === id) ?? null;
+export async function getRequestById(id: string): Promise<PlanRequest | null> {
+  return MOCK_PLAN_REQUESTS.find((r) => r.id === id) ?? null;
 }
 
 export async function getRequestByResultToken(
   token: string,
-): Promise<MatchRequest | null> {
-  return MOCK_MATCH_REQUESTS.find((r) => r.resultToken === token) ?? null;
+): Promise<PlanRequest | null> {
+  return MOCK_PLAN_REQUESTS.find((r) => r.resultToken === token) ?? null;
 }
 
 /**
@@ -24,7 +24,7 @@ export async function hasActiveRequestForPhone(
   phone: string,
   excludeRequestId?: string,
 ): Promise<boolean> {
-  return MOCK_MATCH_REQUESTS.some(
+  return MOCK_PLAN_REQUESTS.some(
     (r) =>
       r.id !== excludeRequestId &&
       r.step3?.phone === phone &&
@@ -33,8 +33,8 @@ export async function hasActiveRequestForPhone(
 }
 
 /** 어드민 — 모니터링 */
-export async function listAllRequests(): Promise<MatchRequest[]> {
-  return [...MOCK_MATCH_REQUESTS].sort((a, b) =>
+export async function listAllRequests(): Promise<PlanRequest[]> {
+  return [...MOCK_PLAN_REQUESTS].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
   );
 }

@@ -37,7 +37,7 @@ export function SettingsForm({
       <SettingField
         name="submissionDeadlineHours"
         label="제출 마감 시간 (T)"
-        helper="설계사가 진설계를 제출할 수 있는 시간. 만료 시 미제출 처리."
+        helper="설계사가 제안서를 제출할 수 있는 시간. 만료 시 미제출 처리."
         defaultValue={initial.submissionDeadlineHours}
         unit="시간"
         error={errors?.submissionDeadlineHours?.[0]}

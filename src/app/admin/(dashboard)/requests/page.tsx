@@ -1,10 +1,8 @@
-import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
 import { listAllRequests } from "@/features/requests/queries";
 import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
-import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
 
 import {
   DataTable,
@@ -22,9 +20,6 @@ const COLUMNS = [
 ];
 
 export default async function AdminRequestsPage() {
-  // 나이 계산 (ageFromBirthDate) 이 wall-clock 의존 — dynamic 인디케이터.
-  await cookies();
-
   const requests = await listAllRequests();
 
   const summaries = await Promise.all(
@@ -45,65 +40,61 @@ export default async function AdminRequestsPage() {
       />
 
       <DataTable columns={COLUMNS}>
-        {summaries.map(({ request, submitted, total }) => {
-          const age = ageFromBirthDate(request.step1.birthDate);
-          return (
-            <tr
-              key={request.id}
-              className="hover:bg-[#fafafa] transition-colors"
-            >
-              <Td>
-                <Link
-                  href={`/admin/requests/${request.id}`}
-                  className="text-sm font-medium text-black hover:underline"
-                >
-                  {request.id}
-                </Link>
-              </Td>
-              <Td>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium text-black">
-                    {request.step3?.name ?? (
-                      <span className="text-[#afafaf]">미입력</span>
-                    )}
-                  </span>
-                  <span className="text-xs text-[#4b4b4b]">
-                    {ageDecadeLabel(age)} ·{" "}
-                    {request.step1.gender === "male" ? "남" : "여"} ·{" "}
-                    {request.step1.region}
-                  </span>
-                </div>
-              </Td>
-              <Td>
-                <RequestStatusBadge status={request.status} />
-              </Td>
-              <Td align="center">
-                {total > 0 ? (
-                  <span className="text-sm">
-                    <span className="font-semibold text-black">{submitted}</span>
-                    <span className="text-[#4b4b4b]">/{total}</span>
-                  </span>
-                ) : (
-                  <span className="text-xs text-[#afafaf]">—</span>
-                )}
-              </Td>
-              <Td align="right">
-                <span className="text-xs text-[#4b4b4b] whitespace-nowrap">
-                  {formatDateTime(request.createdAt)}
+        {summaries.map(({ request, submitted, total }) => (
+          <tr
+            key={request.id}
+            className="hover:bg-[#fafafa] transition-colors"
+          >
+            <Td>
+              <Link
+                href={`/admin/requests/${request.id}`}
+                className="text-sm font-medium text-black hover:underline"
+              >
+                {request.id}
+              </Link>
+            </Td>
+            <Td>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-black">
+                  {request.step3?.name ?? (
+                    <span className="text-[#afafaf]">미입력</span>
+                  )}
                 </span>
-              </Td>
-              <Td align="center">
-                {request.rematchCount > 0 ? (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-black text-white">
-                    {request.rematchCount}회
-                  </span>
-                ) : (
-                  <span className="text-xs text-[#afafaf]">—</span>
-                )}
-              </Td>
-            </tr>
-          );
-        })}
+                <span className="text-xs text-[#4b4b4b]">
+                  {request.step1.gender === "male" ? "남" : "여"} ·{" "}
+                  {request.step1.occupation}
+                </span>
+              </div>
+            </Td>
+            <Td>
+              <RequestStatusBadge status={request.status} />
+            </Td>
+            <Td align="center">
+              {total > 0 ? (
+                <span className="text-sm">
+                  <span className="font-semibold text-black">{submitted}</span>
+                  <span className="text-[#4b4b4b]">/{total}</span>
+                </span>
+              ) : (
+                <span className="text-xs text-[#afafaf]">—</span>
+              )}
+            </Td>
+            <Td align="right">
+              <span className="text-xs text-[#4b4b4b] whitespace-nowrap">
+                {formatDateTime(request.createdAt)}
+              </span>
+            </Td>
+            <Td align="center">
+              {request.rematchCount > 0 ? (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-black text-white">
+                  {request.rematchCount}회
+                </span>
+              ) : (
+                <span className="text-xs text-[#afafaf]">—</span>
+              )}
+            </Td>
+          </tr>
+        ))}
       </DataTable>
 
       {requests.length === 0 && (

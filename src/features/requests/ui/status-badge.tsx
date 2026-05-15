@@ -1,12 +1,12 @@
 import { cn } from "@/lib/utils";
 
-import type { MatchRequestStatus } from "../schema";
+import type { PlanRequestStatus } from "../schema";
 
 /**
  * 요청 상태 라벨 + 톤 매핑.
  * 모노크롬 — 검정 인버전(긴급/주의), 화이트 라이트(완료/평온), 그레이(대기/진행).
  */
-export const REQUEST_STATUS_LABEL: Record<MatchRequestStatus, string> = {
+export const REQUEST_STATUS_LABEL: Record<PlanRequestStatus, string> = {
   draft: "후보 보는 중",
   selecting: "선택 중",
   confirming: "본인 인증 중",
@@ -19,7 +19,7 @@ export const REQUEST_STATUS_LABEL: Record<MatchRequestStatus, string> = {
 
 type Tone = "neutral" | "active" | "alert" | "done";
 
-const STATUS_TONE: Record<MatchRequestStatus, Tone> = {
+const STATUS_TONE: Record<PlanRequestStatus, Tone> = {
   draft: "neutral",
   selecting: "active",
   confirming: "active",
@@ -41,7 +41,7 @@ export function RequestStatusBadge({
   status,
   className,
 }: {
-  status: MatchRequestStatus;
+  status: PlanRequestStatus;
   className?: string;
 }) {
   return (

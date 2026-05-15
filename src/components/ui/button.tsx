@@ -12,7 +12,10 @@ import { cn } from "@/lib/utils"
 // 3) secondary variant 의 `hover:bg-secondary/80` 를 `hover:bg-[#e2e2e2]` 로 교체.
 //    DESIGN.md "Hover Gray (#e2e2e2)" — chip 회색의 미묘한 darker hover.
 //
-// Link 형태로 쓸 땐 Nova 패턴: `<Button render={<Link href="/x" />}>label</Button>`.
+// Link 형태로 쓸 땐 Nova 패턴 + nativeButton 비활성:
+//   <Button render={<Link href="/x" />} nativeButton={false}>label</Button>
+// Base UI Button 의 `nativeButton` 은 default true 라 native <button> 을 가정 —
+// render 로 <a> (Link) 를 넣을 땐 false 로 명시해야 dev console 경고가 사라짐.
 // `Link + buttonVariants` 직접 합치는 패턴은 cn() 사용을 강제하지 못해 radius/
 // height 충돌 디버깅 함정이 됨 — Button 컴포넌트로 일원화 권장.
 const buttonVariants = cva(

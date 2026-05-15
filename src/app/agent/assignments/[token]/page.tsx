@@ -9,7 +9,7 @@ import { nowMs } from "@/lib/wall-clock";
 import { ProposalForm } from "./_components/proposal-form";
 
 /**
- * 설계사 진설계 제출 — 알림톡 일회용 토큰으로 진입.
+ * 설계사 제안서 제출 — 알림톡 일회용 토큰으로 진입.
  * PRD §5.4. 로그인 불필요.
  *
  * 토큰 상태 → UI 분기:
@@ -50,7 +50,7 @@ export default async function AgentAssignmentPage({
         }
         description={
           assignment.status === "submitted"
-            ? "이 가입자에게는 이미 진설계를 보내셨어요. 다른 새 요청을 기다려주세요."
+            ? "이 가입자에게는 이미 제안서를 보내셨어요. 다른 새 요청을 기다려주세요."
             : "제출 가능 시간이 지났어요. 미제출 이력으로 기록될 수 있어요."
         }
       />

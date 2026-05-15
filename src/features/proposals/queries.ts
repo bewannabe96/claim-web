@@ -53,7 +53,7 @@ export async function getProposalById(id: string): Promise<Proposal | null> {
 }
 
 /**
- * 어드민 요청 상세 화면용 — 모든 assignment 와 그 작성자/진설계 정보를 합쳐 반환.
+ * 어드민 요청 상세 화면용 — 모든 assignment 와 그 작성자/제안서 정보를 합쳐 반환.
  * pending/submitted/expired 모두 포함. 가입자 결과 페이지(`listProposalCardsForRequest`)
  * 와 달리 운영자는 미제출 케이스도 봐야 함.
  */
@@ -86,7 +86,7 @@ export async function listAssignmentDetailsForRequest(
 }
 
 /**
- * 결과 페이지용 — 제출된 진설계와 작성 설계사 카드 정보를 함께 반환.
+ * 결과 페이지용 — 제출된 제안서와 작성 설계사 카드 정보를 함께 반환.
  * 정렬: 제출이 빠른 순 (먼저 도착한 게 먼저 보이도록).
  */
 export async function listProposalCardsForRequest(

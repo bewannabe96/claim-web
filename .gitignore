@@ -41,4 +41,12 @@ yarn-error.log*
 next-env.d.ts
 
 # Claude Code per-user settings (개인 권한 허용 목록)
+.claude/worktrees
 .claude/settings.local.json
+
+# Supabase 로컬 환경 — supabase/.gitignore 도 있지만 보조 안전망
+supabase/.branches
+supabase/.temp
+
+# JetBrains IDE
+.idea/

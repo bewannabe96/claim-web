@@ -6,12 +6,12 @@ import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
 import { listAllRequests } from "@/features/requests/queries";
 import {
   ACTIVE_STATUSES,
-  type MatchRequest,
+  type PlanRequest,
 } from "@/features/requests/schema";
 import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
-import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
 import { nowMs } from "@/lib/wall-clock";
 import { getSettings } from "@/server/settings";
+import { GENDER_LABEL } from "@/types";
 
 import { Card, CardHeader, Kpi, PageHeader } from "./_components/page-shell";
 
@@ -146,13 +146,12 @@ export default async function AdminDashboardPage() {
  * 보조 컴포넌트
  * ============================================================ */
 
-async function RequestRowItem({ request }: { request: MatchRequest }) {
+async function RequestRowItem({ request }: { request: PlanRequest }) {
   const details = await listAssignmentDetailsForRequest(request.id);
   const submitted = details.filter(
     (d) => d.assignment.status === "submitted",
   ).length;
   const total = details.length;
-  const age = ageFromBirthDate(request.step1.birthDate);
 
   return (
     <li className="py-3 flex items-center justify-between gap-3">
@@ -169,7 +168,7 @@ async function RequestRowItem({ request }: { request: MatchRequest }) {
           <RequestStatusBadge status={request.status} />
         </div>
         <p className="text-xs text-[#4b4b4b]">
-          {ageDecadeLabel(age)} · {request.step1.region} ·{" "}
+          {GENDER_LABEL[request.step1.gender]} · {request.step1.occupation} ·{" "}
           {formatDateTime(request.createdAt)}
         </p>
       </div>
@@ -186,7 +185,7 @@ function DueSoonRow({
   request,
   nowMs,
 }: {
-  request: MatchRequest;
+  request: PlanRequest;
   nowMs: number;
 }) {
   const remaining = request.deadlineAt

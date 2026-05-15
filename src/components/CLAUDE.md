@@ -19,9 +19,13 @@ Nova preset은 **Base UI** 기반 (Radix 아님). 가장 큰 차이:
 // ❌ asChild는 없음 (옛 Radix 패턴)
 <Button asChild><Link href="/x">Go</Link></Button>
 
-// ✅ render prop으로 underlying element 교체
-<Button render={<Link href="/x" />}>Go</Button>
+// ✅ render prop으로 underlying element 교체 + nativeButton 비활성
+<Button render={<Link href="/x" />} nativeButton={false}>Go</Button>
 ```
+
+`nativeButton` 은 Base UI Button 의 default true 옵션 — native `<button>` 요소를
+가정. anchor (Link) 를 render 로 끼울 땐 반드시 `nativeButton={false}` 로 꺼야
+dev console 경고 (form/접근성 의미 손상) 가 사라짐.
 
 **이 프로젝트는 `<Button render={...}>` 패턴으로 통일** — 라우트 이동 / 외부 링크 모두
 Button 컴포넌트로 감싸 hover · radius · disabled 동작이 일관되게 유지됨.

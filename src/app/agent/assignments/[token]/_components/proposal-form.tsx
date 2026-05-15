@@ -3,40 +3,29 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { submitProposal } from "@/features/proposals/actions";
 import {
-  REFUND_TYPE_LABEL,
-  REFUND_TYPES,
-  RENEWAL_TYPE_LABEL,
-  RENEWAL_TYPES,
-  type RefundType,
-  type RenewalType,
-} from "@/features/proposals/schema";
-import {
-  Chip,
-  ChipGroup,
-} from "@/features/requests/ui/wizard-primitives";
-import {
+  FOCUSED_CONCERN_LABEL,
   TREATMENT_PERIOD_LABEL,
-  type MatchRequest,
+  type CoverageRequest,
+  type PlanRequest,
   type MedicalHistoryEntry,
 } from "@/features/requests/schema";
-import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
 import { cn } from "@/lib/utils";
 import { GENDER_LABEL } from "@/types";
 
+const NOTE_MAX = 100;
+
 /**
- * 설계사 진설계 작성 폼.
+ * 설계사 제안서 작성 폼.
  *
  * 화면 흐름:
  * 1. 데드라인 카운트다운 + 가입자 컨텍스트 (Step1 + Step3 일부)
- * 2. 보험료 / 기간 / 보장
- * 3. 핵심 담보 3슬롯
- * 4. 갱신 / 환급 (chip)
- * 5. PDF + 메모
- * 6. 제출 CTA
+ * 2. 제안서 PDF 첨부
+ * 3. 설계 한줄 요약 (100자, 인사말 제외)
+ * 4. 제출 CTA
  *
+ * 정형 데이터 (보험료/담보/갱신환급 등) 는 AI 가 PDF 에서 추출 — 설계사는 PDF + 의도 한 줄만 입력.
  * 휴대폰 번호는 노출하지 않음 — 가입자 PII 는 결과 화면의 "문자 받기" 통해 platform 이 relay.
  */
 export function ProposalForm({
@@ -48,7 +37,7 @@ export function ProposalForm({
   token: string;
   agentName: string;
   remainingMs: number | null;
-  request: MatchRequest;
+  request: PlanRequest;
 }) {
   const submitWithToken = submitProposal.bind(null, token);
   const [state, formAction, pending] = useActionState(
@@ -64,7 +53,7 @@ export function ProposalForm({
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">
           {agentName} 설계사님
-          <br />새 진설계 요청이 도착했어요
+          <br />새 제안서 요청이 도착했어요
         </h1>
         {remainingMs !== null && <DeadlineBadge initialMs={remainingMs} />}
       </header>
@@ -74,103 +63,21 @@ export function ProposalForm({
 
       {/* 폼 */}
       <form action={formAction} className="mt-8 flex flex-col gap-6">
-        <Section title="보험료 · 기간 · 보장">
-          <Field
-            label="월 보험료"
-            error={errors?.monthlyPremium?.[0]}
-          >
-            <UnitInput
-              name="monthlyPremium"
-              suffix="원"
-              placeholder="120000"
-              inputMode="numeric"
-            />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="납입기간"
-              error={errors?.paymentYears?.[0]}
-            >
-              <UnitInput
-                name="paymentYears"
-                suffix="년"
-                placeholder="20"
-                inputMode="numeric"
-              />
-            </Field>
-            <Field
-              label="총 보장금액"
-              error={errors?.totalCoverage?.[0]}
-            >
-              <UnitInput
-                name="totalCoverage"
-                suffix="원"
-                placeholder="300000000"
-                inputMode="numeric"
-              />
-            </Field>
-          </div>
+        <Section
+          title="설계 한줄 요약"
+          hint="인사말은 빼고 어떤 점에 집중해서 설계했는지 100자 이내로 알려주세요. 가입자 결과 페이지 상단에 그대로 노출됩니다."
+        >
+          <NoteInput name="note" maxLength={NOTE_MAX} />
+          {errors?.note?.[0] && (
+            <p className="text-xs text-red-600">{errors.note[0]}</p>
+          )}
         </Section>
 
-        <Section title="핵심 담보 (3개)">
-          {[1, 2, 3].map((n) => {
-            const key = `keyBenefit${n}` as
-              | "keyBenefit1"
-              | "keyBenefit2"
-              | "keyBenefit3";
-            return (
-              <Field
-                key={n}
-                label={`핵심 담보 ${n}`}
-                error={errors?.[key]?.[0]}
-              >
-                <Input
-                  name={key}
-                  type="text"
-                  maxLength={60}
-                  placeholder="예: 암 진단 5,000만원"
-                  className="h-14 px-4 text-base"
-                />
-              </Field>
-            );
-          })}
-        </Section>
-
-        <Section title="형태">
-          <Field label="갱신 여부" error={errors?.renewalType?.[0]}>
-            <RadioChipGroup
-              name="renewalType"
-              options={RENEWAL_TYPES.map((v) => ({
-                value: v as RenewalType,
-                label: RENEWAL_TYPE_LABEL[v],
-              }))}
-            />
-          </Field>
-          <Field label="환급 여부" error={errors?.refundType?.[0]}>
-            <RadioChipGroup
-              name="refundType"
-              options={REFUND_TYPES.map((v) => ({
-                value: v as RefundType,
-                label: REFUND_TYPE_LABEL[v],
-              }))}
-            />
-          </Field>
-        </Section>
-
-        <Section title="첨부 · 메모">
-          <Field label="진설계서 PDF" error={errors?.pdfFileName?.[0]}>
-            <FileInput name="pdf" accept="application/pdf" />
-          </Field>
-          <Field label="메모" optional error={errors?.note?.[0]}>
-            <textarea
-              name="note"
-              maxLength={2000}
-              rows={4}
-              placeholder="가입자에게 설명하고 싶은 포인트를 적어주세요. 결과 화면에 함께 노출돼요."
-              className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10"
-            />
-          </Field>
+        <Section title="제안서 PDF" hint="가설계는 받지 않습니다.">
+          <FileInput name="pdf" accept="application/pdf" />
+          {errors?.pdfFileName?.[0] && (
+            <p className="text-xs text-red-600">{errors.pdfFileName[0]}</p>
+          )}
         </Section>
 
         {errors?._form && (
@@ -184,7 +91,7 @@ export function ProposalForm({
           disabled={pending}
           className="w-full h-14 rounded-full text-base font-medium"
         >
-          {pending ? "제출 중..." : "진설계 제출"}
+          {pending ? "제출 중..." : "제안서 제출"}
         </Button>
 
         <p className="text-center text-xs text-[#afafaf]">
@@ -261,9 +168,8 @@ function ClockIcon() {
  * 이미 가입자 ↔ 설계사 1:1 컨택 의사를 전제).
  * ============================================================ */
 
-function CustomerContext({ request }: { request: MatchRequest }) {
+function CustomerContext({ request }: { request: PlanRequest }) {
   const { step1, step3 } = request;
-  const age = ageFromBirthDate(step1.birthDate);
   const budgetLabel = `${formatBudget(step1.monthlyBudgetMin)}~${formatBudget(step1.monthlyBudgetMax)}`;
   // 설계사가 보는 시점은 dispatched 이후라 step3 가 항상 존재. 방어적 fallback.
   const customerName = step3?.name ?? "이름 미상";
@@ -278,20 +184,18 @@ function CustomerContext({ request }: { request: MatchRequest }) {
       <div className="flex flex-col gap-1">
         <h3 className="text-base font-bold text-black">{customerName}</h3>
         <p className="text-sm text-[#4b4b4b]">
-          만 {age}세 ({ageDecadeLabel(age)}) · {GENDER_LABEL[step1.gender]} ·{" "}
-          {step1.region} · {step1.occupation}
+          {GENDER_LABEL[step1.gender]} · {step1.occupation}
         </p>
       </div>
 
       <div className="h-px bg-[#efefef]" />
 
       {/* 그리드 메타 */}
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-        <Meta label="생년월일" value={step1.birthDate} />
+      <dl className="grid grid-cols-1 gap-y-3 text-sm">
         <Meta label="월 예상 보험료" value={budgetLabel} />
       </dl>
 
-      <ContextNote label="희망하시는 담보" body={step1.desiredCoverage} />
+      <CoverageDisplay coverage={step1.coverage} />
 
       <MedicalHistorySection entries={step1.medicalHistory} />
 
@@ -318,6 +222,40 @@ function ContextNote({ label, body }: { label: string; body: string }) {
       <p className="mt-1 text-sm text-[#4b4b4b] leading-relaxed whitespace-pre-wrap">
         {body}
       </p>
+    </div>
+  );
+}
+
+/**
+ * 가입자가 요청서에 적은 "대비하고 싶은 보장" 표시.
+ *  - broad : 한 줄 안내
+ *  - focused: 선택한 concern chip 들
+ *
+ * 자유 텍스트 보충은 `additionalNotes` (별도 노트 카드) 가 담당.
+ */
+function CoverageDisplay({ coverage }: { coverage: CoverageRequest }) {
+  if (coverage.intent === "broad") {
+    return (
+      <ContextNote
+        label="대비하고 싶은 보장"
+        body="종합적으로 알아보고 있어요"
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-lg bg-[#f8f8f8] px-3 py-2.5 flex flex-col gap-2">
+      <p className="text-[11px] text-[#afafaf]">대비하고 싶은 보장</p>
+      <ul className="flex flex-wrap gap-1.5">
+        {coverage.concerns.map((id) => (
+          <li
+            key={id}
+            className="px-2.5 py-1 rounded-full bg-white border border-[#e2e2e2] text-xs font-medium text-black"
+          >
+            {FOCUSED_CONCERN_LABEL[id]}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -368,93 +306,55 @@ function MedicalHistorySection({
 
 function Section({
   title,
+  hint,
   children,
 }: {
   title: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-4">
-      <h2 className="text-sm font-bold text-black tracking-tight">{title}</h2>
+    <section className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <h2 className="text-sm font-bold text-black tracking-tight">{title}</h2>
+        {hint && (
+          <p className="text-xs text-[#4b4b4b] leading-relaxed">{hint}</p>
+        )}
+      </div>
       {children}
     </section>
   );
 }
 
-function Field({
-  label,
-  optional,
-  error,
-  children,
-}: {
-  label: string;
-  optional?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-baseline gap-1.5">
-        <label className="text-sm font-medium text-black">{label}</label>
-        {optional && <span className="text-xs text-[#afafaf]">선택</span>}
-      </div>
-      {children}
-      {error && <p className="text-xs text-red-600">{error}</p>}
-    </div>
-  );
-}
+/**
+ * 한줄 요약 입력 — 100자 카운터 + 인사말 금지 안내.
+ * 가입자 결과 페이지 상단 말풍선에 그대로 표시되므로 인사말/자기소개 제외, 설계 의도만.
+ */
+function NoteInput({ name, maxLength }: { name: string; maxLength: number }) {
+  const [value, setValue] = useState("");
+  const remaining = maxLength - value.length;
+  const nearLimit = remaining <= 10;
 
-function UnitInput({
-  name,
-  suffix,
-  placeholder,
-  inputMode,
-}: {
-  name: string;
-  suffix: string;
-  placeholder: string;
-  inputMode?: "numeric" | "text";
-}) {
   return (
-    <div className="relative">
-      <Input
+    <div className="flex flex-col gap-1.5">
+      <textarea
         name={name}
-        type="text"
-        inputMode={inputMode}
-        placeholder={placeholder}
-        className="h-14 px-4 pr-10 text-base"
+        rows={3}
+        maxLength={maxLength}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="예: 가장 걱정되시는 암 보장에 집중했어요. 30대에 가입하시면 평생 같은 보험료라 부담이 적답니다."
+        className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10 leading-relaxed"
       />
-      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[#4b4b4b] pointer-events-none">
-        {suffix}
-      </span>
+      <p
+        className={cn(
+          "self-end text-xs tabular-nums",
+          nearLimit ? "text-black font-medium" : "text-[#afafaf]",
+        )}
+      >
+        {value.length} / {maxLength}
+      </p>
     </div>
-  );
-}
-
-function RadioChipGroup<T extends string>({
-  name,
-  options,
-}: {
-  name: string;
-  options: { value: T; label: string }[];
-}) {
-  // 클라이언트 상태로 단일 선택 관리. 폼 제출 시 hidden input 으로 같이 전송.
-  const [selected, setSelected] = useState<T | null>(null);
-  return (
-    <>
-      <ChipGroup>
-        {options.map((opt) => (
-          <Chip
-            key={opt.value}
-            selected={selected === opt.value}
-            onClick={() => setSelected(opt.value)}
-          >
-            {opt.label}
-          </Chip>
-        ))}
-      </ChipGroup>
-      <input type="hidden" name={name} value={selected ?? ""} />
-    </>
   );
 }
 

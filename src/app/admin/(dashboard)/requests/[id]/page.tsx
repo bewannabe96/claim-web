@@ -1,19 +1,14 @@
-import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
-import {
-  REFUND_TYPE_LABEL,
-  RENEWAL_TYPE_LABEL,
-  type AssignmentStatus,
-} from "@/features/proposals/schema";
+import { type AssignmentStatus } from "@/features/proposals/schema";
 import { getRequestById } from "@/features/requests/queries";
 import {
   TREATMENT_PERIOD_LABEL,
+  coverageRequestToText,
   type MedicalHistoryEntry,
 } from "@/features/requests/schema";
 import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
-import { ageDecadeLabel, ageFromBirthDate } from "@/lib/age";
 import { cn } from "@/lib/utils";
 import { GENDER_LABEL } from "@/types";
 
@@ -29,7 +24,6 @@ export default async function AdminRequestDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await cookies();
   const { id } = await params;
   const request = await getRequestById(id);
   if (!request) notFound();
@@ -38,8 +32,6 @@ export default async function AdminRequestDetailPage({
   const submittedCount = details.filter(
     (d) => d.assignment.status === "submitted",
   ).length;
-
-  const age = ageFromBirthDate(request.step1.birthDate);
 
   return (
     <div className="flex flex-col gap-8">
@@ -64,21 +56,14 @@ export default async function AdminRequestDetailPage({
         />
       </div>
 
-      {/* 요청서 — Step1 (진설계 정보) + Step3 (본인 식별) */}
+      {/* 요청서 — Step1 (제안서 정보) + Step3 (본인 식별) */}
       <div className="grid grid-cols-2 gap-6">
         <Card>
           <CardHeader title="기본 정보" />
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
             <Field label="성별">{GENDER_LABEL[request.step1.gender]}</Field>
-            <Field label="거주 지역">{request.step1.region}</Field>
-            <Field label="생년월일">
-              {request.step1.birthDate}{" "}
-              <span className="text-xs text-[#4b4b4b]">
-                (만 {age}세 / {ageDecadeLabel(age)})
-              </span>
-            </Field>
             <Field label="직업">{request.step1.occupation}</Field>
-            <Field label="월 예상 보험료">
+            <Field label="월 예상 보험료" wide>
               {request.step1.monthlyBudgetMin.toLocaleString("ko-KR")}원 ~{" "}
               {request.step1.monthlyBudgetMax.toLocaleString("ko-KR")}원
             </Field>
@@ -111,7 +96,7 @@ export default async function AdminRequestDetailPage({
           <div>
             <p className="text-xs text-[#afafaf] mb-1.5">희망하시는 담보</p>
             <p className="text-sm text-black leading-relaxed whitespace-pre-wrap">
-              {request.step1.desiredCoverage}
+              {coverageRequestToText(request.step1.coverage)}
             </p>
           </div>
           {request.step1.additionalNotes && (
@@ -183,7 +168,7 @@ export default async function AdminRequestDetailPage({
         </div>
       </Card>
 
-      {/* Assignment 별 진설계 현황 */}
+      {/* Assignment 별 제안서 현황 */}
       <Card>
         <CardHeader
           title="설계사별 제출 현황"
@@ -280,19 +265,9 @@ function AssignmentItem({
         </div>
 
         {proposal ? (
-          <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-xs text-[#4b4b4b]">
-            <Spec
-              label="월 보험료"
-              value={`${proposal.monthlyPremium.toLocaleString("ko-KR")}원`}
-            />
-            <Spec
-              label="총 보장"
-              value={`${proposal.totalCoverage.toLocaleString("ko-KR")}원`}
-            />
-            <Spec label="납입" value={`${proposal.paymentYears}년`} />
-            <Spec label="갱신" value={RENEWAL_TYPE_LABEL[proposal.renewalType]} />
-            <Spec label="환급" value={REFUND_TYPE_LABEL[proposal.refundType]} />
+          <div className="flex flex-col gap-1.5 text-xs text-[#4b4b4b]">
             <Spec label="PDF" value={proposal.pdfFileName} />
+            <Spec label="한줄 요약" value={proposal.note} />
           </div>
         ) : (
           <p className="text-xs text-[#afafaf]">
@@ -347,12 +322,14 @@ function AssignmentStatusPill({ status }: { status: AssignmentStatus }) {
 function Field({
   label,
   children,
+  wide,
 }: {
   label: string;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className={cn("flex flex-col gap-0.5", wide && "col-span-2")}>
       <dt className="text-xs text-[#afafaf]">{label}</dt>
       <dd className="text-sm text-black">{children}</dd>
     </div>

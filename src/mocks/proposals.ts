@@ -7,7 +7,7 @@ import type {
  * MVP — Server Action이 push/mutate하는 in-memory 스토어.
  * dev 서버 재시작 시 초기화.
  *
- * 시드: demo-req-001 (가입자 시드 요청) 에 대한 3명 설계사 진설계.
+ * 시드: demo-req-001 (가입자 시드 요청) 에 대한 3명 설계사 제안서.
  * 가격/보장 의도적으로 다양화 — 결과 화면 비교 UX 검증용.
  */
 export const MOCK_ASSIGNMENTS: MatchAssignment[] = [
@@ -43,7 +43,7 @@ export const MOCK_ASSIGNMENTS: MatchAssignment[] = [
   },
   /**
    * 설계사 시점 데모 — pending. 토큰: `tok-demo-pending`.
-   * 진설계 제출 폼을 작성·제출해보면 status: submitted 로 전환되고 done 으로 redirect.
+   * 제안서 제출 폼을 작성·제출해보면 status: submitted 로 전환되고 done 으로 redirect.
    * dev 서버 재시작 시 다시 pending 으로 초기화.
    */
   {
@@ -118,90 +118,44 @@ export const MOCK_PROPOSALS: Proposal[] = [
     id: "proposal-demo-001",
     assignmentId: "assign-demo-001",
     submittedAt: "2026-05-04T18:30:00.000Z",
-    monthlyPremium: 158000,
-    paymentYears: 20,
-    totalCoverage: 300000000,
-    keyBenefit1: "암 진단 5,000만원",
-    keyBenefit2: "뇌·심혈관 3,000만원",
-    keyBenefit3: "수술비 회당 200만원",
-    renewalType: "non_renewable",
-    refundType: "no_refund",
     pdfFileName: "kim_minsu_proposal.pdf",
-    note: "건강 + 종신 결합형. 비갱신으로 평생 동일 보험료 유지가 강점입니다. 30대에 가입하실 때 가장 유리한 구조예요.",
+    note: "비갱신 평생 동일 보험료. 암 진단금 5천만원에 균형을 맞췄어요.",
   },
   {
     id: "proposal-demo-002",
     assignmentId: "assign-demo-002",
     submittedAt: "2026-05-05T09:15:00.000Z",
-    monthlyPremium: 124000,
-    paymentYears: 30,
-    totalCoverage: 250000000,
-    keyBenefit1: "실손 의료비 일반 5천만원",
-    keyBenefit2: "암 진단 3,000만원",
-    keyBenefit3: "입원일당 5만원",
-    renewalType: "renewable",
-    refundType: "no_refund",
     pdfFileName: "lee_jiyoung_proposal.pdf",
-    note: "월 부담을 낮춘 갱신형 구성. 핵심 보장 위주로 군더더기 없이 짰어요.",
+    note: "월 부담을 낮춘 갱신형. 핵심 보장 위주로 군더더기 없이 짰어요.",
   },
   {
     id: "proposal-demo-003",
     assignmentId: "assign-demo-003",
     submittedAt: "2026-05-05T14:48:00.000Z",
-    monthlyPremium: 192000,
-    paymentYears: 25,
-    totalCoverage: 500000000,
-    keyBenefit1: "종신 사망보장 3억원",
-    keyBenefit2: "암 진단 1억원",
-    keyBenefit3: "장기간병 LTC 월 200만원",
-    renewalType: "non_renewable",
-    refundType: "maturity_refund",
     pdfFileName: "jung_daehyun_proposal.pdf",
-    note: "20년 경력으로 자산 보호와 노후를 한번에 풀어내는 구성을 준비했습니다. 만기 환급이 가능해 장기 자산화 측면도 챙겼습니다.",
+    note: "노후 자산화에 집중. 만기 환급이 가능한 종신·연금 결합형으로 구성했어요.",
   },
   // demo-req-002 → 이지영 설계사 제출분
   {
     id: "proposal-demo-005",
     assignmentId: "assign-demo-005",
     submittedAt: "2026-05-05T16:00:00.000Z",
-    monthlyPremium: 78000,
-    paymentYears: 20,
-    totalCoverage: 100000000,
-    keyBenefit1: "어린이 입원일당 5만원",
-    keyBenefit2: "여성 암 진단 2,000만원",
-    keyBenefit3: "후유장해 1억원",
-    renewalType: "renewable",
-    refundType: "no_refund",
     pdfFileName: "lee_jiyoung_child_proposal.pdf",
-    note: "어린이/여성 보장을 한번에 묶어 부담 없이 구성했어요.",
+    note: "자녀 어린이 보장과 여성 질환을 한 증권에 묶어 부담을 낮췄어요.",
   },
-  // demo-req-003 (analyzing) 진설계 2건
+  // demo-req-003 (analyzing) 제안서 2건
   {
     id: "proposal-demo-007",
     assignmentId: "assign-demo-007",
     submittedAt: "2026-05-05T20:00:00.000Z",
-    monthlyPremium: 248000,
-    paymentYears: 20,
-    totalCoverage: 350000000,
-    keyBenefit1: "연금 월 150만원",
-    keyBenefit2: "사망보장 2억",
-    keyBenefit3: "최저보증이율 2%",
-    renewalType: "non_renewable",
-    refundType: "maturity_refund",
     pdfFileName: "jung_pension_a.pdf",
+    note: "최저보증이율 2% 확정 연금에 사망보장 2억을 얹어 안정성을 강조했어요.",
   },
   {
     id: "proposal-demo-008",
     assignmentId: "assign-demo-008",
     submittedAt: "2026-05-06T01:30:00.000Z",
-    monthlyPremium: 282000,
-    paymentYears: 25,
-    totalCoverage: 400000000,
-    keyBenefit1: "연금 월 180만원",
-    keyBenefit2: "사망보장 2.5억",
-    keyBenefit3: "변액형 + 최저보증",
-    renewalType: "non_renewable",
-    refundType: "maturity_refund",
     pdfFileName: "kim_pension_b.pdf",
+    note: "변액 + 최저보증으로 수익성과 안전을 절충, 연금 월 180만원을 노렸어요.",
   },
 ];

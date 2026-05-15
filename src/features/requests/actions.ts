@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { findMatchCandidates } from "@/features/agents/queries";
-import { MOCK_MATCH_REQUESTS } from "@/mocks/requests";
+import { MOCK_PLAN_REQUESTS } from "@/mocks/requests";
 import { getSettings } from "@/server/settings";
 
 import {
@@ -36,7 +36,7 @@ export async function submitStep1(
   _prev: Step1State,
   formData: FormData,
 ): Promise<Step1State> {
-  // 병력 리스트는 클라가 JSON 직렬화하여 단일 hidden input 으로 전송.
+  // 병력 / coverage 모두 클라가 JSON 직렬화하여 단일 hidden input 으로 전송.
   const medicalHistoryRaw = formData.get("medicalHistory");
   const medicalHistory = parseMedicalHistory(medicalHistoryRaw);
   if (medicalHistory === "INVALID") {
@@ -46,14 +46,21 @@ export async function submitStep1(
     };
   }
 
+  const coverageRaw = formData.get("coverage");
+  const coverage = parseJsonField(coverageRaw);
+  if (coverage === "INVALID") {
+    return {
+      ok: false,
+      errors: { coverage: ["보장 요청 데이터가 올바르지 않습니다."] },
+    };
+  }
+
   const parsed = Step1Schema.safeParse({
     gender: formData.get("gender"),
-    region: formData.get("region"),
-    birthDate: formData.get("birthDate"),
     occupation: formData.get("occupation"),
+    coverage,
     monthlyBudgetMin: formData.get("monthlyBudgetMin"),
     monthlyBudgetMax: formData.get("monthlyBudgetMax"),
-    desiredCoverage: formData.get("desiredCoverage"),
     medicalHistory,
     additionalNotes: formData.get("additionalNotes") || undefined,
   });
@@ -66,7 +73,7 @@ export async function submitStep1(
   const candidates = await findMatchCandidates(settings.candidateCount);
 
   const id = `req-${Date.now()}`;
-  MOCK_MATCH_REQUESTS.push({
+  MOCK_PLAN_REQUESTS.push({
     id,
     step1: parsed.data,
     candidateAgentIds: candidates.map((c) => c.id),
@@ -100,6 +107,19 @@ function parseMedicalHistory(
   }
 }
 
+/**
+ * JSON 단일 객체용 — coverage 같은 구조화 필드를 hidden input 으로 받을 때.
+ * 비어있거나 깨졌으면 "INVALID", zod 가 이후 정형/제약 검증.
+ */
+function parseJsonField(raw: FormDataEntryValue | null): unknown | "INVALID" {
+  if (!raw || typeof raw !== "string" || raw.trim() === "") return "INVALID";
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return "INVALID";
+  }
+}
+
 /* ============================================================
  * Step 2 — 후보 선택
  * ============================================================ */
@@ -127,7 +147,7 @@ export async function submitStep2(
     };
   }
 
-  const req = MOCK_MATCH_REQUESTS.find((r) => r.id === requestId);
+  const req = MOCK_PLAN_REQUESTS.find((r) => r.id === requestId);
   if (!req || req.status !== "selecting") {
     return { ok: false, errors: { _form: ["요청을 찾을 수 없습니다."] } };
   }
@@ -217,7 +237,7 @@ export async function finalizeRequest(
   }
 
   // 3) 요청 상태 확인
-  const req = MOCK_MATCH_REQUESTS.find((r) => r.id === requestId);
+  const req = MOCK_PLAN_REQUESTS.find((r) => r.id === requestId);
   if (!req || req.status !== "confirming") {
     return { ok: false, errors: { _form: ["요청 상태가 올바르지 않습니다."] } };
   }

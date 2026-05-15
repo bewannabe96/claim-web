@@ -25,40 +25,19 @@ export type MatchAssignment = {
 };
 
 /* ============================================================
- * Proposal — 진설계 (정형 필드 + PDF + 메모)
- * PRD §5.4 — 카테고리 무관 공통 필드
+ * Proposal — 제안서 (PDF + 한줄 설계 요약)
+ *
+ * 정형 필드 (보험료, 담보, 갱신/환급 등) 는 AI 가 PDF 에서 추출하므로
+ * 설계사 입력에서 받지 않음. 설계사는 PDF 한 장과 "어떤 점에 집중해서
+ * 설계했는지" 한 줄만 작성 — 인사말·자기소개 제외, 설계 의도에 집중.
  * ============================================================ */
 
-export const RENEWAL_TYPES = ["renewable", "non_renewable"] as const;
-export type RenewalType = (typeof RENEWAL_TYPES)[number];
-
-export const RENEWAL_TYPE_LABEL: Record<RenewalType, string> = {
-  renewable: "갱신형",
-  non_renewable: "비갱신형",
-};
-
-export const REFUND_TYPES = ["maturity_refund", "no_refund"] as const;
-export type RefundType = (typeof REFUND_TYPES)[number];
-
-export const REFUND_TYPE_LABEL: Record<RefundType, string> = {
-  maturity_refund: "만기 환급",
-  no_refund: "순수 보장",
-};
-
 export const ProposalSubmissionSchema = z.object({
-  monthlyPremium: z.coerce
-    .number({ message: "월 보험료는 숫자여야 합니다." })
-    .int()
-    .positive("월 보험료는 0보다 커야 합니다."),
-  paymentYears: z.coerce.number().int().min(1).max(100),
-  totalCoverage: z.coerce.number().int().min(0),
-  keyBenefit1: z.string().min(1, "핵심 담보 1을 입력해주세요.").max(60),
-  keyBenefit2: z.string().min(1, "핵심 담보 2를 입력해주세요.").max(60),
-  keyBenefit3: z.string().min(1, "핵심 담보 3을 입력해주세요.").max(60),
-  renewalType: z.enum(RENEWAL_TYPES as unknown as [RenewalType, RenewalType]),
-  refundType: z.enum(REFUND_TYPES as unknown as [RefundType, RefundType]),
-  pdfFileName: z.string().min(1, "PDF 파일을 첨부해주세요."),
-  note: z.string().max(2000).optional(),
+  pdfFileName: z.string().min(1, "제안서 PDF를 첨부해주세요."),
+  note: z
+    .string()
+    .min(1, "설계 한줄 요약을 작성해주세요.")
+    .max(100, "한줄 요약은 100자 이내로 작성해주세요."),
 });
 
 export type ProposalSubmissionInput = z.infer<typeof ProposalSubmissionSchema>;

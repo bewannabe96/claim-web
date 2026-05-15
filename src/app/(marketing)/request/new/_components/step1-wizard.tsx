@@ -8,8 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { submitStep1 } from "@/features/requests/actions";
 import {
+  FOCUSED_CONCERN_IDS,
+  FOCUSED_CONCERN_LABEL,
   TREATMENT_PERIODS,
   TREATMENT_PERIOD_LABEL,
+  type CoverageIntent,
+  type CoverageRequest,
+  type FocusedConcernId,
   type MedicalHistoryEntry,
   type TreatmentPeriod,
 } from "@/features/requests/schema";
@@ -19,29 +24,31 @@ import {
   ProgressSegment,
 } from "@/features/requests/ui/wizard-primitives";
 import { cn } from "@/lib/utils";
-import {
-  KOREAN_REGIONS,
-  type Gender,
-  type KoreanRegion,
-} from "@/types";
+import { type Gender } from "@/types";
 
 /* ============================================================
- * Form state — 모든 phase 가 공유. 전화번호는 confirm 단계에서 따로 수집.
+ * Form state — 모든 phase 가 공유. 이름·전화번호는 confirm 단계에서 따로 수집.
+ *
+ * coverage 입력은 flat 필드 (coverageIntent / focusedConcerns) 로 두어 form
+ * interaction 이 단순하고, 제출 시점에 schema 의 CoverageRequest discriminated
+ * union 으로 변환.
  * ============================================================ */
 
 type FormState = {
-  // chip phases
+  // basic phase: 성별 + 직업
   gender?: Gender;
-  region?: KoreanRegion;
+  occupation?: string;
+  // coverage phase
+  coverageIntent?: CoverageIntent;
+  /** focused 일 때 선택된 질병/상황 id 들 (multi-select) */
+  focusedConcerns: FocusedConcernId[];
+  /** 그외 요청사항 (자유 텍스트, 선택) */
+  additionalNotes?: string;
+  // budget phase
   monthlyBudgetMin?: string;
   monthlyBudgetMax?: string;
-  // personal phase (이름은 confirm 단계에서 수집)
-  birthDate?: string;
-  occupation?: string;
-  // details phase
-  desiredCoverage?: string;
+  // medical phase
   medicalHistory: MedicalHistoryEntry[];
-  additionalNotes?: string;
 };
 
 /** 보험료 옵션 */
@@ -60,26 +67,20 @@ const BUDGET_OPTIONS: ReadonlyArray<{
 ];
 
 const PHASE_KEYS = [
-  "gender",
-  "region",
+  "basic",
+  "coverage",
   "budget",
-  "personal",
-  "details",
+  "medical",
+  "notes",
 ] as const;
 type PhaseKey = (typeof PHASE_KEYS)[number];
 
-const PHASES: Record<PhaseKey, { title: string; helper?: string }> = {
-  gender: { title: "성별을 알려주세요" },
-  region: { title: "거주 지역은 어디인가요?" },
-  budget: { title: "월 예상 보험료를 선택해주세요" },
-  personal: {
-    title: "기본 정보를 알려주세요",
-    helper: "진설계서를 작성하는 데 필요한 정보예요",
-  },
-  details: {
-    title: "원하시는 보장과 병력을 알려주세요",
-    helper: "정확한 진설계를 위해 필요해요",
-  },
+const PHASES: Record<PhaseKey, { title: string }> = {
+  basic: { title: "기본 정보를 알려주세요" },
+  coverage: { title: "무엇을 대비하고 싶으세요?" },
+  budget: { title: "월 보험료는 어느 정도 생각하세요?" },
+  medical: { title: "보다 최적화된 제안서를 받기 위해 알려주세요" },
+  notes: { title: "마지막으로 더 알려주실 내용이 있나요?" },
 };
 
 /** 매칭 로딩 화면 최소 노출 시간 (ms). */
@@ -88,7 +89,10 @@ const MIN_MATCHING_MS = 2800;
 export function Step1Wizard() {
   const router = useRouter();
   const [phaseIdx, setPhaseIdx] = useState(0);
-  const [data, setData] = useState<FormState>({ medicalHistory: [] });
+  const [data, setData] = useState<FormState>({
+    medicalHistory: [],
+    focusedConcerns: [],
+  });
   const [phase, setPhase] = useState<"form" | "matching">("form");
   const [serverError, setServerError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -113,14 +117,12 @@ export function Step1Wizard() {
 
     const fd = new FormData();
     if (data.gender) fd.append("gender", data.gender);
-    if (data.region) fd.append("region", data.region);
-    if (data.birthDate) fd.append("birthDate", data.birthDate);
     if (data.occupation) fd.append("occupation", data.occupation);
     if (data.monthlyBudgetMin)
       fd.append("monthlyBudgetMin", data.monthlyBudgetMin);
     if (data.monthlyBudgetMax)
       fd.append("monthlyBudgetMax", data.monthlyBudgetMax);
-    if (data.desiredCoverage) fd.append("desiredCoverage", data.desiredCoverage);
+    fd.append("coverage", JSON.stringify(buildCoverage(data)));
     fd.append("medicalHistory", JSON.stringify(data.medicalHistory));
     if (data.additionalNotes)
       fd.append("additionalNotes", data.additionalNotes);
@@ -151,14 +153,14 @@ export function Step1Wizard() {
     <main className="flex flex-col flex-1 px-6 pt-10 pb-8 bg-white">
       <BrandMark />
       <h1 className="mt-3 text-2xl font-bold leading-[1.22] tracking-tight text-black">
-        나에게 딱 맞는
+        설계사가 제안하고,
         <br />
-        보험 설계사를
+        AI가 비교하고,
         <br />
-        찾아드립니다
+        당신은 선택합니다.
       </h1>
       <p className="mt-3 text-xs text-[#4b4b4b]">
-        몇 가지 정보만 알려주시면 맞춤 설계사를 추천해드려요
+        간단한 요청 한 번으로 여러 제안서를 받아볼 수 있어요
       </p>
 
       <div className="mt-6 flex gap-1.5">
@@ -171,75 +173,26 @@ export function Step1Wizard() {
         <h2 className="text-xl font-bold text-black leading-tight">
           {PHASES[phaseKey].title}
         </h2>
-        {PHASES[phaseKey].helper && (
-          <p className="mt-1 text-sm text-[#4b4b4b]">
-            {PHASES[phaseKey].helper}
-          </p>
-        )}
 
         <div className="mt-6">
-          {phaseKey === "gender" && (
-            <div className="grid grid-cols-2 gap-3">
-              <BigCard
-                emoji="👨"
-                label="남성"
-                selected={data.gender === "male"}
-                onClick={() => setData((d) => ({ ...d, gender: "male" }))}
-              />
-              <BigCard
-                emoji="👩"
-                label="여성"
-                selected={data.gender === "female"}
-                onClick={() => setData((d) => ({ ...d, gender: "female" }))}
-              />
-            </div>
+          {phaseKey === "basic" && (
+            <BasicFields data={data} setData={setData} />
           )}
 
-          {phaseKey === "region" && (
-            <ChipGroup>
-              {KOREAN_REGIONS.map((r) => (
-                <Chip
-                  key={r}
-                  selected={data.region === r}
-                  onClick={() => setData((d) => ({ ...d, region: r }))}
-                >
-                  {r}
-                </Chip>
-              ))}
-            </ChipGroup>
+          {phaseKey === "coverage" && (
+            <CoverageFields data={data} setData={setData} />
           )}
 
           {phaseKey === "budget" && (
-            <ChipGroup>
-              {BUDGET_OPTIONS.map((opt) => {
-                const selected =
-                  data.monthlyBudgetMin === String(opt.min) &&
-                  data.monthlyBudgetMax === String(opt.max);
-                return (
-                  <Chip
-                    key={opt.id}
-                    selected={selected}
-                    onClick={() =>
-                      setData((d) => ({
-                        ...d,
-                        monthlyBudgetMin: String(opt.min),
-                        monthlyBudgetMax: String(opt.max),
-                      }))
-                    }
-                  >
-                    {opt.label}
-                  </Chip>
-                );
-              })}
-            </ChipGroup>
+            <BudgetFields data={data} setData={setData} />
           )}
 
-          {phaseKey === "personal" && (
-            <PersonalFields data={data} setData={setData} />
+          {phaseKey === "medical" && (
+            <MedicalFields data={data} setData={setData} />
           )}
 
-          {phaseKey === "details" && (
-            <DetailsFields data={data} setData={setData} />
+          {phaseKey === "notes" && (
+            <NotesFields data={data} setData={setData} />
           )}
         </div>
       </div>
@@ -275,10 +228,16 @@ export function Step1Wizard() {
 
 function isPhaseValid(phase: PhaseKey, d: FormState): boolean {
   switch (phase) {
-    case "gender":
-      return !!d.gender;
-    case "region":
-      return !!d.region;
+    case "basic":
+      return !!d.gender && !!d.occupation && d.occupation.trim().length > 0;
+    case "coverage": {
+      // 의도 필수. focused 면 chip 최소 1개.
+      if (!d.coverageIntent) return false;
+      if (d.coverageIntent === "focused" && d.focusedConcerns.length === 0) {
+        return false;
+      }
+      return true;
+    }
     case "budget": {
       const min = Number(d.monthlyBudgetMin);
       const max = Number(d.monthlyBudgetMax);
@@ -289,19 +248,12 @@ function isPhaseValid(phase: PhaseKey, d: FormState): boolean {
         max >= min
       );
     }
-    case "personal":
-      return (
-        !!d.birthDate &&
-        /^\d{4}-\d{2}-\d{2}$/.test(d.birthDate) &&
-        !!d.occupation &&
-        d.occupation.trim().length > 0
-      );
-    case "details": {
-      if (!d.desiredCoverage || d.desiredCoverage.trim().length === 0)
-        return false;
-      // 병력 row 마다 모든 필수 필드 채워졌는지
+    case "medical":
+      // 병력 row 마다 모든 필수 필드 채워졌는지. 빈 배열은 OK (없으면 비워둠).
       return d.medicalHistory.every(isMedicalEntryComplete);
-    }
+    case "notes":
+      // 그외 요청사항 — 항상 선택. 비어있어도 통과.
+      return true;
   }
 }
 
@@ -321,10 +273,10 @@ function isMedicalEntryComplete(e: MedicalHistoryEntry): boolean {
 }
 
 /* ============================================================
- * Personal phase — 이름, 생년월일, 직업
+ * Basic phase — 성별 + 직업
  * ============================================================ */
 
-function PersonalFields({
+function BasicFields({
   data,
   setData,
 }: {
@@ -332,23 +284,29 @@ function PersonalFields({
   setData: React.Dispatch<React.SetStateAction<FormState>>;
 }) {
   return (
-    <div className="flex flex-col gap-5">
-      <Field label="생년월일">
-        <Input
-          type="date"
-          value={data.birthDate ?? ""}
-          onChange={(e) =>
-            setData((d) => ({ ...d, birthDate: e.target.value }))
-          }
-          className="h-14 px-4 text-base"
-        />
+    <div className="flex flex-col gap-6">
+      <Field label="성별">
+        <div className="grid grid-cols-2 gap-3">
+          <BigCard
+            emoji="👨"
+            label="남성"
+            selected={data.gender === "male"}
+            onClick={() => setData((d) => ({ ...d, gender: "male" }))}
+          />
+          <BigCard
+            emoji="👩"
+            label="여성"
+            selected={data.gender === "female"}
+            onClick={() => setData((d) => ({ ...d, gender: "female" }))}
+          />
+        </div>
       </Field>
 
       <Field label="직업">
         <Input
           type="text"
           maxLength={50}
-          placeholder="예: 회사원, 자영업, 학생"
+          placeholder="예: 반도체연구원, 학원선생님, 트럭운전사"
           value={data.occupation ?? ""}
           onChange={(e) =>
             setData((d) => ({ ...d, occupation: e.target.value }))
@@ -361,10 +319,151 @@ function PersonalFields({
 }
 
 /* ============================================================
- * Details phase — 희망 담보 + 병력 + 그외 요청사항
+ * Coverage phase — 가입 의도 → (focused 시) 질병/상황 chip
+ *
+ * 흐름:
+ *   1. 종합 / 특정 보장 집중 둘 중 선택 (IntentCard)
+ *   2. focused 면 대비하고 싶은 질병/상황 chip 멀티선택
+ *
+ * 서버 제출 시 buildCoverage 가 schema 의 CoverageRequest discriminated union
+ * 으로 변환. JSON 직렬화 후 hidden field 로 action 에 전달.
  * ============================================================ */
 
-function DetailsFields({
+function CoverageFields({
+  data,
+  setData,
+}: {
+  data: FormState;
+  setData: React.Dispatch<React.SetStateAction<FormState>>;
+}) {
+  function toggleConcern(id: FocusedConcernId) {
+    setData((d) => {
+      const has = d.focusedConcerns.includes(id);
+      return {
+        ...d,
+        focusedConcerns: has
+          ? d.focusedConcerns.filter((x) => x !== id)
+          : [...d.focusedConcerns, id],
+      };
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <IntentCard
+        title="종합적으로 알아보고 있어요"
+        selected={data.coverageIntent === "broad"}
+        onClick={() => setData((d) => ({ ...d, coverageIntent: "broad" }))}
+      />
+      <IntentCard
+        title="대비하고 싶은 질병이나 상황이 있어요"
+        selected={data.coverageIntent === "focused"}
+        onClick={() => setData((d) => ({ ...d, coverageIntent: "focused" }))}
+      />
+
+      {/* focused 일 때만 — IntentCard 바로 아래 작은 간격으로 붙임 */}
+      {data.coverageIntent === "focused" && (
+        <ChipGroup>
+          {FOCUSED_CONCERN_IDS.map((id) => (
+            <Chip
+              key={id}
+              selected={data.focusedConcerns.includes(id)}
+              onClick={() => toggleConcern(id)}
+            >
+              {FOCUSED_CONCERN_LABEL[id]}
+            </Chip>
+          ))}
+        </ChipGroup>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 가입 의도 선택 카드 — title 만 가진 가로 풀폭 버튼.
+ * Phase title 이 직접 prompt 가 되므로 부가 설명은 두지 않음.
+ */
+function IntentCard({
+  title,
+  selected,
+  onClick,
+}: {
+  title: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "px-5 py-4 rounded-xl text-left text-base font-medium transition-colors",
+        selected
+          ? "bg-black text-white"
+          : "bg-[#efefef] text-black hover:bg-[#e2e2e2]",
+      )}
+    >
+      {title}
+    </button>
+  );
+}
+
+/**
+ * Flat form state → schema 의 CoverageRequest discriminated union 변환.
+ * isPhaseValid 가 이미 broad/focused 케이스를 차단하므로 여기선 분기만 처리.
+ */
+function buildCoverage(d: FormState): CoverageRequest {
+  if (d.coverageIntent === "focused") {
+    return {
+      intent: "focused",
+      concerns: d.focusedConcerns,
+    };
+  }
+  return { intent: "broad" };
+}
+
+/* ============================================================
+ * Budget phase — 월 보험료 chip (단일 선택, min/max 동시 set)
+ * ============================================================ */
+
+function BudgetFields({
+  data,
+  setData,
+}: {
+  data: FormState;
+  setData: React.Dispatch<React.SetStateAction<FormState>>;
+}) {
+  return (
+    <ChipGroup>
+      {BUDGET_OPTIONS.map((opt) => {
+        const selected =
+          data.monthlyBudgetMin === String(opt.min) &&
+          data.monthlyBudgetMax === String(opt.max);
+        return (
+          <Chip
+            key={opt.id}
+            selected={selected}
+            onClick={() =>
+              setData((d) => ({
+                ...d,
+                monthlyBudgetMin: String(opt.min),
+                monthlyBudgetMax: String(opt.max),
+              }))
+            }
+          >
+            {opt.label}
+          </Chip>
+        );
+      })}
+    </ChipGroup>
+  );
+}
+
+/* ============================================================
+ * Medical phase — 병력 (선택, 빈 배열 허용)
+ * ============================================================ */
+
+function MedicalFields({
   data,
   setData,
 }: {
@@ -389,7 +488,10 @@ function DetailsFields({
     }));
   }
 
-  function updateMedicalEntry(idx: number, patch: Partial<MedicalHistoryEntry>) {
+  function updateMedicalEntry(
+    idx: number,
+    patch: Partial<MedicalHistoryEntry>,
+  ) {
     setData((d) => ({
       ...d,
       medicalHistory: d.medicalHistory.map((e, i) =>
@@ -406,32 +508,13 @@ function DetailsFields({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <Field label="희망하시는 담보">
-        <textarea
-          maxLength={500}
-          rows={4}
-          placeholder="예: 암 진단금 5천만원 이상, 입원/수술비, 비갱신형 선호 등"
-          value={data.desiredCoverage ?? ""}
-          onChange={(e) =>
-            setData((d) => ({ ...d, desiredCoverage: e.target.value }))
-          }
-          className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10"
-        />
-      </Field>
-
+    <Field label="병력" optional>
       <div className="flex flex-col gap-3">
-        <div className="flex items-baseline justify-between">
-          <label className="text-sm font-medium text-black">
-            병력{" "}
-            {data.medicalHistory.length > 0 && (
-              <span className="text-xs text-[#4b4b4b]">
-                ({data.medicalHistory.length}건)
-              </span>
-            )}
-          </label>
-          <span className="text-xs text-[#afafaf]">없으면 비워두세요</span>
-        </div>
+        {data.medicalHistory.length > 0 && (
+          <p className="text-xs text-[#4b4b4b]">
+            {data.medicalHistory.length}건 추가됨
+          </p>
+        )}
 
         {data.medicalHistory.length === 0 && (
           <p className="text-xs text-[#4b4b4b]">
@@ -463,20 +546,35 @@ function DetailsFields({
           + 병력 추가
         </button>
       </div>
+    </Field>
+  );
+}
 
-      <Field label="그외 요청사항" optional>
-        <textarea
-          maxLength={1000}
-          rows={3}
-          placeholder="설계사에게 추가로 전달하고 싶은 내용이 있다면 자유롭게 적어주세요"
-          value={data.additionalNotes ?? ""}
-          onChange={(e) =>
-            setData((d) => ({ ...d, additionalNotes: e.target.value }))
-          }
-          className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10"
-        />
-      </Field>
-    </div>
+/* ============================================================
+ * Notes phase — 그외 요청사항 (자유 텍스트, 선택)
+ * ============================================================ */
+
+function NotesFields({
+  data,
+  setData,
+}: {
+  data: FormState;
+  setData: React.Dispatch<React.SetStateAction<FormState>>;
+}) {
+  return (
+    <textarea
+      maxLength={1000}
+      rows={6}
+      placeholder={`예를 들어:
+당뇨가 있어서 당뇨로 생길 수 있는 병을 잘 대비하고 싶어요
+납입면제는 꼭 들어갔으면 좋겠어요
+가족이 유방암을 앓으셨어서 암 보장이 탄탄했으면 좋겠어요`}
+      value={data.additionalNotes ?? ""}
+      onChange={(e) =>
+        setData((d) => ({ ...d, additionalNotes: e.target.value }))
+      }
+      className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10"
+    />
   );
 }
 
@@ -586,8 +684,8 @@ function MedicalEntryCard({
  * ============================================================ */
 
 const MATCHING_STEPS = [
-  "고객 정보 분석 중",
-  "거주 지역 기반 매칭 중",
+  "요청서 분석 중",
+  "보장 요구사항 매칭 중",
   "최적의 설계사 선별 중",
 ] as const;
 

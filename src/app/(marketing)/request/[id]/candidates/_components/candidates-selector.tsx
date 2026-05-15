@@ -39,9 +39,9 @@ export function CandidatesSelector({
       <BrandMark />
       <header className="mt-3 flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">
-          회원님께 딱 맞는
+          잘 맞을 것 같은
           <br />
-          설계사 {candidates.length}명을 찾았어요
+          설계사 {candidates.length}명이에요
         </h1>
         <p className="mt-1 text-sm text-[#4b4b4b]">{subtitle}</p>
       </header>
@@ -93,7 +93,7 @@ export function CandidatesSelector({
               ? "다음 단계로 이동 중..."
               : selected.length === 0
                 ? "설계사를 선택해주세요"
-                : `${selected.length}명에게 진설계 받기`}
+                : `${selected.length}명에게 제안서 받기`}
           </Button>
         </form>
       </div>
