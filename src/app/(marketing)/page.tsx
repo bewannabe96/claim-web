@@ -317,16 +317,23 @@ function ClosingSection() {
  * ------------------------------------------------------------------ */
 
 function Footer() {
+  // 설계사 가입 진입점은 별도 폼(Google Form 등) — env 로 주입. 미설정 시 링크 숨김.
+  const agentSignupUrl = process.env.AGENT_SIGNUP_URL;
+
   return (
     <footer className="border-t border-[#1a1a1a] bg-black px-6 py-8">
       <div className="flex items-center justify-between">
         <p className="text-xs font-bold tracking-wide text-white">CLAIM</p>
-        <Link
-          href="/partner"
-          className="text-xs text-[#8a8a8a] underline-offset-4 hover:text-white hover:underline"
-        >
-          설계사이신가요?
-        </Link>
+        {agentSignupUrl && (
+          <a
+            href={agentSignupUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-[#8a8a8a] underline-offset-4 hover:text-white hover:underline"
+          >
+            설계사이신가요?
+          </a>
+        )}
       </div>
       <p className="mt-4 text-[0.7rem] text-[#6a6a6a]">
         © 2026 Insupire Co., Ltd. All rights reserved.
