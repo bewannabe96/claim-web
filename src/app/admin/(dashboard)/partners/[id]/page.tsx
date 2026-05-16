@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 
-import { getAgentById } from "@/features/agents/queries";
+import { getPartnerById } from "@/features/partners/queries";
 import { cn } from "@/lib/utils";
 
-import { AgentForm } from "../../_components/agent-form";
+import { PartnerForm } from "../../_components/partner-form";
 import {
   BackLink,
   Card,
@@ -11,27 +11,27 @@ import {
   PageHeader,
 } from "../../_components/page-shell";
 
-export default async function AdminAgentDetailPage({
+export default async function AdminPartnerDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const agent = await getAgentById(id);
-  if (!agent) notFound();
+  const partner = await getPartnerById(id);
+  if (!partner) notFound();
 
-  const missRate = agent.recentSubmissions.length
-    ? agent.recentSubmissions.filter((s) => !s).length /
-      agent.recentSubmissions.length
+  const missRate = partner.recentSubmissions.length
+    ? partner.recentSubmissions.filter((s) => !s).length /
+      partner.recentSubmissions.length
     : 0;
 
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <BackLink href="/admin/agents">설계사 풀</BackLink>
+        <BackLink href="/admin/partners">설계사 풀</BackLink>
         <PageHeader
-          title={agent.name}
-          description={`${agent.id} · ${agent.email}`}
+          title={partner.name}
+          description={`${partner.id} · ${partner.email}`}
         />
       </div>
 
@@ -39,19 +39,19 @@ export default async function AdminAgentDetailPage({
       <Card>
         <CardHeader title="운영 지표" />
         <dl className="grid grid-cols-3 gap-6">
-          <Stat label="누적 노출" value={`${agent.exposureCount}회`} />
+          <Stat label="누적 노출" value={`${partner.exposureCount}회`} />
           <Stat
             label="최근 제출 이력"
             value={
-              agent.recentSubmissions.length === 0
+              partner.recentSubmissions.length === 0
                 ? "—"
-                : `${agent.recentSubmissions.filter((s) => s).length}/${agent.recentSubmissions.length}`
+                : `${partner.recentSubmissions.filter((s) => s).length}/${partner.recentSubmissions.length}`
             }
           />
           <Stat
             label="미제출률"
             value={
-              agent.recentSubmissions.length === 0
+              partner.recentSubmissions.length === 0
                 ? "—"
                 : `${Math.round(missRate * 100)}%`
             }
@@ -59,11 +59,11 @@ export default async function AdminAgentDetailPage({
           />
         </dl>
 
-        {agent.recentSubmissions.length > 0 && (
+        {partner.recentSubmissions.length > 0 && (
           <div className="mt-5">
             <p className="text-xs text-[#4b4b4b] mb-2">최근 제출 시퀀스</p>
             <div className="flex gap-1">
-              {agent.recentSubmissions.map((s, i) => (
+              {partner.recentSubmissions.map((s, i) => (
                 <span
                   key={i}
                   className={cn(
@@ -81,17 +81,17 @@ export default async function AdminAgentDetailPage({
       </Card>
 
       {/* 편집 폼 */}
-      <AgentForm
-        agentId={agent.id}
+      <PartnerForm
+        partnerId={partner.id}
         initial={{
-          name: agent.name,
-          avatarUrl: agent.avatarUrl,
-          bio: agent.bio,
-          yearsOfExperience: agent.yearsOfExperience,
-          trustMetric: agent.trustMetric,
-          phone: agent.phone,
-          email: agent.email,
-          active: agent.active,
+          name: partner.name,
+          avatarUrl: partner.avatarUrl,
+          bio: partner.bio,
+          yearsOfExperience: partner.yearsOfExperience,
+          trustMetric: partner.trustMetric,
+          phone: partner.phone,
+          email: partner.email,
+          active: partner.active,
         }}
       />
     </div>

@@ -139,18 +139,18 @@ export default async function AdminRequestDetailPage({
             <>
               후보{" "}
               <span className="font-semibold text-black">
-                {request.candidateAgentIds.length}명
+                {request.candidatePartnerIds.length}명
               </span>{" "}
               · 선택{" "}
               <span className="font-semibold text-black">
-                {request.selectedAgentIds.length}명
+                {request.selectedPartnerIds.length}명
               </span>
             </>
           }
         />
         <div className="flex flex-wrap gap-1.5">
-          {request.candidateAgentIds.map((aid) => {
-            const selected = request.selectedAgentIds.includes(aid);
+          {request.candidatePartnerIds.map((aid) => {
+            const selected = request.selectedPartnerIds.includes(aid);
             return (
               <span
                 key={aid}
@@ -246,8 +246,8 @@ function AssignmentItem({
 }: {
   detail: Awaited<ReturnType<typeof listAssignmentDetailsForRequest>>[number];
 }) {
-  const { assignment, agent, proposal } = detail;
-  const initial = agent.name.charAt(0);
+  const { assignment, partner, proposal } = detail;
+  const initial = partner.name.charAt(0);
 
   return (
     <li className="py-4 flex items-start gap-4">
@@ -257,16 +257,16 @@ function AssignmentItem({
 
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-black">{agent.name}</span>
+          <span className="text-sm font-bold text-black">{partner.name}</span>
           <span className="text-xs text-[#4b4b4b]">
-            경력 {agent.yearsOfExperience}년
+            경력 {partner.yearsOfExperience}년
           </span>
           <AssignmentStatusPill status={assignment.status} />
         </div>
 
         {proposal ? (
           <div className="flex flex-col gap-1.5 text-xs text-[#4b4b4b]">
-            <Spec label="PDF" value={proposal.pdfFileName} />
+            <Spec label="PDF" value={pdfBasename(proposal.pdfS3Key)} />
             <Spec label="한줄 요약" value={proposal.note} />
           </div>
         ) : (
@@ -343,6 +343,12 @@ function Spec({ label, value }: { label: string; value: string }) {
       <span className="font-medium text-black">{value}</span>
     </span>
   );
+}
+
+/** "proposals/<aid>/<nanoid>.pdf" → "<nanoid>.pdf". 어드민이 식별만 가능하면 충분. */
+function pdfBasename(s3Key: string): string {
+  const slash = s3Key.lastIndexOf("/");
+  return slash >= 0 ? s3Key.slice(slash + 1) : s3Key;
 }
 
 function formatPhone(p: string): string {

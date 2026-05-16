@@ -42,10 +42,10 @@ export default async function ResultPage({
             <span className="text-black">{proposals.length}건</span>
             이 도착했어요
           </h1>
-          {req.selectedAgentIds.length > proposals.length &&
+          {req.selectedPartnerIds.length > proposals.length &&
             proposals.length > 0 && (
               <p className="text-sm text-[#4b4b4b]">
-                선택하신 {req.selectedAgentIds.length}명 중{" "}
+                선택하신 {req.selectedPartnerIds.length}명 중{" "}
                 <span className="font-semibold text-black">
                   {proposals.length}명
                 </span>

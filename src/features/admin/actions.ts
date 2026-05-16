@@ -36,7 +36,7 @@ export async function saveSettings(
     };
   }
 
-  updateSettings(parsed.data);
+  await updateSettings(parsed.data);
 
   revalidatePath("/admin/settings");
   revalidatePath("/admin");

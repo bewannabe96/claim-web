@@ -194,7 +194,7 @@ export function RoiChart({
         viewBox={`0 0 ${W} ${H}`}
         className="w-full h-auto touch-none"
         role="img"
-        aria-label={`회수 배율 — ${scenario.label} 시나리오, ${active.agent.name} 강조`}
+        aria-label={`회수 배율 — ${scenario.label} 시나리오, ${active.partner.name} 강조`}
         onPointerMove={(e) => updateCursorFromPointer(e.clientX)}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);

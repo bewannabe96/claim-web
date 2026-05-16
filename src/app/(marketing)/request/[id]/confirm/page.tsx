@@ -16,7 +16,7 @@ export default async function ConfirmPage({
   return (
     <ConfirmWizard
       requestId={id}
-      selectedCount={req.selectedAgentIds.length}
+      selectedCount={req.selectedPartnerIds.length}
       step1={req.step1}
     />
   );

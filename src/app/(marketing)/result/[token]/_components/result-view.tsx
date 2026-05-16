@@ -60,9 +60,9 @@ export function ResultView({ proposals }: { proposals: ProposalData[] }) {
                         : "bg-black text-white",
                     )}
                   >
-                    {p.agent.name.charAt(0)}
+                    {p.partner.name.charAt(0)}
                   </span>
-                  {p.agent.name}
+                  {p.partner.name}
                 </button>
               </li>
             );
@@ -112,15 +112,15 @@ function ProposalBody({
       {/*
         * 설계사 한줄평 — 메신저 패턴 (아바타 + 이름 + 말풍선). 좌상단 꼬리 (rounded-tl-sm)
         * + 아바타 정렬로 "이 설계사가 보낸 메시지" 라는 톤을 살림. 본문 끝의 attribution
-        * 카드 와 중복 같지만, 여긴 message-from-agent 톤이고 끝은 프로필/신뢰지표 톤.
+        * 카드 와 중복 같지만, 여긴 message-from-partner 톤이고 끝은 프로필/신뢰지표 톤.
         */}
       <div className="mt-6 flex items-start gap-2">
         <div className="flex items-center justify-center w-8 h-8 rounded-full bg-black text-white text-[11px] font-bold shrink-0">
-          {proposal.agent.name.charAt(0)}
+          {proposal.partner.name.charAt(0)}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-xs text-[#4b4b4b] mb-1">
-            {proposal.agent.name} 설계사
+            {proposal.partner.name} 설계사
           </p>
           <div className="bg-[#f0f0f0] rounded-2xl rounded-tl-sm px-4 py-3">
             <p className="text-sm text-black leading-relaxed">
@@ -224,19 +224,19 @@ function ProposalBody({
       <section className="rounded-xl border border-[#efefef] p-5">
         <header className="flex items-start gap-3">
           <div className="flex items-center justify-center w-12 h-12 rounded-full bg-black text-white text-lg font-bold shrink-0">
-            {proposal.agent.name.charAt(0)}
+            {proposal.partner.name.charAt(0)}
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
               <span className="text-base font-bold text-black">
-                {proposal.agent.name}
+                {proposal.partner.name}
               </span>
               <span className="text-xs text-[#4b4b4b]">
-                경력 {proposal.agent.yearsOfExperience}년
+                경력 {proposal.partner.yearsOfExperience}년
               </span>
             </div>
             <p className="mt-0.5 text-xs text-[#4b4b4b]">
-              {proposal.agent.trustMetric}
+              {proposal.partner.trustMetric}
             </p>
           </div>
         </header>
@@ -272,7 +272,7 @@ function ProposalBody({
       >
         {contacted
           ? "문자를 보냈어요"
-          : `${proposal.agent.name} 설계사에게 문자 보내기`}
+          : `${proposal.partner.name} 설계사에게 문자 보내기`}
       </button>
     </div>
     </>

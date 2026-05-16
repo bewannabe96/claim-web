@@ -3,8 +3,8 @@ import { getSettings } from "@/server/settings";
 import { PageHeader } from "../_components/page-shell";
 import { SettingsForm } from "./_settings-form";
 
-export default function AdminSettingsPage() {
-  const settings = getSettings();
+export default async function AdminSettingsPage() {
+  const settings = await getSettings();
 
   return (
     <div className="flex flex-col gap-8">

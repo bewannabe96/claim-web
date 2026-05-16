@@ -1,0 +1,250 @@
+// ============================================================
+// Prisma schema — partner-match-mvp
+//
+// 진실 공급원 (DB 구조). features/<x>/schema.ts 의 zod 와 짝.
+//   - zod    → 앱 레이어 입력/형식 검증 (value/range/format)
+//   - prisma → DB 구조 무결성 (PK / FK / NOT NULL / UNIQUE / 인덱스)
+//
+// 명명 규칙:
+//   - 모델 = PascalCase (TS 클라이언트 친화).
+//   - 컬럼 DB 이름 = snake_case (`@map`). 모든 모델에 `@@map` 으로 테이블명 매핑.
+//   - PK 는 `String @id` — 앱-사이드 nanoid(16) (`src/lib/id.ts` 의 `newId()`)
+//     로 INSERT 전 생성. **DB DEFAULT 없음**. CUID/UUID 디폴트도 쓰지 않음.
+//
+// updated_at 정책: Prisma 의 `@updatedAt` 가 INSERT / UPDATE 시 timestamp 설정.
+// DB 트리거는 사용 안 함 — 모든 시점 컨트롤은 앱 레이어 (Prisma client) 가 책임.
+//
+// DB 레벨 제약 최소화: CHECK / partial unique index 사용 안 함. 단일 row 강제
+// (app_settings), race-safe 중복 차단 (phone-active, result_token) 같은 도메인
+// 규칙은 모두 features/<x>/{queries,actions}.ts 가 책임.
+//
+// 스키마 분리: 모든 도메인 테이블은 `claim` 스키마. `public` 에는 Prisma 의
+// `_prisma_migrations` 만 (DATABASE_URL 의 `?schema=claim` 로 default 가 claim).
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")        // Supavisor transaction pooler (6543)
+  directUrl = env("DIRECT_URL")          // 직결 (5432) — migrate / introspect 용
+  schemas   = ["claim", "public"]
+}
+
+// ============================================================
+// plan_request — 가입자 제안서 요청서
+// ============================================================
+
+model PlanRequest {
+  id String @id
+
+  // Step1: 요청서 본체
+  gender             String
+  occupation         String
+  monthlyBudgetMin   Int    @map("monthly_budget_min")
+  monthlyBudgetMax   Int    @map("monthly_budget_max")
+
+  // CoverageRequest discriminated union (broad | focused) — zod 검증 후 jsonb.
+  coverage           Json
+  additionalNotes    String? @map("additional_notes")
+
+  // Step3: 본인 인증 (1:1 sparse — 인증 완료 시 채워짐)
+  name               String?
+  phone              String?
+  consentThirdParty  Boolean @default(false) @map("consent_third_party")
+  consentMessaging   Boolean @default(false) @map("consent_messaging")
+
+  // 워크플로우
+  status        String  @default("selecting")
+  rematchCount  Int     @default(0)     @map("rematch_count")
+  resultToken   String? @map("result_token")
+
+  // 시점
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  dispatchedAt  DateTime? @db.Timestamptz(6) @map("dispatched_at")
+  deadlineAt    DateTime? @db.Timestamptz(6) @map("deadline_at")
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  medicalHistory PlanRequestMedicalHistory[]
+  candidates     PlanRequestCandidate[]
+  assignments    MatchAssignment[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("plan_request")
+  @@schema("claim")
+}
+
+// ============================================================
+// plan_request_medical_history — 병력 (1:N)
+// ============================================================
+
+model PlanRequestMedicalHistory {
+  id String @id
+
+  requestId            String   @map("request_id")
+  diagnosis            String
+  treatmentPeriod      String   @map("treatment_period")
+  treatmentStartDate   DateTime @db.Date @map("treatment_start_date")
+  hospitalizationDays  Int      @default(0) @map("hospitalization_days")
+  outpatientVisits     Int      @default(0) @map("outpatient_visits")
+  hadSurgery           Boolean  @default(false) @map("had_surgery")
+  position             Int
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  request PlanRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, position])
+  @@index([requestId])
+  @@map("plan_request_medical_history")
+  @@schema("claim")
+}
+
+// ============================================================
+// plan_request_candidate — 후보/선택 (M:N junction)
+// ============================================================
+
+model PlanRequestCandidate {
+  requestId      String   @map("request_id")
+  partnerId      String   @map("partner_id")
+  candidateRank  Int      @map("candidate_rank")
+  selected       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  request PlanRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  partner Partner     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@id([requestId, partnerId])
+  @@unique([requestId, candidateRank])
+  @@index([requestId])
+  @@index([partnerId])
+  @@map("plan_request_candidate")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner — 풀에 등록된 보험 설계사
+// ============================================================
+// 가입자 노출:  avatarUrl, name, bio, yearsOfExperience, trustMetric
+// 매칭 가중치: exposureCount (형평성), recentSubmissions (페널티)
+// 운영:        phone (알림톡), email (로그인), active
+//
+// 향후 Supabase Auth 통합 시 id 가 auth.users.id 와 동일 (uuid) 가 되도록 마이그
+// 레이션 — 지금은 standalone nanoid.
+
+model Partner {
+  id String @id
+
+  name               String
+  avatarUrl          String  @map("avatar_url")
+  bio                String
+  yearsOfExperience  Int     @map("years_of_experience")
+  trustMetric        String  @map("trust_metric")
+  phone              String  @unique
+  email              String  @unique
+  active             Boolean @default(true)
+
+  // 매칭 가중치
+  exposureCount      Int       @default(0) @map("exposure_count")
+  // recent_submissions[N] — 최근 N 건의 제출 이력 (true=제출, false=미제출).
+  // 페널티 윈도우 안에서 미제출률 = (false 개수) / length. 앱 레이어가 push/trim.
+  recentSubmissions  Boolean[] @default([]) @map("recent_submissions")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  candidates  PlanRequestCandidate[]
+  assignments MatchAssignment[]
+
+  // 매칭 후보 추출 — active=true 중 exposure_count 적은 순으로 정렬.
+  @@index([active, exposureCount])
+  @@map("partner")
+  @@schema("claim")
+}
+
+// ============================================================
+// match_assignment — 요청 × 설계사 1:1 슬롯
+// ============================================================
+// 가입자가 선택한 설계사 K명 각각에 대해 1 row. 알림톡 진입 시 일회용 token 으로
+// 인증. 설계사가 폼 제출하면 status='submitted' + proposal 1:1 생성.
+//
+// (request_id, partner_id) UNIQUE — 한 요청은 한 설계사에게 한 번만 송부.
+// status 는 enum 대신 text — PRD 에서 상태 추가 가능성 (`declined` 등) 대비.
+
+model MatchAssignment {
+  id        String @id
+
+  requestId String @map("request_id")
+  partnerId String @map("partner_id")
+
+  /// 알림톡 URL 진입용 일회성 토큰. nanoid(32) (newToken).
+  token     String @unique
+
+  status    String @default("pending")
+
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  submittedAt DateTime? @db.Timestamptz(6) @map("submitted_at")
+
+  request  PlanRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  partner  Partner     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  proposal Proposal?
+
+  @@unique([requestId, partnerId])
+  @@index([requestId])
+  @@index([partnerId, status])
+  @@map("match_assignment")
+  @@schema("claim")
+}
+
+// ============================================================
+// proposal — 설계사 제출 제안서 (assignment 와 1:1)
+// ============================================================
+// 정형 필드 (보험료, 담보, 갱신/환급) 는 AI 가 PDF 에서 파싱하므로 입력 받지 않음.
+// 설계사는 진설계 PDF (S3 저장) + 100자 한줄 요약만 작성.
+
+model Proposal {
+  id           String @id
+  assignmentId String @unique @map("assignment_id")
+
+  /// S3 object key — "proposals/{assignment_id}/{nanoid}.pdf". presigned URL 로 업로드 후 저장.
+  pdfS3Key     String  @map("pdf_s3_key")
+  /// HEAD 검증 시점 capture. 표시·집계용. null 허용.
+  pdfSizeBytes BigInt? @map("pdf_size_bytes")
+
+  /// 100자 한줄 요약 — 가입자 결과 페이지 말풍선에 그대로 노출 (verbatim).
+  note String
+
+  submittedAt DateTime @default(now()) @db.Timestamptz(6) @map("submitted_at")
+
+  assignment MatchAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@map("proposal")
+  @@schema("claim")
+}
+
+// ============================================================
+// app_settings — 운영 튜닝 값 (single row)
+// ============================================================
+// id 는 항상 'app' 한 row 만. CHECK constraint 로 single-row 강제 (migration SQL).
+// admin 화면이 mutation → 모든 매칭 흐름이 이 값을 함수로 읽음 (cache 금지).
+
+model AppSettings {
+  id String @id @default("app")
+
+  /// N — 가입자에게 노출할 후보 수
+  candidateCount         Int @default(5)  @map("candidate_count")
+  /// K — 가입자가 선택 가능한 최대 인원
+  selectLimit            Int @default(3)  @map("select_limit")
+  /// T — 설계사 제안서 제출 제한시간 (시간 단위)
+  submissionDeadlineHours Int @default(48) @map("submission_deadline_hours")
+  /// 미제출률 페널티 산정 윈도우 (최근 N건)
+  penaltyWindow          Int @default(10) @map("penalty_window")
+
+  updatedAt DateTime @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@map("app_settings")
+  @@schema("claim")
+}

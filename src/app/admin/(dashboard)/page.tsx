@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 
-import { listAllAgents } from "@/features/agents/queries";
+import { listAllPartners } from "@/features/partners/queries";
 import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
 import { listAllRequests } from "@/features/requests/queries";
 import {
@@ -19,10 +19,10 @@ export default async function AdminDashboardPage() {
   // dynamic 인디케이터 — Date.now() 가 prerender 단계에서 실행되지 않도록.
   await cookies();
 
-  const [requests, agents, settings] = await Promise.all([
+  const [requests, partners, settings] = await Promise.all([
     listAllRequests(),
-    listAllAgents(),
-    Promise.resolve(getSettings()),
+    listAllPartners(),
+    getSettings(),
   ]);
 
   // KPI
@@ -31,7 +31,7 @@ export default async function AdminDashboardPage() {
   ).length;
   const completed = requests.filter((r) => r.status === "completed").length;
   const rematching = requests.filter((r) => r.status === "rematching").length;
-  const activeAgents = agents.filter((a) => a.active).length;
+  const activePartners = partners.filter((a) => a.active).length;
 
   // 최근 요청 5건
   const recent = requests.slice(0, 5);
@@ -66,8 +66,8 @@ export default async function AdminDashboardPage() {
         />
         <Kpi
           label="활성 설계사"
-          value={activeAgents}
-          hint={`풀 전체 ${agents.length}명`}
+          value={activePartners}
+          hint={`풀 전체 ${partners.length}명`}
         />
       </section>
 

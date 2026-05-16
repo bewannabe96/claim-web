@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AlertIcon, StatusScreen } from "@/components/status-screen";
-import { getAgentById } from "@/features/agents/queries";
+import { getPartnerById } from "@/features/partners/queries";
 import { getAssignmentByToken } from "@/features/proposals/queries";
 import { getRequestById } from "@/features/requests/queries";
 import { nowMs } from "@/lib/wall-clock";
@@ -17,7 +17,7 @@ import { ProposalForm } from "./_components/proposal-form";
  *   submitted: "이미 제출하셨어요" 안내
  *   expired  : "마감되었어요" 안내
  */
-export default async function AgentAssignmentPage({
+export default async function PartnerAssignmentPage({
   params,
 }: {
   params: Promise<{ token: string }>;
@@ -26,11 +26,11 @@ export default async function AgentAssignmentPage({
   const assignment = await getAssignmentByToken(token);
   if (!assignment) notFound();
 
-  const [request, agent] = await Promise.all([
+  const [request, partner] = await Promise.all([
     getRequestById(assignment.requestId),
-    getAgentById(assignment.agentId),
+    getPartnerById(assignment.partnerId),
   ]);
-  if (!request || !agent) notFound();
+  if (!request || !partner) notFound();
 
   // 데드라인 도과 시 — 폼 노출 차단
   const now = nowMs();
@@ -72,7 +72,7 @@ export default async function AgentAssignmentPage({
   return (
     <ProposalForm
       token={token}
-      agentName={agent.name}
+      partnerName={partner.name}
       remainingMs={deadlineMs !== null ? deadlineMs - now : null}
       request={request}
     />

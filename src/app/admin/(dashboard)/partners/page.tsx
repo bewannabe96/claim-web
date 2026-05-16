@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
-import { listAllAgents } from "@/features/agents/queries";
+import { listAllPartners } from "@/features/partners/queries";
 import { cn } from "@/lib/utils";
 
 import {
@@ -19,18 +19,18 @@ const COLUMNS = [
   { key: "active", label: "활성", align: "center" as const },
 ];
 
-export default async function AdminAgentsPage() {
-  const agents = await listAllAgents();
-  const active = agents.filter((a) => a.active).length;
+export default async function AdminPartnersPage() {
+  const partners = await listAllPartners();
+  const active = partners.filter((a) => a.active).length;
 
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
         title="설계사 풀"
-        description={`전체 ${agents.length}명 · 활성 ${active}명`}
+        description={`전체 ${partners.length}명 · 활성 ${active}명`}
         action={
           <Link
-            href="/admin/agents/new"
+            href="/admin/partners/new"
             className={cn(buttonVariants(), "h-10 rounded-full px-5 text-sm")}
           >
             신규 설계사 등록
@@ -39,13 +39,13 @@ export default async function AdminAgentsPage() {
       />
 
       <DataTable columns={COLUMNS}>
-        {agents.map((a) => {
+        {partners.map((a) => {
           const miss = missRate(a.recentSubmissions);
           return (
             <tr key={a.id} className="hover:bg-[#fafafa] transition-colors">
               <Td>
                 <Link
-                  href={`/admin/agents/${a.id}`}
+                  href={`/admin/partners/${a.id}`}
                   className="flex items-center gap-3 group"
                 >
                   <span className="flex items-center justify-center w-9 h-9 rounded-full bg-black text-white text-sm font-bold shrink-0">

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { getAgentCardsByIds } from "@/features/agents/queries";
+import { getPartnerCardsByIds } from "@/features/partners/queries";
 import { getRequestById } from "@/features/requests/queries";
 import {
   FOCUSED_CONCERN_LABEL,
@@ -19,8 +19,8 @@ export default async function CandidatesPage({
   const req = await getRequestById(id);
   if (!req || req.status !== "selecting") notFound();
 
-  const candidates = await getAgentCardsByIds(req.candidateAgentIds);
-  const { selectLimit } = getSettings();
+  const candidates = await getPartnerCardsByIds(req.candidatePartnerIds);
+  const { selectLimit } = await getSettings();
 
   // 추천 근거가 된 매칭 신호 3개 — coverage · 직업 · 예산. coverage 를 맨 앞에
   // 두어 "이 보장을 봐줄 수 있는 설계사" 라는 매칭 의미를 가입자가 인지하게 함.

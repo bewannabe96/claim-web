@@ -29,7 +29,7 @@ export default async function DispatchedPage({
         <>
           선택하신{" "}
           <span className="font-semibold text-black">
-            {req.selectedAgentIds.length}명
+            {req.selectedPartnerIds.length}명
           </span>
           의 설계사가 제안서를 준비하고 있어요.
           {remainingHours !== null && (

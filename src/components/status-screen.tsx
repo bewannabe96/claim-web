@@ -13,7 +13,7 @@ type Href = Route | URL;
  * DESIGN.md — 모노크롬 기반. 거대한 이모지 대신 원 안 아이콘으로 통일.
  * `tone="positive"` 는 상태 아이콘 검정 배경, `tone="neutral"` 은 chip-gray.
  *
- * `showBrand` 기본 true. 부모 layout 이 이미 brand 를 그리는 영역(예: agent)
+ * `showBrand` 기본 true. 부모 layout 이 이미 brand 를 그리는 영역(예: partner)
  * 에서는 false 로 넘겨 중복을 피한다.
  */
 export function StatusScreen({

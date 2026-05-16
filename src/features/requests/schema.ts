@@ -155,7 +155,7 @@ export type Step1State =
  * ============================================================ */
 
 export const Step2Schema = z.object({
-  agentIds: z
+  partnerIds: z
     .array(z.string().min(1))
     .min(1, "최소 1명의 설계사를 선택해주세요."),
 });
@@ -258,8 +258,8 @@ export type PlanRequest = {
   id: string;
   step1: Step1Input;
   step3?: Step3Input;
-  candidateAgentIds: string[];   // N명 후보
-  selectedAgentIds: string[];    // K명까지 선택
+  candidatePartnerIds: string[];   // N명 후보
+  selectedPartnerIds: string[];    // K명까지 선택
   status: PlanRequestStatus;
   createdAt: string;
   dispatchedAt?: string;

@@ -1,9 +1,12 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
-import { submitProposal } from "@/features/proposals/actions";
+import {
+  requestPdfUpload,
+  submitProposal,
+} from "@/features/proposals/actions";
 import {
   FOCUSED_CONCERN_LABEL,
   TREATMENT_PERIOD_LABEL,
@@ -15,89 +18,172 @@ import { cn } from "@/lib/utils";
 import { GENDER_LABEL } from "@/types";
 
 const NOTE_MAX = 100;
+const PDF_MIME = "application/pdf";
+
+type Phase = "idle" | "presigning" | "uploading" | "submitting";
+
+type FieldErrors = {
+  _form?: string;
+  note?: string;
+  pdfS3Key?: string;
+};
 
 /**
- * 설계사 제안서 작성 폼.
+ * 설계사 제안서 작성 폼 — 2-step S3 업로드.
  *
  * 화면 흐름:
- * 1. 데드라인 카운트다운 + 가입자 컨텍스트 (Step1 + Step3 일부)
- * 2. 제안서 PDF 첨부
- * 3. 설계 한줄 요약 (100자, 인사말 제외)
- * 4. 제출 CTA
+ *   1. 데드라인 카운트다운 + 가입자 컨텍스트
+ *   2. 설계 한줄 요약 (100자, 인사말 제외)
+ *   3. 제안서 PDF 첨부 (진설계만)
+ *   4. 제출 CTA
  *
- * 정형 데이터 (보험료/담보/갱신환급 등) 는 AI 가 PDF 에서 추출 — 설계사는 PDF + 의도 한 줄만 입력.
+ * 제출 클릭 → presign → S3 직접 PUT → submitProposal action. PDF 바이트는 우리
+ * 함수를 거치지 않음 (Vercel body 한도 회피 + 메모리 효율).
+ *
  * 휴대폰 번호는 노출하지 않음 — 가입자 PII 는 결과 화면의 "문자 받기" 통해 platform 이 relay.
  */
 export function ProposalForm({
   token,
-  agentName,
+  partnerName,
   remainingMs,
   request,
 }: {
   token: string;
-  agentName: string;
+  partnerName: string;
   remainingMs: number | null;
   request: PlanRequest;
 }) {
-  const submitWithToken = submitProposal.bind(null, token);
-  const [state, formAction, pending] = useActionState(
-    submitWithToken,
-    undefined,
-  );
+  const [note, setNote] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [, startTransition] = useTransition();
 
-  const errors = state && "errors" in state ? state.errors : undefined;
+  const pending = phase !== "idle";
+  const disabled = pending || !file || note.trim().length === 0;
+
+  function busyLabel(): string {
+    if (phase === "presigning") return "업로드 준비 중...";
+    if (phase === "uploading") return "PDF 업로드 중...";
+    if (phase === "submitting") return "제출 중...";
+    return "제안서 제출";
+  }
+
+  async function handleSubmit() {
+    if (!file) {
+      setErrors({ pdfS3Key: "제안서 PDF를 첨부해주세요." });
+      return;
+    }
+    if (note.trim().length === 0) {
+      setErrors({ note: "설계 한줄 요약을 작성해주세요." });
+      return;
+    }
+    setErrors({});
+
+    startTransition(async () => {
+      // 1. presign
+      setPhase("presigning");
+      const presign = await requestPdfUpload(token);
+      if (!presign?.ok) {
+        setPhase("idle");
+        setErrors({ _form: presign?.errors?._form?.[0] ?? "업로드 준비 실패" });
+        return;
+      }
+
+      // 2. S3 PUT — 클라가 직접
+      setPhase("uploading");
+      try {
+        const putRes = await fetch(presign.url, {
+          method: "PUT",
+          headers: { "Content-Type": PDF_MIME },
+          body: file,
+        });
+        if (!putRes.ok) {
+          setPhase("idle");
+          setErrors({ pdfS3Key: "PDF 업로드에 실패했어요. 다시 시도해주세요." });
+          return;
+        }
+      } catch {
+        setPhase("idle");
+        setErrors({ pdfS3Key: "PDF 업로드에 실패했어요. 다시 시도해주세요." });
+        return;
+      }
+
+      // 3. submit — server HEAD 검증 + DB insert
+      setPhase("submitting");
+      const result = await submitProposal(token, {
+        pdfS3Key: presign.s3Key,
+        note,
+      });
+      // ok=true 면 server 가 redirect 하므로 여기 도달 안 함.
+      if (result && "errors" in result && result.errors) {
+        setPhase("idle");
+        setErrors({
+          _form: result.errors._form?.[0],
+          note: result.errors.note?.[0],
+          pdfS3Key: result.errors.pdfS3Key?.[0],
+        });
+      }
+    });
+  }
 
   return (
     <main className="flex flex-col flex-1 px-6 pt-6 pb-8 bg-white">
-      {/* 인사 + 데드라인 */}
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">
-          {agentName} 설계사님
+          {partnerName} 설계사님
           <br />새 제안서 요청이 도착했어요
         </h1>
         {remainingMs !== null && <DeadlineBadge initialMs={remainingMs} />}
       </header>
 
-      {/* 가입자 컨텍스트 */}
       <CustomerContext request={request} />
 
-      {/* 폼 */}
-      <form action={formAction} className="mt-8 flex flex-col gap-6">
+      <div className="mt-8 flex flex-col gap-6">
         <Section
           title="설계 한줄 요약"
           hint="인사말은 빼고 어떤 점에 집중해서 설계했는지 100자 이내로 알려주세요. 가입자 결과 페이지 상단에 그대로 노출됩니다."
         >
-          <NoteInput name="note" maxLength={NOTE_MAX} />
-          {errors?.note?.[0] && (
-            <p className="text-xs text-red-600">{errors.note[0]}</p>
-          )}
+          <NoteInput
+            value={note}
+            onChange={setNote}
+            maxLength={NOTE_MAX}
+            disabled={pending}
+          />
+          {errors.note && <p className="text-xs text-red-600">{errors.note}</p>}
         </Section>
 
         <Section title="제안서 PDF" hint="가설계는 받지 않습니다.">
-          <FileInput name="pdf" accept="application/pdf" />
-          {errors?.pdfFileName?.[0] && (
-            <p className="text-xs text-red-600">{errors.pdfFileName[0]}</p>
+          <FileInput
+            file={file}
+            onChange={setFile}
+            accept={PDF_MIME}
+            disabled={pending}
+          />
+          {errors.pdfS3Key && (
+            <p className="text-xs text-red-600">{errors.pdfS3Key}</p>
           )}
         </Section>
 
-        {errors?._form && (
+        {errors._form && (
           <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
-            {errors._form[0]}
+            {errors._form}
           </p>
         )}
 
         <Button
-          type="submit"
-          disabled={pending}
+          type="button"
+          onClick={handleSubmit}
+          disabled={disabled}
           className="w-full h-14 rounded-full text-base font-medium"
         >
-          {pending ? "제출 중..." : "제안서 제출"}
+          {busyLabel()}
         </Button>
 
         <p className="text-center text-xs text-[#afafaf]">
           제출 후에는 수정할 수 없어요
         </p>
-      </form>
+      </div>
     </main>
   );
 }
@@ -164,8 +250,6 @@ function ClockIcon() {
 
 /* ============================================================
  * 가입자 컨텍스트 — 휴대폰만 가린 가입자 요청 요약.
- * 이름은 노출 (PRD §5.6 의 "마음에 드는 설계사에게 즉시 문자" relay 가
- * 이미 가입자 ↔ 설계사 1:1 컨택 의사를 전제).
  * ============================================================ */
 
 function CustomerContext({ request }: { request: PlanRequest }) {
@@ -180,7 +264,6 @@ function CustomerContext({ request }: { request: PlanRequest }) {
         가입자 요청
       </p>
 
-      {/* 헤더: 이름 + 한 줄 요약 */}
       <div className="flex flex-col gap-1">
         <h3 className="text-base font-bold text-black">{customerName}</h3>
         <p className="text-sm text-[#4b4b4b]">
@@ -190,7 +273,6 @@ function CustomerContext({ request }: { request: PlanRequest }) {
 
       <div className="h-px bg-[#efefef]" />
 
-      {/* 그리드 메타 */}
       <dl className="grid grid-cols-1 gap-y-3 text-sm">
         <Meta label="월 예상 보험료" value={budgetLabel} />
       </dl>
@@ -230,8 +312,6 @@ function ContextNote({ label, body }: { label: string; body: string }) {
  * 가입자가 요청서에 적은 "대비하고 싶은 보장" 표시.
  *  - broad : 한 줄 안내
  *  - focused: 선택한 concern chip 들
- *
- * 자유 텍스트 보충은 `additionalNotes` (별도 노트 카드) 가 담당.
  */
 function CoverageDisplay({ coverage }: { coverage: CoverageRequest }) {
   if (coverage.intent === "broad") {
@@ -330,21 +410,30 @@ function Section({
  * 한줄 요약 입력 — 100자 카운터 + 인사말 금지 안내.
  * 가입자 결과 페이지 상단 말풍선에 그대로 표시되므로 인사말/자기소개 제외, 설계 의도만.
  */
-function NoteInput({ name, maxLength }: { name: string; maxLength: number }) {
-  const [value, setValue] = useState("");
+function NoteInput({
+  value,
+  onChange,
+  maxLength,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  maxLength: number;
+  disabled?: boolean;
+}) {
   const remaining = maxLength - value.length;
   const nearLimit = remaining <= 10;
 
   return (
     <div className="flex flex-col gap-1.5">
       <textarea
-        name={name}
         rows={3}
         maxLength={maxLength}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
         placeholder="예: 가장 걱정되시는 암 보장에 집중했어요. 30대에 가입하시면 평생 같은 보험료라 부담이 적답니다."
-        className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10 leading-relaxed"
+        className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10 leading-relaxed disabled:opacity-60"
       />
       <p
         className={cn(
@@ -358,8 +447,17 @@ function NoteInput({ name, maxLength }: { name: string; maxLength: number }) {
   );
 }
 
-function FileInput({ name, accept }: { name: string; accept: string }) {
-  const [fileName, setFileName] = useState<string | null>(null);
+function FileInput({
+  file,
+  onChange,
+  accept,
+  disabled,
+}: {
+  file: File | null;
+  onChange: (f: File | null) => void;
+  accept: string;
+  disabled?: boolean;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -367,27 +465,27 @@ function FileInput({ name, accept }: { name: string; accept: string }) {
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="shrink-0 h-12 px-5 rounded-full text-sm font-medium bg-[#efefef] text-black hover:bg-[#e2e2e2] transition-colors"
+        disabled={disabled}
+        className="shrink-0 h-12 px-5 rounded-full text-sm font-medium bg-[#efefef] text-black hover:bg-[#e2e2e2] transition-colors disabled:opacity-60"
       >
         파일 선택
       </button>
       <span
         className={cn(
           "text-sm truncate",
-          fileName ? "text-black font-medium" : "text-[#afafaf]",
+          file ? "text-black font-medium" : "text-[#afafaf]",
         )}
       >
-        {fileName ?? "선택된 파일이 없어요"}
+        {file ? file.name : "선택된 파일이 없어요"}
       </span>
       <input
         ref={inputRef}
-        name={name}
         type="file"
         accept={accept}
         className="sr-only"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          setFileName(f ? f.name : null);
+          onChange(f ?? null);
         }}
       />
     </div>

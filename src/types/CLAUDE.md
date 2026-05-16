@@ -13,7 +13,7 @@
 
 ## 현재 보유
 
-- `Agent`, `Proposal`, `Customer` — MVP 단계 도메인 타입. **DB 도입 시 ORM이 생성하는 타입으로 교체** (drizzle: `InferSelectModel`, prisma: `Prisma.AgentGetPayload<...>`).
+- `Partner`, `Proposal`, `Customer` — MVP 단계 도메인 타입. **DB 도입 시 ORM이 생성하는 타입으로 교체** (drizzle: `InferSelectModel`, prisma: `Prisma.PartnerGetPayload<...>`).
 - `InsuranceCategory` (union literal) + `INSURANCE_CATEGORY_LABEL` (라벨 매핑) — UI 전반에 사용.
 
 ## ❌ 흔한 실수

@@ -75,11 +75,8 @@
    │  └─ dal.ts                   # Data Access Layer (세션 검증 + 쿼리)
    ├─ db/
    │  └─ schema.ts                # ORM 스키마
-   ├─ types/
-   │  └─ index.ts
-   └─ mocks/                      # MVP 단계 mock 데이터 (DB 붙으면 교체)
-      ├─ agents.ts
-      └─ proposals.ts
+   └─ types/
+      └─ index.ts
 ```
 
 **규칙**
@@ -87,8 +84,7 @@
 - **`_components`, `_lib`** (private folder) → 해당 라우트에서만 쓰는 컴포넌트/로직 콜로케이션. 언더스코어 prefix가 라우팅 시스템에서 제외시킴.
 - **`(marketing)`, `(app)`** (route group) → URL에 영향 주지 않고 layout만 분리. `(app)`은 인증 가드, `(marketing)`은 공개 영역에 다른 chrome 적용.
 - **`server/`** + 모든 파일에 `import 'server-only'` → 클라이언트 번들에 실수로 포함되면 빌드 실패. DB/세션을 다루는 모든 모듈의 표준.
-- **`features/`** → 앱이 커지면 라우트와 직교(orthogonal)한 도메인 모듈을 만들 자리. MVP 단계에선 비어둬도 됨.
-- **`mocks/`** → DAL 인터페이스(`server/dal.ts`)는 mock과 실제 DB가 동일한 시그니처를 가지도록 설계. 추후 교체 시 호출부 무수정.
+- **`features/`** → 라우트와 직교(orthogonal)한 도메인 모듈. 각 도메인은 `schema.ts` (zod) + `queries.ts` (server-only read) + `actions.ts` (use server write).
 
 ---
 
@@ -208,11 +204,11 @@ export default config
 ```ts
 import { cacheLife, cacheTag } from 'next/cache'
 
-export async function getAgent(id: string) {
+export async function getPartner(id: string) {
   'use cache'
-  cacheTag(`agent-${id}`)
+  cacheTag(`partner-${id}`)
   cacheLife('hours')
-  return db.agents.findById(id)
+  return db.partners.findById(id)
 }
 ```
 
@@ -247,7 +243,7 @@ export async function getAgent(id: string) {
 import { z } from 'zod'
 
 export const RequestProposalSchema = z.object({
-  agentId: z.string().min(1),
+  partnerId: z.string().min(1),
   message: z.string().min(10).max(1000),
 })
 
@@ -271,7 +267,7 @@ export async function requestProposal(
   const session = await requireSession()
 
   const parsed = RequestProposalSchema.safeParse({
-    agentId: formData.get('agentId'),
+    partnerId: formData.get('partnerId'),
     message: formData.get('message'),
   })
   if (!parsed.success) return { errors: parsed.error.flatten().fieldErrors }
@@ -287,16 +283,16 @@ export async function requestProposal(
 ```
 
 ```tsx
-// src/app/(app)/agents/[id]/_components/request-form.tsx
+// src/app/(app)/partners/[id]/_components/request-form.tsx
 'use client'
 import { useActionState } from 'react'
 import { requestProposal } from '@/features/proposals/actions'
 
-export function RequestProposalForm({ agentId }: { agentId: string }) {
+export function RequestProposalForm({ partnerId }: { partnerId: string }) {
   const [state, action, pending] = useActionState(requestProposal, undefined)
   return (
     <form action={action}>
-      <input type="hidden" name="agentId" value={agentId} />
+      <input type="hidden" name="partnerId" value={partnerId} />
       <textarea name="message" />
       {state?.errors?.message && <p>{state.errors.message[0]}</p>}
       <button disabled={pending}>제안 요청</button>
@@ -545,7 +541,7 @@ MVP 단계에서 바로 잡고 갈 결정:
 1. **`next.config.ts`에 `cacheComponents: true`, `typedRoutes: true` 추가.**
 2. **`src/server/dal.ts`** 만들어서 mock 데이터 접근도 DAL 시그니처로 통일 (DB 붙이면 구현만 교체).
 3. **route group 도입**: `(marketing)` (랜딩/설계사 둘러보기) vs `(app)` (제안서 관리).
-4. **`features/proposals/` + `features/agents/`** 분리, 각 폴더에 `schema.ts` (zod) / `actions.ts` (`'use server'`) / `queries.ts` (`'server-only'`).
+4. **`features/proposals/` + `features/partners/`** 분리, 각 폴더에 `schema.ts` (zod) / `actions.ts` (`'use server'`) / `queries.ts` (`'server-only'`).
 5. **shadcn 사용 시 `render` prop 패턴** 통일 (이미 [src/app/page.tsx](../src/app/page.tsx)에서 `buttonVariants()` 사용 중).
 6. **검색/필터는 `nuqs`** 도입 검토. Zustand는 보류.
 7. **`@t3-oss/env-nextjs`** 도입 — env 검증을 처음부터 강제.

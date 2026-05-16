@@ -3,12 +3,12 @@ import Link from "next/link";
 import { BrandMark } from "@/components/brand-mark";
 
 /**
- * (agent) 레이아웃 — 설계사 영역.
+ * (partner) 레이아웃 — 설계사 영역.
  * 일회용 토큰 진입과 로그인 진입 두 흐름이 공존.
  *
  * DESIGN.md — 모노크롬 헤더, 워드마크 옆에 작은 sub-mark.
  */
-export default function AgentLayout({
+export default function PartnerLayout({
   children,
 }: {
   children: React.ReactNode;

@@ -5,11 +5,11 @@ import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  createAgent,
-  updateAgent,
-  type AgentMutationState,
-} from "@/features/agents/actions";
-import type { AgentInput } from "@/features/agents/schema";
+  createPartner,
+  updatePartner,
+  type PartnerMutationState,
+} from "@/features/partners/actions";
+import type { PartnerInput } from "@/features/partners/schema";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,20 +18,20 @@ import { cn } from "@/lib/utils";
  * `initial` 가 주어지면 update 모드 (수정), 없으면 create 모드 (신규).
  * 전문 보험(specialties) 필드는 현 도메인에서 제거됨 — 매칭은 활성 + 노출 분포로만 수행.
  */
-export function AgentForm({
-  agentId,
+export function PartnerForm({
+  partnerId,
   initial,
 }: {
-  agentId?: string;
-  initial?: AgentInput;
+  partnerId?: string;
+  initial?: PartnerInput;
 }) {
-  const isEdit = !!agentId;
-  const action = isEdit ? updateAgent.bind(null, agentId!) : createAgent;
+  const isEdit = !!partnerId;
+  const action = isEdit ? updatePartner.bind(null, partnerId!) : createPartner;
 
   const [state, formAction, pending] = useActionState<
-    AgentMutationState,
+    PartnerMutationState,
     FormData
-  >(action as (s: AgentMutationState, fd: FormData) => Promise<AgentMutationState>, undefined);
+  >(action as (s: PartnerMutationState, fd: FormData) => Promise<PartnerMutationState>, undefined);
 
   const [active, setActive] = useState<boolean>(initial?.active ?? true);
 
@@ -114,7 +114,7 @@ export function AgentForm({
               name="email"
               type="email"
               defaultValue={initial?.email ?? ""}
-              placeholder="agent@dopda.kr"
+              placeholder="partner@dopda.kr"
               className="h-11"
             />
           </Field>

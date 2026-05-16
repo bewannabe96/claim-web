@@ -13,15 +13,15 @@
 비인증 페이지는 사용자별 분기가 없으므로 **`'use cache'` 적극 활용 가능**:
 
 ```ts
-export async function listFeaturedAgents() {
+export async function listFeaturedPartners() {
   'use cache'
-  cacheTag('agents-featured')
+  cacheTag('partners-featured')
   cacheLife('hours')
-  return db.agents.findFeatured()
+  return db.partners.findFeatured()
 }
 ```
 
-설계사 데이터가 바뀔 때 admin 액션에서 `revalidateTag('agents-featured', 'minutes')`.
+설계사 데이터가 바뀔 때 admin 액션에서 `revalidateTag('partners-featured', 'minutes')`.
 
 ## 인증이 필요한 인터랙션
 
@@ -29,7 +29,7 @@ export async function listFeaturedAgents() {
 - 페이지 자체는 비인증으로 보여줌.
 - Server Action 안에서 `requireSession()` 호출 — 비로그인 사용자는 자동으로 `/login` redirect.
 
-상세 페이지 → 폼 → 액션 → 인증 체크 패턴. [agents/[id]/page.tsx](agents/[id]/page.tsx) 참조.
+상세 페이지 → 폼 → 액션 → 인증 체크 패턴. [partners/[id]/page.tsx](partners/[id]/page.tsx) 참조.
 
 ## 레이아웃
 

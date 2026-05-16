@@ -148,7 +148,7 @@ export function SurrenderLossChart({
         viewBox={`0 0 ${W} ${H}`}
         className="w-full h-auto touch-none"
         role="img"
-        aria-label={`해지 시 손실 — ${active.agent.name} 강조`}
+        aria-label={`해지 시 손실 — ${active.partner.name} 강조`}
         onPointerMove={(e) => updateCursorFromPointer(e.clientX)}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);

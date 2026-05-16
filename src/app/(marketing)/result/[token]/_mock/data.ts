@@ -110,7 +110,7 @@ function buildCumulativeIncidence(
 
 export type ProposalData = {
   id: string;
-  agent: {
+  partner: {
     name: string;
     yearsOfExperience: number;
     trustMetric: string;
@@ -297,7 +297,7 @@ export const MOCK_PROPOSALS: ProposalData[] = [
   /* 김민수 — 비갱신 종합형, 균형 */
   {
     id: "proposal-a",
-    agent: {
+    partner: {
       name: "김민수",
       yearsOfExperience: 12,
       trustMetric: "고객 96%가 계속 함께해요",
@@ -349,7 +349,7 @@ export const MOCK_PROPOSALS: ProposalData[] = [
   /* 이지영 — 갱신 실속형, 저렴 */
   {
     id: "proposal-b",
-    agent: {
+    partner: {
       name: "이지영",
       yearsOfExperience: 8,
       trustMetric: "설명 꼼꼼도 업계 상위 5%",
@@ -398,7 +398,7 @@ export const MOCK_PROPOSALS: ProposalData[] = [
   /* 정대현 — 종신·연금 결합, 환급 강조 */
   {
     id: "proposal-c",
-    agent: {
+    partner: {
       name: "정대현",
       yearsOfExperience: 20,
       trustMetric: "한 곳에서 20년째 고객 관리",

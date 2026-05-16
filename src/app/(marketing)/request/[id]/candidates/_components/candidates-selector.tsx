@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { submitStep2 } from "@/features/requests/actions";
-import type { AgentCard } from "@/features/agents/schema";
+import type { PartnerCard } from "@/features/partners/schema";
 import { cn } from "@/lib/utils";
 
 export function CandidatesSelector({
@@ -15,7 +15,7 @@ export function CandidatesSelector({
   subtitle,
 }: {
   requestId: string;
-  candidates: AgentCard[];
+  candidates: PartnerCard[];
   selectLimit: number;
   subtitle: string;
 }) {
@@ -72,9 +72,9 @@ export function CandidatesSelector({
           {state.errors._form[0]}
         </p>
       )}
-      {state?.errors?.agentIds && (
+      {state?.errors?.partnerIds && (
         <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mt-4">
-          {state.errors.agentIds[0]}
+          {state.errors.partnerIds[0]}
         </p>
       )}
 
@@ -82,7 +82,7 @@ export function CandidatesSelector({
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] px-6 pt-3 pb-4 bg-white border-t border-[#efefef] shadow-[0_-4px_16px_rgba(0,0,0,0.04)] z-50">
         <form action={formAction}>
           {selected.map((id) => (
-            <input key={id} type="hidden" name="agentIds" value={id} />
+            <input key={id} type="hidden" name="partnerIds" value={id} />
           ))}
           <Button
             type="submit"
@@ -111,7 +111,7 @@ function CandidateCard({
   disabled,
   onToggle,
 }: {
-  card: AgentCard;
+  card: PartnerCard;
   selected: boolean;
   disabled: boolean;
   onToggle: () => void;

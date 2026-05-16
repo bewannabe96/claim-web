@@ -1,4 +1,4 @@
-export default function AgentLoginPage() {
+export default function PartnerLoginPage() {
   return (
     <main className="flex flex-col flex-1 px-6 pt-10 pb-8 bg-white">
       <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">

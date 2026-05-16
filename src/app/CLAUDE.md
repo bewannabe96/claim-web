@@ -6,7 +6,7 @@
 2. **모든 컴포넌트는 기본 Server Component.** 인터랙션 필요한 leaf만 `'use client'`.
 3. **데이터 fetch는 서버에서.** 클라이언트에서 fetch해서 lift-up 하지 않음.
 4. **인증 검사는 layout/page/action에서 DAL(`requireSession()`) 호출로.** `proxy.ts`에 의존하지 않음.
-5. **`<Link href>`는 typedRoutes 검증.** 동적 쿼리스트링은 URL 객체 형식: `href={{ pathname: "/agents", query: { category } }}`.
+5. **`<Link href>`는 typedRoutes 검증.** 동적 쿼리스트링은 URL 객체 형식: `href={{ pathname: "/partners", query: { category } }}`.
 
 ## 라우트 그룹 분리
 

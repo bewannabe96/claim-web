@@ -16,7 +16,6 @@
 | [server/](server/CLAUDE.md) | 서버 전용. DAL, 세션, DB 클라이언트. 모든 파일 `import 'server-only'` |
 | [lib/](lib/CLAUDE.md) | 순수 유틸리티 (서버/클라 양쪽 사용 가능) |
 | [types/](types/CLAUDE.md) | 도메인 타입 (zod에서 derive 못 하는 것만) |
-| [mocks/](mocks/CLAUDE.md) | MVP용 mock 데이터. DB 도입 시 폐기 |
 
 ## 어디에 새 코드를 둘까 — 의사결정 트리
 

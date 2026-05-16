@@ -23,7 +23,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agent Match — 보험 설계사 매칭",
+  title: "Partner Match — 보험 설계사 매칭",
   description:
     "관심 보장 분야를 입력하면 검증된 설계사가 맞춤 보험 제안서를 보내드립니다.",
 };

@@ -3,10 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { findMatchCandidates } from "@/features/agents/queries";
-import { MOCK_PLAN_REQUESTS } from "@/mocks/requests";
+import { findMatchCandidates } from "@/features/partners/queries";
+import { newId, newToken } from "@/lib/id";
+import { prisma } from "@/server/db/prisma";
 import { getSettings } from "@/server/settings";
 
+import { hasActiveRequestForPhone } from "./queries";
 import {
   OtpSchema,
   SendOtpSchema,
@@ -19,17 +21,14 @@ import {
   type Step1State,
   type Step2State,
 } from "./schema";
-import { hasActiveRequestForPhone } from "./queries";
 
 /* ============================================================
- * Step 1 — 요청서 작성 (전화번호 제외 모든 정보)
+ * Step 1 — 요청서 작성 (plan_request + medical_history + candidates 트랜잭션)
  * ============================================================
  *
- * 주의: "최종 생성"은 OTP 검증 시점이지만, 후보 노출 → 선택 단계는
- * URL 기반 (/request/[id]/candidates) 으로 흘러야 새로고침/뒤로가기가
- * 자연스러움. 그래서 MVP 에서는 이 시점에 "selecting" 레코드를 만들고,
- * 진짜 송부는 finalizeRequest 에서 수행. 클라이언트는 redirect 가
- * 아닌 결과(requestId)를 받아 로딩 UX 후 직접 navigate.
+ * 주의: "최종 송부"는 OTP 검증 시점 (finalize) 이지만, 후보 노출 → 선택 단계는
+ * URL 기반 (/request/[id]/candidates) 으로 흘러야 새로고침/뒤로가기가 자연스러움.
+ * 그래서 이 시점에 status='selecting' 으로 row 생성하고, dispatched 전환은 finalize.
  */
 
 export async function submitStep1(
@@ -69,19 +68,48 @@ export async function submitStep1(
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
 
-  const settings = getSettings();
+  // 매칭 후보 추출 (DB)
+  const settings = await getSettings();
   const candidates = await findMatchCandidates(settings.candidateCount);
 
-  const id = `req-${Date.now()}`;
-  MOCK_PLAN_REQUESTS.push({
-    id,
-    step1: parsed.data,
-    candidateAgentIds: candidates.map((c) => c.id),
-    selectedAgentIds: [],
-    status: "selecting",
-    createdAt: new Date().toISOString(),
-    rematchCount: 0,
-  });
+  // 부모 (plan_request) → 자식 (medical_history, candidates) 순서로 트랜잭션.
+  // FK 무결성 보장 + 일부만 들어가는 부분 실패 방지.
+  const id = newId();
+  await prisma.$transaction([
+    prisma.planRequest.create({
+      data: {
+        id,
+        gender: parsed.data.gender,
+        occupation: parsed.data.occupation,
+        monthlyBudgetMin: parsed.data.monthlyBudgetMin,
+        monthlyBudgetMax: parsed.data.monthlyBudgetMax,
+        coverage: parsed.data.coverage,
+        additionalNotes: parsed.data.additionalNotes ?? null,
+        status: "selecting",
+      },
+    }),
+    prisma.planRequestMedicalHistory.createMany({
+      data: parsed.data.medicalHistory.map((h, i) => ({
+        id: newId(),
+        requestId: id,
+        diagnosis: h.diagnosis,
+        treatmentPeriod: h.treatmentPeriod,
+        treatmentStartDate: new Date(h.treatmentStartDate),
+        hospitalizationDays: h.hospitalizationDays,
+        outpatientVisits: h.outpatientVisits,
+        hadSurgery: h.hadSurgery,
+        position: i,
+      })),
+    }),
+    prisma.planRequestCandidate.createMany({
+      data: candidates.map((c, i) => ({
+        requestId: id,
+        partnerId: c.id,
+        candidateRank: i,
+        selected: false,
+      })),
+    }),
+  ]);
 
   revalidatePath("/admin/requests");
   return { ok: true, requestId: id };
@@ -130,38 +158,55 @@ export async function submitStep2(
   formData: FormData,
 ): Promise<Step2State> {
   const parsed = Step2Schema.safeParse({
-    agentIds: formData.getAll("agentIds"),
+    partnerIds: formData.getAll("partnerIds"),
   });
 
   if (!parsed.success) {
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
 
-  const settings = getSettings();
-  if (parsed.data.agentIds.length > settings.selectLimit) {
+  const settings = await getSettings();
+  if (parsed.data.partnerIds.length > settings.selectLimit) {
     return {
       ok: false,
       errors: {
-        agentIds: [`최대 ${settings.selectLimit}명까지 선택 가능합니다.`],
+        partnerIds: [`최대 ${settings.selectLimit}명까지 선택 가능합니다.`],
       },
     };
   }
 
-  const req = MOCK_PLAN_REQUESTS.find((r) => r.id === requestId);
+  // 요청 상태 + 후보 유효성 확인
+  const req = await prisma.planRequest.findUnique({
+    where: { id: requestId },
+    include: { candidates: { select: { partnerId: true } } },
+  });
   if (!req || req.status !== "selecting") {
     return { ok: false, errors: { _form: ["요청을 찾을 수 없습니다."] } };
   }
-
-  // 선택된 ID가 후보 안에 있는지 검증
-  const valid = parsed.data.agentIds.every((id) =>
-    req.candidateAgentIds.includes(id),
-  );
-  if (!valid) {
+  const candidateIds = new Set(req.candidates.map((c) => c.partnerId));
+  const allValid = parsed.data.partnerIds.every((id) => candidateIds.has(id));
+  if (!allValid) {
     return { ok: false, errors: { _form: ["잘못된 설계사 선택입니다."] } };
   }
 
-  req.selectedAgentIds = parsed.data.agentIds;
-  req.status = "confirming";
+  // selected 갱신 + status 전환 — 트랜잭션.
+  // 1) 전체 후보 selected=false 초기화 (이전 선택 흔적 제거)
+  // 2) 선택된 ID 만 selected=true
+  // 3) plan_request.status = 'confirming'
+  await prisma.$transaction([
+    prisma.planRequestCandidate.updateMany({
+      where: { requestId },
+      data: { selected: false },
+    }),
+    prisma.planRequestCandidate.updateMany({
+      where: { requestId, partnerId: { in: parsed.data.partnerIds } },
+      data: { selected: true },
+    }),
+    prisma.planRequest.update({
+      where: { id: requestId },
+      data: { status: "confirming" },
+    }),
+  ]);
 
   redirect(`/request/${requestId}/confirm`);
 }
@@ -175,6 +220,8 @@ const DEMO_OTP = "000000";
 /**
  * 인증번호 전송 — MVP 에서는 실제 SMS 발송 없이 휴대폰 번호 형식만 검증.
  * 같은 번호로 진행 중인 다른 요청이 있으면 차단 (현재 요청은 제외).
+ *
+ * Supabase Auth phone provider 전환은 별도 step.
  */
 export async function sendOtp(
   requestId: string,
@@ -207,8 +254,10 @@ export async function sendOtp(
 /**
  * 동의 단계 최종 제출 — 동의 + 휴대폰 번호 + OTP 코드 한꺼번에 검증/저장.
  *
- * 검증 통과 시 status="dispatched" 로 전환, 결과 토큰 발급, 알림톡/Assignment
- * 생성 (TODO). MVP DEMO_OTP="000000" 로 모든 검증 통과.
+ * 검증 통과 시 status='dispatched' 로 전환, 결과 토큰 발급, 선택된 설계사
+ * 각각에 match_assignment 생성 (한 트랜잭션). MVP DEMO_OTP='000000'.
+ *
+ * TODO: 알림톡 발송 — 실 서비스 단계에서 외부 API 호출.
  */
 export async function finalizeRequest(
   requestId: string,
@@ -222,7 +271,6 @@ export async function finalizeRequest(
     consentThirdParty: formData.get("consentThirdParty"),
     consentMessaging: formData.get("consentMessaging"),
   });
-
   if (!parsed.success) {
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
@@ -236,44 +284,71 @@ export async function finalizeRequest(
     return { ok: false, errors: { code: ["인증번호가 올바르지 않습니다."] } };
   }
 
-  // 3) 요청 상태 확인
-  const req = MOCK_PLAN_REQUESTS.find((r) => r.id === requestId);
+  // 3) 요청 상태 + 선택된 후보 확인
+  const req = await prisma.planRequest.findUnique({
+    where: { id: requestId },
+    select: {
+      id: true,
+      status: true,
+      candidates: {
+        where: { selected: true },
+        select: { partnerId: true },
+      },
+    },
+  });
   if (!req || req.status !== "confirming") {
     return { ok: false, errors: { _form: ["요청 상태가 올바르지 않습니다."] } };
   }
+  if (req.candidates.length === 0) {
+    return { ok: false, errors: { _form: ["선택된 설계사가 없습니다."] } };
+  }
 
-  // 4) 다시 한번 phone 중복 체크 (sendOtp 이후 다른 요청이 들어왔을 수 있음)
+  // 4) 다시 한번 phone 중복 체크 (sendOtp 이후 다른 요청이 들어왔을 수 있음).
+  //    Race-condition 최종 방어선은 DB 의 partial unique index.
   if (await hasActiveRequestForPhone(parsed.data.phone, requestId)) {
     return {
       ok: false,
-      errors: {
-        _form: ["같은 번호로 진행 중인 요청이 있습니다."],
-      },
+      errors: { _form: ["같은 번호로 진행 중인 요청이 있습니다."] },
     };
   }
 
-  // 5) 저장 + 디스패치 전환
-  const settings = getSettings();
+  // 5) 저장 + dispatched 전환 + match_assignment 생성 — 한 트랜잭션.
+  //    한 쪽만 성공하면 정합 깨짐 (요청만 dispatched 인데 설계사한테 슬롯 없음 등).
+  const settings = await getSettings();
   const now = new Date();
   const deadline = new Date(
     now.getTime() + settings.submissionDeadlineHours * 3600 * 1000,
   );
 
-  req.step3 = parsed.data;
-  req.status = "dispatched";
-  req.dispatchedAt = now.toISOString();
-  req.deadlineAt = deadline.toISOString();
-  req.resultToken = randomToken();
+  await prisma.$transaction([
+    prisma.planRequest.update({
+      where: { id: requestId },
+      data: {
+        name: parsed.data.name,
+        phone: parsed.data.phone,
+        // Step3 검증 통과 시점에 두 consent 모두 literal "on" 으로 강제됨.
+        consentThirdParty: true,
+        consentMessaging: true,
+        status: "dispatched",
+        dispatchedAt: now,
+        deadlineAt: deadline,
+        resultToken: newToken(),
+      },
+    }),
+    prisma.matchAssignment.createMany({
+      data: req.candidates.map((c) => ({
+        id: newId(),
+        requestId,
+        partnerId: c.partnerId,
+        token: newToken(),
+        status: "pending",
+        createdAt: now,
+      })),
+    }),
+  ]);
 
-  // TODO: 선택된 설계사들에게 알림톡 발송 + Assignment 생성
+  // TODO: 알림톡 발송 — 실 서비스 단계에서 외부 API 호출.
 
   revalidatePath("/admin/requests");
   redirect(`/request/${requestId}/dispatched`);
-}
-
-function randomToken(): string {
-  return (
-    Math.random().toString(36).slice(2, 10) +
-    Math.random().toString(36).slice(2, 10)
-  );
 }

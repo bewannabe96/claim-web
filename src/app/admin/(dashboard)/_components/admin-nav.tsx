@@ -8,10 +8,10 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/admin", label: "대시보드", exact: true },
   { href: "/admin/requests", label: "요청 모니터링", exact: false },
-  { href: "/admin/agents", label: "설계사 풀", exact: false },
+  { href: "/admin/partners", label: "설계사 풀", exact: false },
   { href: "/admin/settings", label: "시스템 설정", exact: false },
 ] as const satisfies ReadonlyArray<{
-  href: "/admin" | "/admin/requests" | "/admin/agents" | "/admin/settings";
+  href: "/admin" | "/admin/requests" | "/admin/partners" | "/admin/settings";
   label: string;
   exact: boolean;
 }>;
