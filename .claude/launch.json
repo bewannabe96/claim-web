@@ -4,21 +4,7 @@
     {
       "name": "next-dev",
       "runtimeExecutable": "/Users/bewannabe/.nvm/versions/node/v20.19.5/bin/pnpm",
-      "runtimeArgs": ["dev"]
-    },
-    {
-      "name": "next-start",
-      "runtimeExecutable": "/Users/bewannabe/.nvm/versions/node/v20.19.5/bin/pnpm",
-      "runtimeArgs": ["start"],
-      "autoPort": true
-    },
-    {
-      "name": "next-start-knock-test",
-      "runtimeExecutable": "sh",
-      "runtimeArgs": [
-        "-c",
-        "PATH=/Users/bewannabe/.nvm/versions/node/v20.19.5/bin:$PATH ADMIN_KNOCK_PATH=__ops-test-xyz123 pnpm start"
-      ],
+      "runtimeArgs": ["dev"],
       "autoPort": true
     }
   ]
