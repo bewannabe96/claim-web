@@ -1,5 +1,5 @@
 import {
-  type AnalysisReportV4,
+  type AnalysisReportV5,
   type CategoryPayout,
 } from "./analysis-schema";
 import { compareCategoryByLabel } from "./category-labels";
@@ -21,7 +21,7 @@ import { compareCategoryByLabel } from "./category-labels";
 export type RoiPoint = { age: number; roi: number };
 
 export function computeRoiSeries(
-  report: AnalysisReportV4,
+  report: AnalysisReportV5,
   category: string,
   startAge: number,
 ): RoiPoint[] {
@@ -64,7 +64,7 @@ export type ScenarioCard = {
  * 표시 의미는 동일.) 결과는 한글 라벨 가나다순.
  */
 export function unionCategoryScenarios(
-  reports: readonly AnalysisReportV4[],
+  reports: readonly AnalysisReportV5[],
 ): ScenarioCard[] {
   const seen = new Set<string>();
   const cards: ScenarioCard[] = [];
@@ -88,7 +88,7 @@ export function unionCategoryScenarios(
  *  - reports 가 비면 [] 반환
  */
 export function intersectionTopCategories(
-  reports: readonly AnalysisReportV4[],
+  reports: readonly AnalysisReportV5[],
   priority: readonly string[],
   n: number,
 ): string[] {

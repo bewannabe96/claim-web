@@ -45,6 +45,41 @@
   forgery 1차 방어 (`isProposalKeyForAssignment`) 가능. submit 단계의 HEAD 가 2차 방어.
 - **Size 한도**: `PROPOSAL_PDF_MAX_BYTES` (default 10MB) — presigned PUT 으론 강제 못 함, HEAD-then-reject 방식.
 
+## SQS (분석 파이프라인 잡 큐)
+
+- **큐 URL**: `SQS_ANALYSIS_QUEUE_URL` env 로 지정. AWS_REGION/ACCESS_KEY 는 위 S3 와 동일 IAM user 공유.
+- **IAM 정책 추가**:
+  ```json
+  {
+    "Effect": "Allow",
+    "Action": ["sqs:SendMessage"],
+    "Resource": "arn:aws:sqs:<region>:<account>:<queue-name>"
+  }
+  ```
+- **발행 시점**: `submitProposal` 액션의 DB 트랜잭션 commit 직후. 실패는 로깅 (graceful) — DB 는 이미 저장됨, 누락 메시지는 별도 backfill 잡으로 재발행.
+- **페이로드**: `{ request_id, graph: "proposal_analysis", input: { s3_key }, webhook: { url }, metadata: { proposal_id, plan_request_id } }`. `request_id` 는 메시지마다 새로 생성하는 UUID (correlation/logging 용). 우리 도메인 식별은 `metadata.*_id` 가 책임. 소비자는 eightytwo_judge.
+- **콜백 URL**: `ANALYSIS_CALLBACK_URL` env. eightytwo_judge 가 분석 완료 시 그 URL 로 POST → `/api/webhooks/eightytwo-judge-analysis` 라우트 처리. dev 에선 ngrok 같은 tunnel 필요.
+
+## 분석 완료 웹훅
+
+- **라우트**: `/api/webhooks/eightytwo-judge-analysis` (POST) — [src/app/api/webhooks/eightytwo-judge-analysis/route.ts](../app/api/webhooks/eightytwo-judge-analysis/route.ts).
+- **인증**: HMAC-SHA256. `ANALYSIS_WEBHOOK_SECRET` env 의 secret 으로 raw body 를 HMAC → `X-Signature: sha256=<hex>` 헤더. 우리 라우트가 동일 계산 후 `timingSafeEqual` 비교.
+- **페이로드**:
+  ```
+  { request_id, status: "succeeded"|"failed", result: AnalysisReportV5|null,
+    error: { code, message }|null,
+    metadata: { proposal_id, plan_request_id }, duration_ms }
+  ```
+  `metadata.*` 는 우리가 SQS metadata 로 실어 보낸 값이 그대로 passthrough. `request_id` 는 발행 시 생성한 UUID 가 echo 되어 옴 (correlation/log 용, DB 식별엔 사용 안 함).
+- **동작**:
+  - `failed` → 로그만 (proposal.analyzedAt=null 유지, 발신측 재시도 가능).
+  - `succeeded` → 트랜잭션 안에서:
+    1. `proposal.analyzedAt = now()` (WHERE id + assignment.requestId(=plan_request_id) 매치 + analyzedAt IS NULL → 첫 콜백만 기록, 페이로드 위조 차단, race-free).
+    2. `updated.count===1` 이면 `proposal_analysis_report` INSERT (proposalId 1:1, schemaVersion=result.schema_version, report=result 본문, durationMs).
+    트랜잭션 후, plan_request 의 **모든 match_assignment** 가 submitted + 그 proposal 이 analyzed 인 경우에만 `plan_request.status='analyzing' → 'completed'`. pending/expired assignment 가 하나라도 있으면 전이 안 함 (assignment 총수 vs fully-analyzed 수 비교).
+- **저장 책임**: 이 웹훅이 분석 리포트의 단일 writer. read 는 [features/proposals/queries.ts](../features/proposals/queries.ts) 의 `getAnalysisReport(proposalId)`.
+- **재시도 안전**: 정상 처리든 no-op 이든 200 반환. updateMany WHERE 절 + transaction 으로 첫 콜백만 INSERT 보장 (race-free). 발신측 중복 이벤트도 멱등.
+
 ## DB 컨벤션
 
 - **모든 PK 는 app-side nanoid(16)** — schema.prisma 에 `String @id` (DB DEFAULT 없음).
@@ -55,18 +90,19 @@
     안에서 한꺼번에 INSERT. `prisma.$transaction(...)` 으로 ACID 보장.
 - **토큰 (result_token, OTP 등)** 은 더 긴 entropy 필요 → `newToken()` (32자, 192비트).
 - **value/format/range 검증은 zod (앱 레이어) 단일 진실 공급원.** DB 의 CHECK
-  제약은 추가하지 않음 — 스키마 변경 시 두 곳 동기화 부담 회피.
-- **DB 는 구조 무결성만 책임** — PK / FK / NOT NULL / UNIQUE / RLS / DEFAULT.
+  제약은 사용하지 않음 — 스키마 변경 시 두 곳 동기화 부담 회피. 모든 도메인
+  무결성은 zod + Server Action 에서.
+- **DB 는 구조 무결성만 책임** — PK / FK / NOT NULL / UNIQUE / DEFAULT (+ Supabase 가
+  자동 enable 하는 RLS).
 - **race-safe 제약은 UNIQUE 인덱스로 표현** — 동시성 시점 이슈는 앱 레이어
-  단독으론 못 막으므로 partial unique index 등으로 DB 레벨 백업 (예: phone
-  중복 송부 방지, result_token 충돌 방지). Prisma 가 partial index 를 native 지원 안 해
-  생성된 migration SQL 을 수동 보강.
-- **모든 테이블 RLS enabled + 정책 0** = anon/authenticated deny-by-default.
-  REST API endpoint 는 살림 — 추후 client-side 가 필요해지면 정책만 추가.
-  Prisma 는 PostgreSQL 사용자로 직접 연결 (RLS 우회). Auth 도입 후 client-side 에서
-  Supabase JS 로 쿼리할 일이 생기면 그때 정책 추가.
-- **updated_at 자동 갱신**: DB 트리거 `tg_set_updated_at` 가 UPDATE 시 갱신.
-  Prisma 의 `@updatedAt` 은 사용 안 함 (트리거와 이중 처리됨).
+  단독으론 못 막으므로 UNIQUE 인덱스로 DB 레벨 백업 (예: result_token, assignment 의
+  (request, partner) 짝). Prisma 의 `@unique` / `@@unique` 로 표현 — schema.prisma
+  안에서 모두 처리.
+- **RLS — Supabase 가 새 테이블 자동 enable** (deny-by-default). 정책은 추가하지
+  않음 — Prisma 는 PostgreSQL service_role 로 직접 연결해 RLS 를 우회. 추후
+  client-side 에서 supabase-js 로 쿼리할 일이 생기면 그때만 정책 추가.
+- **updated_at 자동 갱신**: Prisma 의 `@updatedAt` 가 client 레벨에서 INSERT/UPDATE 시
+  timestamp 박음. DB 트리거 사용 안 함 — 모든 시점 컨트롤은 앱 레이어가 책임.
 
 ## DB 호출 패턴
 
@@ -154,9 +190,10 @@ const session = await getOptionalSession();
 
 ## 마이그레이션 워크플로우
 
-**Prisma 가 schema (테이블/컬럼/FK/일반 인덱스) 의 진실 공급원.** `prisma/migrations/`
-가 적용 이력. Prisma 가 모르는 부분 (partial unique index, 트리거, RLS 정책) 은
-생성된 migration SQL 을 수동 보강.
+**schema.prisma 가 DB 구조의 단일 진실 공급원.** 트리거/CHECK/partial index 같이
+Prisma 가 모르는 SQL 은 이 프로젝트에선 사용 안 함 (앱 레이어로 통일). RLS 는
+Supabase 가 자동 enable. 따라서 마이그레이션 SQL 은 Prisma 가 생성한 그대로
+사용 — 수동 보강 불필요.
 
 연결 분리: 런타임 쿼리는 `DATABASE_URL` (Transaction pooler 6543), migrate 명령은
 `DIRECT_URL` (Session pooler 5432). 무료 플랜에서 Direct connection (5432, 진짜 DB 호스트)
@@ -168,9 +205,7 @@ const session = await getOptionalSession();
 # 1. schema.prisma 수정
 # 2. dev migration 생성 + 적용 (DIRECT_URL 필요)
 pnpm prisma migrate dev --name <설명>
-# 3. 생성된 migration SQL 검수 — partial index / RLS 등 Prisma 가 모르는 부분
-#    수동 보강 필요시 SQL 직접 수정 후 prisma migrate dev 재실행
-# 4. Prisma client 재생성 (자동 호출됨, 수동 시 `pnpm prisma generate`)
+# 3. Prisma client 재생성 (자동 호출됨, 수동 시 `pnpm prisma generate`)
 ```
 
 production 배포:

@@ -71,7 +71,6 @@ admin/
 |---|---|
 | `SUPABASE_URL` | Supabase 프로젝트 URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Auth flow 용 (anon key 의 신 명칭). RLS 적용 받음. |
-| `SUPABASE_SECRET_KEY` | service_role — RLS 우회. 일반 admin 흐름엔 안 씀. |
 | `ADMIN_KNOCK_PATH` | (옵션, 권장) admin 경로 은닉. `/<value>` 진입 시 쿠키 발급. 미설정 시 knock 검사 스킵. |
 
 자세한 형식/회전 절차는 [.env.example](../../../.env.example).

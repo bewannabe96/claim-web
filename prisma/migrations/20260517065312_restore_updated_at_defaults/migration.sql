@@ -1,8 +1,0 @@
--- AlterTable
-ALTER TABLE "app_settings" ALTER COLUMN "updated_at" SET DEFAULT CURRENT_TIMESTAMP;
-
--- AlterTable
-ALTER TABLE "partner" ALTER COLUMN "updated_at" SET DEFAULT CURRENT_TIMESTAMP;
-
--- AlterTable
-ALTER TABLE "plan_request" ALTER COLUMN "updated_at" SET DEFAULT CURRENT_TIMESTAMP;

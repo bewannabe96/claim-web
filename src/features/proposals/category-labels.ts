@@ -2,8 +2,8 @@
  * 카테고리 한글 라벨 — eightytwo_judge 의 category_payouts.category 값을 가입자에게
  * 보여줄 한글로 매핑.
  *
- * 출처: 분석 리포트 샘플(v4) 의 24개 카테고리. 외부 schema 가 새 카테고리를 도입
- * 하면 여기 추가. 매핑 없는 카테고리는 raw key 로 fallback (`labelForCategory`).
+ * 출처: 분석 리포트 샘플의 24개 카테고리. 외부 schema 가 새 카테고리를 도입하면
+ * 여기 추가. 매핑 없는 카테고리는 raw key 로 fallback (`labelForCategory`).
  *
  * `KNOWN_CATEGORIES` 는 admin 우선순위 편집 화면의 후보 리스트로도 사용.
  * (현재는 정적 — 새 카테고리는 외부 schema 갱신 시 같이 들어옴.)

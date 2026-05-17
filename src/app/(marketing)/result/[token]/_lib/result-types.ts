@@ -1,7 +1,7 @@
 /**
  * 결과 페이지 컴포넌트들이 공유하는 데이터 shape 정의.
  *
- * adapt-proposal.ts 가 실 데이터 (Proposal + 분석 리포트 v4) → ProposalData 로
+ * adapt-proposal.ts 가 실 데이터 (Proposal + 분석 리포트) → ProposalData 로
  * 변환하면, 차트/카드 컴포넌트가 이 type 기준으로 그림. 차트 컴포넌트의 prop
  * 시그니처가 이 타입에 강결합돼 있어 별도 type 모듈로 추출.
  */
@@ -55,6 +55,12 @@ export type ProposalData = {
     yearsOfExperience: number;
     trustMetric: string;
   };
+
+  /**
+   * 분석 파이프라인 콜백 수신 여부 (proposal.analyzedAt 기반).
+   * false 면 차트/수치 필드는 fallback 값이고 UI 는 "분석 중" placeholder 로 그림.
+   */
+  analyzed: boolean;
 
   // 계약 컨텍스트
   insurer: string;

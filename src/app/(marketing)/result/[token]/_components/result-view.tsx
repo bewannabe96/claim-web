@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { AnalysisReportV4 } from "@/features/proposals/analysis-schema";
+import type { AnalysisReportV5 } from "@/features/proposals/analysis-schema";
 import { cn } from "@/lib/utils";
 
 import { type ProposalData } from "../_lib/result-types";
@@ -24,8 +24,8 @@ export function ResultView({
   scenarioPriority,
 }: {
   proposals: ProposalData[];
-  /** 제안서별 분석 리포트(v4). 키는 proposal.id. pdfHash 매칭 실패 시 entry 없음. */
-  reportsById?: Record<string, AnalysisReportV4>;
+  /** 제안서별 분석 리포트. 키는 proposal.id. 분석 미완료 proposal 은 entry 없음. */
+  reportsById?: Record<string, AnalysisReportV5>;
   /** admin 이 설정한 시나리오 우선순위 (app_settings.scenarioPriority). */
   scenarioPriority?: readonly string[];
 }) {
@@ -38,10 +38,10 @@ export function ResultView({
   // 모든 제안서의 분석 리포트 — chip union/intersection 계산용.
   // ProposalBody 가 reuse 되므로 ScenarioPickerRoiChart 의 recent/active state 는
   // 제안서 chip 탭 전환에도 유지됨.
-  const reports: AnalysisReportV4[] = reportsById
+  const reports: AnalysisReportV5[] = reportsById
     ? proposals
         .map((p) => reportsById[p.id])
-        .filter((r): r is AnalysisReportV4 => Boolean(r))
+        .filter((r): r is AnalysisReportV5 => Boolean(r))
     : [];
 
   function markContacted(id: string) {
@@ -50,7 +50,7 @@ export function ResultView({
 
   return (
     <div className="flex flex-col">
-      {/* Sticky chip 탭 — 아바타 + 이름 */}
+      {/* Sticky chip 탭 — 아바타 + 이름. 분석 안 된 proposal 은 우측에 pulse dot. */}
       <nav className="sticky top-0 z-10 bg-white border-b border-[#efefef] mt-6">
         <ul className="px-6 py-3 flex items-center gap-2 overflow-x-auto">
           {proposals.map((p, i) => {
@@ -78,6 +78,15 @@ export function ResultView({
                     {p.partner.name.charAt(0)}
                   </span>
                   {p.partner.name}
+                  {!p.analyzed && (
+                    <span
+                      className={cn(
+                        "w-1.5 h-1.5 rounded-full animate-pulse",
+                        selected ? "bg-white" : "bg-[#4b4b4b]",
+                      )}
+                      aria-label="분석 중"
+                    />
+                  )}
                 </button>
               </li>
             );
@@ -112,7 +121,7 @@ function ProposalBody({
 }: {
   proposal: ProposalData;
   proposals: ProposalData[];
-  reports: AnalysisReportV4[];
+  reports: AnalysisReportV5[];
   scenarioPriority: readonly string[];
   contacted: boolean;
   onContact: () => void;
@@ -151,7 +160,38 @@ function ProposalBody({
         </div>
       </div>
 
-      {/* 핵심 수치 — 보험사 / 매월 납입료 / 계약 구조 */}
+      {/* 분석 안 된 proposal — 데이터 섹션 placeholder 로 대체.
+       *   note + partner attribution 은 여전히 노출 (가용한 정보).
+       *   분석 완료 후 새로고침 안내. */}
+      {!proposal.analyzed && (
+        <section className="rounded-xl border border-dashed border-[#e2e2e2] p-8 flex flex-col items-center gap-3 text-center">
+          <div className="flex items-center gap-1.5">
+            <span
+              className="w-2 h-2 rounded-full bg-[#4b4b4b] animate-pulse"
+              aria-hidden
+            />
+            <span
+              className="w-2 h-2 rounded-full bg-[#4b4b4b] animate-pulse [animation-delay:0.15s]"
+              aria-hidden
+            />
+            <span
+              className="w-2 h-2 rounded-full bg-[#4b4b4b] animate-pulse [animation-delay:0.3s]"
+              aria-hidden
+            />
+          </div>
+          <p className="text-sm font-semibold text-black">
+            제안서 분석 중이에요
+          </p>
+          <p className="text-xs text-[#4b4b4b] leading-relaxed">
+            PDF 에서 보험료·담보·환급 정보를 추출하고 있어요.
+            <br />
+            보통 1–2분 정도 걸려요. 잠시 후 새로고침해 주세요.
+          </p>
+        </section>
+      )}
+
+      {/* 핵심 수치 — 보험사 / 매월 납입료 / 계약 구조. 분석 안 된 카드는 hide. */}
+      {proposal.analyzed && (
       <section className="rounded-xl bg-[#f8f8f8] p-5 flex flex-col gap-5">
         <div>
           <p className="text-xs text-[#4b4b4b]">{proposal.insurer}</p>
@@ -221,9 +261,11 @@ function ProposalBody({
           </li>
         </ul>
       </section>
+      )}
 
-      {/* ROI 그래프 — [recent₁, recent₂, recent₃, 🔍]. 검색 chip click 시 모달. */}
-      {reports.length > 0 ? (
+      {/* ROI 그래프 — [recent₁, recent₂, recent₃, 🔍]. 검색 chip click 시 모달.
+       *  reports 가 비어 있거나 현재 proposal 이 분석 안 된 경우 hide. */}
+      {proposal.analyzed && reports.length > 0 ? (
         <ScenarioPickerRoiChart
           proposal={proposal}
           proposals={proposals}
@@ -233,7 +275,9 @@ function ProposalBody({
       ) : null}
 
       {/* 해지 시 손실 — 회수 배율의 flip side: 아무 일 없이 해지하면 얼마 날리나 */}
-      <SurrenderLossChart proposals={proposals} activeId={proposal.id} />
+      {proposal.analyzed && (
+        <SurrenderLossChart proposals={proposals} activeId={proposal.id} />
+      )}
 
       {/* 설계사 attribution — 본문 끝에서 "이 한줄평의 작성자" 컨텍스트 */}
       <section className="rounded-xl border border-[#efefef] p-5">

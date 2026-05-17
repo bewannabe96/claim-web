@@ -1,22 +1,22 @@
 import { z } from "zod";
 
 /* ============================================================
- * 분석 리포트 (eightytwo_judge.proposal_analysis_reports) — schema v4
+ * 분석 리포트 (claim.proposal_analysis_report) — schema v5
  *
- * 외부 서비스(같은 팀, 별도 schema) 가 제공하는 PDF 분석 결과의 형태.
- * read-only — 우리는 query 로 받기만 함. 절대 쓰지 않음.
+ * 외부 분석 파이프라인 (eightytwo_judge) 가 콜백으로 보내는 결과의 형태.
+ * 우리 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 INSERT, queries.ts 의 wrapper 가 read.
  *
- * 운영 패턴: 매 schema 진화 시 row 교체 (현재 DB 에 항상 v4 한 row 만 존재).
+ * 운영 패턴: 매 schema 진화 시 row 교체 (현재 DB 에 v5 row 만 존재).
  * queries.ts 의 wrapper 가 CURRENT_REPORT_VERSION 으로 필터 고정 → 호출자는
- * 항상 "현재 지원 버전" 만 봄. 외부 schema 가 v5 로 진화하면:
- *   1. 새 row 가 v5 로 들어옴 (v4 row 삭제 또는 유지는 운영 결정)
- *   2. 이 파일을 v5 형태로 갱신, CURRENT_REPORT_VERSION = 5
+ * 항상 "현재 지원 버전" 만 봄. 외부가 v6 로 진화하면:
+ *   1. 웹훅이 새 콜백을 받아 schemaVersion=6 로 INSERT
+ *   2. 이 파일을 v6 형태로 갱신, CURRENT_REPORT_VERSION = 6
  *   3. parse() 가 실패하던 케이스가 다시 통과
  *
- * 같은 팀이 양쪽 코드를 동시 수정하는 운영 모델 — view 로 wrap 하지 않음.
+ * 양쪽 팀이 양쪽 코드를 동시 수정하는 운영 모델.
  * ============================================================ */
 
-export const CURRENT_REPORT_VERSION = 4 as const;
+export const CURRENT_REPORT_VERSION = 5 as const;
 
 /* ------------------------------------------------------------
  * headline — 계약 메타
@@ -31,7 +31,7 @@ export const RefundTypeSchema = z.enum(["no_refund"]);
 export type RefundType = z.infer<typeof RefundTypeSchema>;
 
 export const HeadlineSchema = z.object({
-  /** v4 신규 — 보험사명 (예: "NH농협손해보험"). */
+  /** 보험사명 (예: "NH농협손해보험"). */
   insurer: z.string(),
   /** 매월 실 납입 보험료 (원). */
   total_actual_premium: z.number().int(),
@@ -138,9 +138,17 @@ export type CoveragePayout = z.infer<typeof CoveragePayoutSchema>;
  * 최상위
  * ------------------------------------------------------------ */
 
-export const AnalysisReportV4Schema = z.object({
+/**
+ * 저장된 report 본문의 형태 (stored shape). DB 의 `report` jsonb 컬럼에 들어가는
+ * 그대로. 버전은 별도 컬럼 (`schema_version`) 으로 관리하므로 본문엔 안 들어감 —
+ * 웹훅이 페이로드의 `result.schema_version` 을 떼서 컬럼에 저장하고, 본문만 여기로.
+ *
+ * 인바운드 페이로드 검증 (schema_version 포함) 은 웹훅 라우트에서
+ * `.extend({ schema_version: z.literal(CURRENT_REPORT_VERSION) })` 로 처리.
+ */
+export const AnalysisReportV5Schema = z.object({
   headline: HeadlineSchema,
   refund_table: RefundTableSchema,
   coverage_payout: CoveragePayoutSchema,
 });
-export type AnalysisReportV4 = z.infer<typeof AnalysisReportV4Schema>;
+export type AnalysisReportV5 = z.infer<typeof AnalysisReportV5Schema>;
