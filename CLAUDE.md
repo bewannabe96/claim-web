@@ -20,6 +20,7 @@
 - `<Image priority>` → **`preload`**, `quality` 필수, `images.domains` → `remotePatterns`.
 - Parallel route 슬롯에 **`default.tsx` 없으면 빌드 실패**.
 - `<Link href>`는 typedRoutes 검증 — 동적 쿼리는 `href={{ pathname, query }}` 객체 형식.
+- **Client Component `useState` 는 Router Cache 가 보존** — soft nav 후 같은 라우트에 재진입하면 떠날 때 state 그대로 복원됨. fresh state 원하면 navigate 직전 명시적 reset (예: [step1-wizard.tsx](src/app/(marketing)/request/new/_components/step1-wizard.tsx)).
 
 ## 디렉토리 책임
 

@@ -135,15 +135,24 @@ export function Step1Wizard() {
       await new Promise((r) => setTimeout(r, remaining));
 
       if (result && "ok" in result && result.ok) {
-        router.push(`/request/${result.requestId}/candidates`);
-      } else {
-        const msg =
-          result && "errors" in result && result.errors?._form?.[0]
-            ? result.errors._form[0]
-            : "매칭에 실패했습니다. 다시 시도해주세요.";
-        setServerError(msg);
+        // Next.js Router Cache 가 client state 를 보존하므로 navigate 직전에
+        // 초기화 — 다음에 /request/new 로 돌아왔을 때 폼이 처음부터 보이도록.
+        // (그대로 두면 캐시된 phase="matching" 이 살아남아 진입 즉시 MatchingScreen.)
+        // startTransition 안이라 state 업데이트 + nav 가 batch 되어 flash 없음.
+        // replace 로 /request/new 가 history 에 남지 않게 함.
         setPhase("form");
+        setPhaseIdx(0);
+        setData({ medicalHistory: [], focusedConcerns: [] });
+        router.replace(`/request/${result.requestId}/candidates`);
+        return;
       }
+
+      const msg =
+        result && "errors" in result && result.errors?._form?.[0]
+          ? result.errors._form[0]
+          : "매칭에 실패했습니다. 다시 시도해주세요.";
+      setServerError(msg);
+      setPhase("form");
     });
   }
 
