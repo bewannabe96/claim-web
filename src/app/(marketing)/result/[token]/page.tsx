@@ -1,11 +1,18 @@
 import { notFound } from "next/navigation";
 
 import { BrandMark } from "@/components/brand-mark";
+import type { AnalysisReportV4 } from "@/features/proposals/analysis-schema";
+import {
+  getAnalysisReport,
+  listProposalCardsForRequest,
+  type ProposalCard,
+} from "@/features/proposals/queries";
 import { getRequestByResultToken } from "@/features/requests/queries";
+import { getSettings } from "@/server/settings";
 
 import { RematchingState } from "./_components/rematching-state";
 import { ResultView } from "./_components/result-view";
-import { MOCK_PROPOSALS, type ProposalData } from "./_mock/data";
+import { adaptProposal } from "./_lib/adapt-proposal";
 
 /**
  * 결과 열람 — 알림톡 일회용 토큰으로 진입.
@@ -15,22 +22,46 @@ import { MOCK_PROPOSALS, type ProposalData } from "./_mock/data";
  *   - 1건  → 단일 view (chip 탭 없음)
  *   - 2+건 → 본 흐름 (chip 탭으로 제안서 전환)
  *
- * fixture 단계 — 실 query 는 후속에서 supabase 로 교체. token 존재 여부만 검증.
+ * 데이터 흐름:
+ *   token → plan_request → submitted assignments + proposals + partners
+ *        ↓
+ *   각 proposal 의 pdfHash → eightytwo_judge.proposal_analysis_reports
+ *        ↓
+ *   adaptProposal(card, report) → 결과 페이지 컴포넌트가 기대하는 shape
  */
 export default async function ResultPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ count?: string }>;
 }) {
   const { token } = await params;
-  const sp = await searchParams;
   const req = await getRequestByResultToken(token);
   if (!req) notFound();
 
-  // fixture: ?count=0|1|3 으로 분기 시연 (없으면 3 = 본 흐름)
-  const proposals = filterProposals(sp.count);
+  // 실 데이터 — submitted proposal + 작성 설계사 카드.
+  const cards = await listProposalCardsForRequest(req.id);
+
+  // 각 proposal 의 분석 리포트(v4) — pdfHash 로 정확 매칭. hash 없으면 null.
+  // 우선순위 설정은 admin → app_settings.
+  const [settings, reportEntries] = await Promise.all([
+    getSettings(),
+    Promise.all(
+      cards.map(async (card) => {
+        const report = await loadReportForCard(card);
+        return [card.proposal.id, report] as const;
+      }),
+    ),
+  ]);
+  const reportsById: Record<string, AnalysisReportV4> = Object.fromEntries(
+    reportEntries.filter(
+      (e): e is readonly [string, AnalysisReportV4] => e[1] !== null,
+    ),
+  );
+
+  // 실 데이터 → 결과 페이지 컴포넌트가 기대하는 ProposalData shape 으로 변환.
+  const proposals = cards.map((card) =>
+    adaptProposal(card, reportsById[card.proposal.id] ?? null),
+  );
 
   return (
     <main className="flex flex-col flex-1 bg-white">
@@ -58,22 +89,24 @@ export default async function ResultPage({
       {proposals.length === 0 ? (
         <RematchingState />
       ) : (
-        <ResultView proposals={proposals} />
+        <ResultView
+          proposals={proposals}
+          reportsById={reportsById}
+          scenarioPriority={settings.scenarioPriority}
+        />
       )}
     </main>
   );
 }
 
 /**
- * fixture 분기 — `?count=0|1|3` URL 파라미터로 0건/1건/N건 시연 케이스 전환.
- * 실 데이터 연결 후 제거.
+ * 한 proposal card 의 분석 리포트 lookup. pdfHash 있어야 매칭. 없으면 null.
+ * (이전엔 s3_key 데모 fallback 이 있었으나 pdfHash 컬럼 도입 후 hash 정식 매칭만 사용.)
  */
-function filterProposals(count: string | undefined): ProposalData[] {
-  const n = Number(count);
-  if (count === "0") return [];
-  if (count === "1") return MOCK_PROPOSALS.slice(0, 1);
-  if (Number.isFinite(n) && n > 0 && n <= MOCK_PROPOSALS.length) {
-    return MOCK_PROPOSALS.slice(0, n);
-  }
-  return MOCK_PROPOSALS;
+async function loadReportForCard(
+  card: ProposalCard,
+): Promise<AnalysisReportV4 | null> {
+  const hash = card.proposal.pdfHash;
+  if (!hash) return null;
+  return getAnalysisReport(hash);
 }

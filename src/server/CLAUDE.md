@@ -12,7 +12,11 @@
 - `auth.ts` (TODO) — Supabase Auth 클라이언트 wrap. 인증 도입 시 추가
   (`@supabase/ssr` 의 `createServerClient` / `createBrowserClient` 패턴, 서버 cookie-based 세션).
 - `db/prisma.ts` — **Prisma client 싱글톤. 모든 DB 쿼리/트랜잭션의 단일 진입점.**
-- `s3.ts` — 제안서 PDF 업로드/다운로드용 S3 헬퍼. presigned PUT/GET URL + HEAD 검증.
+- `s3.ts` — 제안서 PDF 업로드/다운로드 S3 헬퍼. presigned PUT/GET URL + HEAD 검증
+  (`verifyUploadedObject`) + 본문 SHA-256 계산 (`fetchObjectSha256`, stream-based — 외부 분석 리포트와 join 할 hash).
+- `settings.ts` — single-row `app_settings` 로드/갱신. `SettingsPatch` 가 admin 폼에서 갱신
+  가능한 필드 (candidateCount / selectLimit / submissionDeadlineHours / penaltyWindow /
+  scenarioPriority).
 
 ## S3 버킷 설정 (제안서 PDF)
 

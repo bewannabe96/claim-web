@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
    *
    * 참고: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
    */
-  allowedDevOrigins: ["192.168.20.137", "172.30.1.77", "*.local"],
+  allowedDevOrigins: ["192.168.20.155", "172.30.1.77", "*.local"],
 };
 
 export default nextConfig;

@@ -1,6 +1,9 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import {
+  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -128,6 +131,42 @@ export async function verifyUploadedObject(
     if (size > env.PROPOSAL_PDF_MAX_BYTES) return "too-large";
     return { size };
   } catch {
+    return null;
+  }
+}
+
+/**
+ * 업로드된 PDF 본문의 SHA-256 hex (64자) 계산.
+ *
+ * eightytwo_judge 분석 리포트와 join key 로 사용. `submitProposal` 이 HEAD 검증
+ * 직후 호출 → `Proposal.pdfHash` 컬럼에 저장.
+ *
+ * stream-based — 본문을 메모리에 통째로 올리지 않고 chunk 단위로 hash 에 흘려
+ * 보냄. 10MB 이하 파일이라 buffer 방식도 충분하지만, 후속 한도 상향 대비.
+ *
+ * 실패 처리: GetObject 자체 실패 또는 Body 없음 시 null 반환. 호출자가 hash 없이
+ * proposal 을 저장할지 정함 (graceful — 분석 리포트 매칭만 못 함, 제출은 성공).
+ */
+export async function fetchObjectSha256(s3Key: string): Promise<string | null> {
+  const { env, client } = getS3();
+  try {
+    const res = await client.send(
+      new GetObjectCommand({
+        Bucket: env.S3_BUCKET_PROPOSALS,
+        Key: s3Key,
+      }),
+    );
+    const body = res.Body;
+    if (!body) return null;
+
+    const hash = createHash("sha256");
+    // SDK v3 의 Body 는 Node 환경에서 Readable (AsyncIterable<Uint8Array>).
+    for await (const chunk of body as AsyncIterable<Uint8Array>) {
+      hash.update(chunk);
+    }
+    return hash.digest("hex");
+  } catch (e) {
+    console.warn("[s3] fetchObjectSha256 failed for", s3Key, e);
     return null;
   }
 }

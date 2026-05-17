@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { newId } from "@/lib/id";
 import { prisma } from "@/server/db/prisma";
 import {
+  fetchObjectSha256,
   isProposalKeyForAssignment,
   presignProposalUpload,
   verifyUploadedObject,
@@ -115,6 +116,11 @@ export async function submitProposal(
     };
   }
 
+  // PDF 본문 SHA-256 — eightytwo_judge 분석 리포트와 join key.
+  // 실패해도 제출 자체는 진행 (graceful) — hash 가 null 이면 결과 페이지의 분석
+  // 리포트 매칭만 안 됨. 운영 모니터링으로 null hash 비율 추적 → 필요 시 backfill.
+  const pdfHash = await fetchObjectSha256(parsed.data.pdfS3Key);
+
   // 트랜잭션:
   //   1. proposal insert + assignment status='submitted'
   //   2. plan_request.status='dispatched' → 'analyzing' 전이 (첫 제출 시점)
@@ -127,6 +133,7 @@ export async function submitProposal(
         assignmentId: assignment.id,
         pdfS3Key: parsed.data.pdfS3Key,
         pdfSizeBytes: BigInt(head.size),
+        pdfHash,
         note: parsed.data.note,
       },
     }),

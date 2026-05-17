@@ -24,6 +24,7 @@ export type SettingsPatch = Partial<
     | "selectLimit"
     | "submissionDeadlineHours"
     | "penaltyWindow"
+    | "scenarioPriority"
   >
 >;
 

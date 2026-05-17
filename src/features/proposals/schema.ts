@@ -73,6 +73,12 @@ export type Proposal = {
   pdfS3Key: string;
   /** HEAD 검증 시점에 capture. presigned PUT 으론 size 강제 불가, 대신 사후 검증. */
   pdfSizeBytes: number | null;
+  /**
+   * PDF 본문 SHA-256 (hex, 64자). eightytwo_judge 의 분석 리포트와 join key.
+   * 업로드 직후 채워야 하나 백필 호환 위해 nullable. 채워진 proposal 만 분석
+   * 리포트 매칭이 가능하다.
+   */
+  pdfHash: string | null;
   note: string;
   submittedAt: string;
 };

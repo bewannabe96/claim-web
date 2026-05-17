@@ -33,7 +33,7 @@
 | `/request/[id]/candidates` | 매칭된 설계사 후보 카드 + 선택 (최대 selectLimit) | 가입자 | **W**: pr_cand.selected, pr.status=confirming · **R**: pr, pt, cfg | §5.2 | ✅ |
 | `/request/[id]/confirm` | 본인 인증 (이름·휴대폰·OTP) + 동의 + 요청 내용 검토 | 가입자 | **W**: pr.{name,phone,consent,status=dispatched,...}, assign(K개 생성) — 트랜잭션 · **R**: pr, cfg | §5.3 | ✅ (OTP는 demo `000000`) |
 | `/request/[id]/dispatched` | 송부 완료 안내 + 마감 시간 노출 | 누구나 (id 안다면) | **R**: pr | §5.3 | ✅ |
-| `/result/[token]` | 제안서 비교 — chip 탭으로 설계사 전환 + ROI / 해지손실 차트 + 보장 매칭 | 가입자(token) | **R**: pr (token 검증) · **mock**: 비교 데이터 (`_mock/data.ts`) | §5.6 | 🟡 partner 카드 / note 외엔 외부 AI 서비스 (analysis schema) 통합 대기 |
+| `/result/[token]` | 제안서 비교 — 설계사 chip 탭 / 시나리오 chip(top-3 + 검색) + ROI(log) 차트 + 해지손실 차트 + 보장 패널 | 가입자(token) | **R**: pr, assignment + proposal(+pdfHash) + partner, `eightytwo_judge.proposal_analysis_reports` (raw SQL), app_settings.scenario_priority | §5.6 | ✅ 분석 리포트 v4 연동 완료 (Proposal.pdfHash 매칭) |
 
 ---
 
@@ -171,4 +171,6 @@
 - `/partner/login` 실 구현 — Supabase Auth (email + password)
 - `/admin/login` 실 구현 — 같은 패턴
 - `/(auth)/*` 그룹 — 가입자 OTP → Supabase Auth phone provider 전환 시 위치
-- `/result/<token>` AI 결과 연동 — `analysis` schema 의 view (claim) 통해 실 ProposalData 읽기
+- 분석 리포트 카테고리별 incidence (발병률) 곡선 도입 — 현재 ROI 차트는 incidence 부재
+  로 발병률 area / 우측 y축 / 풀이 2번째 줄 모두 hide. v5 또는 product 상수로 채우면 자동 활성
+- 가입자 birthdate/age 컬럼 — adapter 의 `DEFAULT_CUSTOMER_AGE=33` hardcode 제거 트리거

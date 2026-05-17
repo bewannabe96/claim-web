@@ -23,8 +23,7 @@
 // ============================================================
 
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["multiSchema"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -32,6 +31,10 @@ datasource db {
   url       = env("DATABASE_URL")        // Supavisor transaction pooler (6543)
   directUrl = env("DIRECT_URL")          // 직결 (5432) — migrate / introspect 용
   schemas   = ["claim", "public"]
+  // `eightytwo_judge` 는 같은 팀이 관리하는 별도 서비스의 schema. prisma 가 그
+  // 스키마의 테이블을 추적하면 migrate dev 가 drift 로 판단해 reset 을 요구함.
+  // → prisma 에는 등록하지 않고, features/proposals/queries.ts 의 raw SQL +
+  //   AnalysisReportV4Schema.parse() 로 application 레이어에서 접근한다.
 }
 
 // ============================================================
@@ -66,7 +69,7 @@ model PlanRequest {
   createdAt     DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
   dispatchedAt  DateTime? @db.Timestamptz(6) @map("dispatched_at")
   deadlineAt    DateTime? @db.Timestamptz(6) @map("deadline_at")
-  updatedAt     DateTime  @updatedAt @db.Timestamptz(6) @map("updated_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   medicalHistory PlanRequestMedicalHistory[]
   candidates     PlanRequestCandidate[]
@@ -154,7 +157,7 @@ model Partner {
   recentSubmissions  Boolean[] @default([]) @map("recent_submissions")
 
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
-  updatedAt DateTime @updatedAt @db.Timestamptz(6) @map("updated_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   candidates  PlanRequestCandidate[]
   assignments MatchAssignment[]
@@ -214,6 +217,11 @@ model Proposal {
   /// HEAD 검증 시점 capture. 표시·집계용. null 허용.
   pdfSizeBytes BigInt? @map("pdf_size_bytes")
 
+  /// PDF 본문의 SHA-256 (hex, 64자). eightytwo_judge 의 분석 리포트와 join key.
+  /// 업로드 직후 채우는 게 정상이나 백필 호환 위해 nullable. 채워지면 분석
+  /// 리포트(`eightytwo_judge.proposal_analysis_reports.pdf_hash`) 와 1:1 매칭.
+  pdfHash      String? @map("pdf_hash")
+
   /// 100자 한줄 요약 — 가입자 결과 페이지 말풍선에 그대로 노출 (verbatim).
   note String
 
@@ -221,6 +229,7 @@ model Proposal {
 
   assignment MatchAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
 
+  @@index([pdfHash])
   @@map("proposal")
   @@schema("claim")
 }
@@ -243,8 +252,14 @@ model AppSettings {
   /// 미제출률 페널티 산정 윈도우 (최근 N건)
   penaltyWindow          Int @default(10) @map("penalty_window")
 
-  updatedAt DateTime @updatedAt @db.Timestamptz(6) @map("updated_at")
+  /// 결과 페이지 시나리오 우선순위. category_payouts.category 값의 ordered array.
+  /// 앞에서부터 top3 후보. 보장 없는 카테고리는 자동 스킵 후 다음으로 대체.
+  /// 리스트에 없는 카테고리는 모달 "기타" 영역에 가나다순으로 노출.
+  scenarioPriority       String[] @default([]) @map("scenario_priority")
+
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   @@map("app_settings")
   @@schema("claim")
 }
+

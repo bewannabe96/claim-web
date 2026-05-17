@@ -5,11 +5,11 @@ import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 import {
-  type CoverageItem,
   type ProposalData,
   type RoiPoint,
   type ScenarioMeta,
-} from "../../_mock/data";
+} from "../../_lib/result-types";
+import { CoveragePanel } from "./coverage-panel";
 
 /**
  * ROI 라인 차트 — 모든 제안서를 한 화면에 비교 + 시나리오 토글.
@@ -22,16 +22,29 @@ import {
  *
  * 발병률 시각화: plot area 하단 background layer — "이 나이대에 위험" 직관 전달.
  */
+/**
+ * chip 영역의 각 항목. ScenarioMeta + `isMore` 플래그.
+ * `isMore: true` 인 chip 은 click 시 onScenarioChange(id, true) 로 부모가 모달
+ * 등을 열도록 시그널. active 표시는 일반 chip 과 동일 (id === scenarioId).
+ */
+export type RoiChartChip = ScenarioMeta & { isMore?: boolean };
+
 export function RoiChart({
   proposals,
   scenarios,
+  scenarioId,
+  onScenarioChange,
   activeId,
 }: {
   proposals: ProposalData[];
-  scenarios: ScenarioMeta[];
+  /** chip 렌더 순서 그대로 노출. trailing 자리에 `isMore: true` 끼우면 모달 트리거. */
+  scenarios: RoiChartChip[];
+  /** controlled — 부모가 현재 활성 시나리오 id 관리. */
+  scenarioId: string;
+  /** chip 클릭 시 호출. isMore 면 부모가 모달 열기 / 그 외엔 active 변경. */
+  onScenarioChange: (id: string, isMore: boolean) => void;
   activeId: string;
 }) {
-  const [scenarioId, setScenarioId] = useState<string>(scenarios[0]?.id ?? "");
   // 인터랙티브 cursor — 기본은 가입 나이 (33세). 사용자가 그래프 위를 호버/
   // 터치하면 x 위치를 나이로 환산. 그래프 위 풀이 phrase 가 함께 갱신.
   const [cursorAge, setCursorAge] = useState<number>(33);
@@ -46,8 +59,17 @@ export function RoiChart({
   const allValues = proposals.flatMap((p) =>
     (p.roi[scenario.id] ?? []).map((pt) => pt.roi),
   );
-  const yMax = Math.max(1.2, Math.ceil(Math.max(...allValues) * 1.1 * 10) / 10);
-  const yMin = 0;
+  // 분석 리포트 + 시나리오 시뮬레이션 가정이 없어 ROI 시리즈가 빈 케이스 — 차트
+  // 좌표가 NaN 으로 깨지는 걸 방지. 시뮬레이션 가정 도입 후엔 자연스럽게 채워짐.
+  if (allValues.length === 0) return null;
+
+  // y 축 = log10 scale. ROI 의 동적 범위가 매우 넓음 (예: 가입 직후 100x+ →
+  // 만기 직전 6x 평탄). linear 면 후반 데이터가 baseline 에 깔려 정보 손실 큼.
+  // log 면 "x10 배 차이" 가 일정 시각 간격이 되어 비교 직관 ↑.
+  const EPSILON = 0.01; // log(0) 방지 — 0 ROI 시리즈는 baseline 으로 clamp.
+  const yMaxRaw = Math.max(...allValues, EPSILON);
+  const yMinLog = 0; // log10(1) = 0. 1배가 baseline. 1 미만은 plot 밖으로 clamp.
+  const yMaxLog = Math.log10(yMaxRaw * 1.1);
 
   const ages = (proposals[0].roi[scenario.id] ?? []).map((p) => p.age);
   const minAge = ages[0] ?? 0;
@@ -63,8 +85,15 @@ export function RoiChart({
 
   const xOf = (age: number) =>
     padding.left + ((age - minAge) / (maxAge - minAge)) * plotW;
-  const yOf = (roi: number) =>
-    padding.top + (1 - (roi - yMin) / (yMax - yMin)) * plotH;
+  // log scale + plot 도메인 클램프 (1 미만 또는 yMax 초과는 plot 안에 가둠).
+  const yOf = (roi: number) => {
+    const logVal = Math.log10(Math.max(EPSILON, roi));
+    const ratio = Math.max(
+      0,
+      Math.min(1, (logVal - yMinLog) / (yMaxLog - yMinLog)),
+    );
+    return padding.top + (1 - ratio) * plotH;
+  };
 
   const pathOf = (points: RoiPoint[]) =>
     points
@@ -73,21 +102,29 @@ export function RoiChart({
 
   // 누적 발병률 — 오른쪽 y축 (0~100%), plot 전체 높이 사용.
   // 누적이므로 monotonic non-decreasing — 시간이 지나며 면적이 좌→우로 차오름.
+  // 분석 리포트가 incidence 를 안 주는 경우 (현재 모든 시나리오) 관련 UI 통째 숨김:
+  //   - cursor 풀이 두 번째 줄 ("한국 남성 기준 …%")
+  //   - legend (회수 배율만 남으면 y 축 라벨로 충분 → legend 통째 hide)
+  //   - svg 의 incidence area path + 우측 y축 tick
   const incidenceRates = scenario.incidence;
+  const hasIncidence = incidenceRates.length > 0;
+
   const incidenceYOf = (rate: number) =>
     padding.top + plotH - rate * plotH;
-  const incidencePath = (() => {
-    const top = ages
-      .map((age, i) => {
-        const rate = incidenceRates[i] ?? 0;
-        return `${i === 0 ? "M" : "L"}${xOf(age)},${incidenceYOf(rate)}`;
-      })
-      .join(" ");
-    const bottomY = padding.top + plotH;
-    return `${top} L${xOf(maxAge)},${bottomY} L${xOf(minAge)},${bottomY} Z`;
-  })();
+  const incidencePath = hasIncidence
+    ? (() => {
+        const top = ages
+          .map((age, i) => {
+            const rate = incidenceRates[i] ?? 0;
+            return `${i === 0 ? "M" : "L"}${xOf(age)},${incidenceYOf(rate)}`;
+          })
+          .join(" ");
+        const bottomY = padding.top + plotH;
+        return `${top} L${xOf(maxAge)},${bottomY} L${xOf(minAge)},${bottomY} Z`;
+      })()
+    : "";
 
-  // 오른쪽 y축 tick — 0% / 50% / 100%
+  // 오른쪽 y축 tick — 0% / 50% / 100% (incidence 있을 때만)
   const rightYTicks = [0, 0.5, 1];
 
   // x 축 tick — 시작/끝 + 중간 2개
@@ -98,9 +135,13 @@ export function RoiChart({
     maxAge,
   ];
 
-  // y 축 tick — 0 + yMax (1x reference 제거)
-  const yTicks =
-    yMax >= 2 ? [0, Math.floor(yMax / 2), Math.floor(yMax)] : [0, 1];
+  // y 축 tick — log10 power 만 (1, 10, 100...). yMaxRaw 보다 ≤ 한 cycle 까지.
+  // yMaxRaw < 10 의 좁은 범위는 5 minor 도 같이 추가해 sparse 회피.
+  const yTicks: number[] = [];
+  for (let exp = 0; Math.pow(10, exp) <= yMaxRaw; exp++) {
+    yTicks.push(Math.pow(10, exp));
+  }
+  if (yMaxRaw < 10 && yMaxRaw >= 5) yTicks.push(5);
 
   const active = proposals.find((p) => p.id === activeId) ?? proposals[0];
   const inactive = proposals.filter((p) => p.id !== active.id);
@@ -134,21 +175,24 @@ export function RoiChart({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 시나리오 토글 pill — scenarios prop 기준 동적 렌더 */}
+      {/* 시나리오 토글 pill — scenarios prop 기준 동적 렌더. isMore chip 은 라벨
+        * 대신 + 아이콘 + 모달 트리거. DESIGN: chip = Chip Gray + 999px pill. */}
       <div className="flex items-center gap-2 overflow-x-auto -mx-1 px-1">
         {scenarios.map((s) => (
           <button
             key={s.id}
             type="button"
-            onClick={() => setScenarioId(s.id)}
+            onClick={() => onScenarioChange(s.id, Boolean(s.isMore))}
+            aria-label={s.isMore ? "질병 추가" : undefined}
             className={cn(
-              "shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors",
+              "shrink-0 rounded-full text-xs font-medium transition-colors inline-flex items-center justify-center",
+              s.isMore ? "w-8 h-8 p-0" : "px-3.5 py-1.5",
               s.id === scenario.id
                 ? "bg-black text-white"
                 : "bg-[#efefef] text-[#4b4b4b] hover:bg-[#e2e2e2]",
             )}
           >
-            {s.label}
+            {s.isMore ? <PlusIcon /> : s.label}
           </button>
         ))}
       </div>
@@ -166,27 +210,31 @@ export function RoiChart({
           <span className="font-bold">{cursorPoint?.roi ?? 0}배</span>를
           돌려받아요
         </p>
-        <p className="text-xs text-[#4b4b4b]">
-          한국 남성 기준{" "}
-          <span className="font-medium text-black">{clampedCursorAge}세</span>
-          까지 {scenario.sentenceLabel}에 걸릴 확률{" "}
-          <span className="font-medium text-black">
-            {cursorIncidencePct}%
-          </span>
-        </p>
+        {hasIncidence && (
+          <p className="text-xs text-[#4b4b4b]">
+            한국 남성 기준{" "}
+            <span className="font-medium text-black">{clampedCursorAge}세</span>
+            까지 {scenario.sentenceLabel}에 걸릴 확률{" "}
+            <span className="font-medium text-black">
+              {cursorIncidencePct}%
+            </span>
+          </p>
+        )}
       </div>
 
-      {/* legend — 그래프 위쪽 행, 우측 정렬 */}
-      <div className="flex justify-end gap-3 text-[10px] text-[#4b4b4b]">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block w-3 h-0.5 bg-black" />
-          회수 배율 <span className="text-[#afafaf]">(좌)</span>
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block w-3 h-2 bg-[rgba(0,0,0,0.08)]" />
-          누적 발병률 <span className="text-[#afafaf]">(우)</span>
-        </span>
-      </div>
+      {/* legend — incidence 가 있을 때만. 회수 배율 단일 시리즈면 y 축 라벨로 충분. */}
+      {hasIncidence && (
+        <div className="flex justify-end gap-3 text-[10px] text-[#4b4b4b]">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block w-3 h-0.5 bg-black" />
+            회수 배율 <span className="text-[#afafaf]">(좌)</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="inline-block w-3 h-2 bg-[rgba(0,0,0,0.08)]" />
+            누적 발병률 <span className="text-[#afafaf]">(우)</span>
+          </span>
+        </div>
+      )}
 
       {/* SVG */}
       <svg
@@ -206,11 +254,13 @@ export function RoiChart({
           }
         }}
       >
-        {/* 누적 발병률 area — plot 영역의 가장 뒤 배경 layer */}
-        <path d={incidencePath} fill="rgba(0, 0, 0, 0.07)" stroke="none" />
+        {/* 누적 발병률 area — incidence 데이터가 있을 때만 (현재는 모든 시나리오 fallback). */}
+        {hasIncidence && (
+          <path d={incidencePath} fill="rgba(0, 0, 0, 0.07)" stroke="none" />
+        )}
 
-        {/* 오른쪽 y축 (누적 발병률 %) tick */}
-        {rightYTicks.map((rate) => (
+        {/* 오른쪽 y축 (누적 발병률 %) tick — incidence 있을 때만 */}
+        {hasIncidence && rightYTicks.map((rate) => (
           <g key={`ry-${rate}`}>
             <line
               x1={W - padding.right}
@@ -333,91 +383,21 @@ export function RoiChart({
   );
 }
 
-/**
- * 시나리오 보장 상세 — "이 시나리오에서 받는 진단금 총액" + 담보 breakdown.
- *
- * 큰 숫자 + "계산에 포함된 담보" 리스트로 근거 투명성 제공.
- * 진단금 항목이 없는 시나리오 (호흡기·만성 등) 는 fallback 메시지로 안내.
- */
-function CoveragePanel({
-  scenarioLabel,
-  items,
-}: {
-  scenarioLabel: string;
-  items: CoverageItem[];
-}) {
-  const lumpItems = items.filter((item) => item.label.includes("진단금"));
-  const total = lumpItems.reduce(
-    (sum, item) => sum + parseLumpSum(item.amount),
-    0,
-  );
-
+/** + 아이콘 — chip 의 isMore entry 에서 라벨 대신 사용 (질병 추가 트리거). */
+function PlusIcon() {
   return (
-    <div className="rounded-xl border border-[#efefef] bg-white px-4 py-4 flex flex-col gap-3">
-      <div className="flex flex-col gap-1.5">
-        <p className="text-[11px] text-[#4b4b4b]">
-          <span className="text-black font-medium">{scenarioLabel}</span>{" "}
-          상황에서 받는 보장
-        </p>
-        {total > 0 ? (
-          <p className="text-[1.75rem] font-bold text-black leading-none tracking-tight">
-            {formatLumpSum(total)}
-          </p>
-        ) : (
-          <p className="text-sm text-[#4b4b4b]">
-            진단금 없이 입원·수술비 위주의 보장이에요
-          </p>
-        )}
-      </div>
-
-      {lumpItems.length > 0 && (
-        <div className="flex flex-col gap-2 pt-3 border-t border-[#efefef]">
-          <p className="text-[11px] text-[#afafaf]">계산에 포함된 담보</p>
-          <ul className="flex flex-col gap-1.5">
-            {lumpItems.map((item, i) => (
-              <li
-                key={i}
-                className="flex items-baseline justify-between gap-3 text-xs"
-              >
-                <span className="text-[#4b4b4b] truncate">{item.label}</span>
-                <span className="font-medium text-black tabular-nums">
-                  {item.amount}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
+    <svg
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M8 3v10M3 8h10" />
+    </svg>
   );
 }
 
-/**
- * 진단금 amount 문자열에서 원 단위 숫자 추출.
- * "5,000만원" → 50,000,000 / "1억원" → 100,000,000 / "1억 5,000만원" → 150,000,000.
- * "1일", "월", "회당" 으로 시작하는 정기성 amount 는 0 반환.
- */
-function parseLumpSum(text: string): number {
-  if (/^(1일|월|회당|연)/.test(text)) return 0;
-  const cleaned = text.replace(/[,원\s]/g, "");
-  let total = 0;
-  const eok = cleaned.match(/(\d+)억/);
-  const man = cleaned.match(/(\d+)만/);
-  if (eok) total += parseInt(eok[1], 10) * 100_000_000;
-  if (man) total += parseInt(man[1], 10) * 10_000;
-  return total;
-}
-
-/** 원 → "1억 5,000만원" 형태로 표시. */
-function formatLumpSum(n: number): string {
-  if (n === 0) return "—";
-  if (n >= 100_000_000) {
-    const eok = Math.floor(n / 100_000_000);
-    const remainder = n % 100_000_000;
-    if (remainder === 0) return `${eok}억원`;
-    const man = Math.round(remainder / 10_000);
-    return `${eok}억 ${man.toLocaleString("ko-KR")}만원`;
-  }
-  const man = Math.round(n / 10_000);
-  return `${man.toLocaleString("ko-KR")}만원`;
-}

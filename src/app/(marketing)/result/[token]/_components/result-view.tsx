@@ -2,16 +2,12 @@
 
 import { useState } from "react";
 
+import type { AnalysisReportV4 } from "@/features/proposals/analysis-schema";
 import { cn } from "@/lib/utils";
 
-import {
-  MOCK_CUSTOMER_COVERAGE,
-  MOCK_SCENARIOS,
-  type ProposalData,
-} from "../_mock/data";
-import { RoiChart } from "./charts/roi-chart";
+import { type ProposalData } from "../_lib/result-types";
 import { SurrenderLossChart } from "./charts/surrender-loss-chart";
-import { RequestMatch } from "./request-match";
+import { ScenarioPickerRoiChart } from "./scenario-picker-roi-chart";
 
 /**
  * 결과 페이지 본문 — 토글 chip 으로 제안서 전환, 본문 통째 교체.
@@ -22,12 +18,31 @@ import { RequestMatch } from "./request-match";
  *   3. 선택된 제안서 본문 (설계사 헤더 / 핵심 수치 / ROI / 레이더 / 핵심 담보 /
  *      추가 정보 / 문자 보내기 CTA)
  */
-export function ResultView({ proposals }: { proposals: ProposalData[] }) {
+export function ResultView({
+  proposals,
+  reportsById,
+  scenarioPriority,
+}: {
+  proposals: ProposalData[];
+  /** 제안서별 분석 리포트(v4). 키는 proposal.id. pdfHash 매칭 실패 시 entry 없음. */
+  reportsById?: Record<string, AnalysisReportV4>;
+  /** admin 이 설정한 시나리오 우선순위 (app_settings.scenarioPriority). */
+  scenarioPriority?: readonly string[];
+}) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [contacted, setContacted] = useState<Set<string>>(new Set());
 
   const active = proposals[activeIdx];
   if (!active) return null;
+
+  // 모든 제안서의 분석 리포트 — chip union/intersection 계산용.
+  // ProposalBody 가 reuse 되므로 ScenarioPickerRoiChart 의 recent/active state 는
+  // 제안서 chip 탭 전환에도 유지됨.
+  const reports: AnalysisReportV4[] = reportsById
+    ? proposals
+        .map((p) => reportsById[p.id])
+        .filter((r): r is AnalysisReportV4 => Boolean(r))
+    : [];
 
   function markContacted(id: string) {
     setContacted((s) => new Set(s).add(id));
@@ -74,6 +89,8 @@ export function ResultView({ proposals }: { proposals: ProposalData[] }) {
       <ProposalBody
         proposal={active}
         proposals={proposals}
+        reports={reports}
+        scenarioPriority={scenarioPriority ?? []}
         contacted={contacted.has(active.id)}
         onContact={() => markContacted(active.id)}
       />
@@ -88,11 +105,15 @@ export function ResultView({ proposals }: { proposals: ProposalData[] }) {
 function ProposalBody({
   proposal,
   proposals,
+  reports,
+  scenarioPriority,
   contacted,
   onContact,
 }: {
   proposal: ProposalData;
   proposals: ProposalData[];
+  reports: AnalysisReportV4[];
+  scenarioPriority: readonly string[];
   contacted: boolean;
   onContact: () => void;
 }) {
@@ -201,24 +222,18 @@ function ProposalBody({
         </ul>
       </section>
 
-      {/* ROI 그래프 — 전체 제안서 한 차트에 그리고 active highlight */}
-      <RoiChart
-        proposals={proposals}
-        scenarios={MOCK_SCENARIOS}
-        activeId={proposal.id}
-      />
+      {/* ROI 그래프 — [recent₁, recent₂, recent₃, 🔍]. 검색 chip click 시 모달. */}
+      {reports.length > 0 ? (
+        <ScenarioPickerRoiChart
+          proposal={proposal}
+          proposals={proposals}
+          reports={reports}
+          scenarioPriority={scenarioPriority}
+        />
+      ) : null}
 
       {/* 해지 시 손실 — 회수 배율의 flip side: 아무 일 없이 해지하면 얼마 날리나 */}
       <SurrenderLossChart proposals={proposals} activeId={proposal.id} />
-
-      {/* 요청 매칭 — focused 의도일 때만. 차트로 객관 비교한 다음, 가입자가 적은
-        * 요청 영역을 이 진설계가 얼마나 다루는지 체크리스트로 마무리. */}
-      {MOCK_CUSTOMER_COVERAGE.intent === "focused" && (
-        <RequestMatch
-          request={MOCK_CUSTOMER_COVERAGE}
-          coverage={proposal.coverage}
-        />
-      )}
 
       {/* 설계사 attribution — 본문 끝에서 "이 한줄평의 작성자" 컨텍스트 */}
       <section className="rounded-xl border border-[#efefef] p-5">

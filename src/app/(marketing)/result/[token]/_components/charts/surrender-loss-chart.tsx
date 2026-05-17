@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import {
   type ProposalData,
   type SurrenderLossPoint,
-} from "../../_mock/data";
+} from "../../_lib/result-types";
 
 /**
  * 해지 시 손실 곡선 — "내가 아프지 않은 채로 해지하면 얼마 날리나".
@@ -17,8 +17,8 @@ import {
  * 이득 (환급이 낸 돈을 초과). ROI 와 같은 시각적 방향성 (↑ = 절댓값 큼).
  *
  * **라벨**: y축 위쪽 = 마이너스 값 (손실의 부호 의미), 아래쪽 = 플러스 값 (이득).
- * 내부 fixture 의 `loss` 는 `납입 − 환급` (양수=손실) 이지만, 라벨 표시는
- * 부호를 뒤집어 사용자가 보기에 "손실 = 마이너스 금액" 으로 자연스럽게 읽힘.
+ * 데이터의 `loss` 는 `납입 − 환급` (양수=손실, 분석 리포트 refund_table.rows 정의)
+ * 이지만, 라벨 표시는 부호를 뒤집어 "손실 = 마이너스 금액" 으로 자연스럽게 읽힘.
  */
 export function SurrenderLossChart({
   proposals,
@@ -32,6 +32,9 @@ export function SurrenderLossChart({
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   if (proposals.length === 0) return null;
+  // 분석 리포트가 없는 케이스 (pdfHash 매칭 실패 등) — surrenderLoss 가 비어 있으면
+  // 차트 자체를 그리지 않음. 차트 좌표 계산이 undefined 로 깨지는 걸 방지.
+  if (proposals.every((p) => p.surrenderLoss.length === 0)) return null;
 
   const allLosses = proposals.flatMap((p) =>
     p.surrenderLoss.map((pt) => pt.loss),
