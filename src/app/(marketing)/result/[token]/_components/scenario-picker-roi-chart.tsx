@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { AnalysisReportV4 } from "@/features/proposals/analysis-schema";
+import type { AnalysisReportV5 } from "@/features/proposals/analysis-schema";
 import { labelForCategory } from "@/features/proposals/category-labels";
 import {
   intersectionTopCategories,
@@ -46,7 +46,7 @@ export function ScenarioPickerRoiChart({
 }: {
   proposal: ProposalData;
   proposals: ProposalData[];
-  reports: AnalysisReportV4[];
+  reports: AnalysisReportV5[];
   scenarioPriority: readonly string[];
 }) {
   // 최근 선택 chip (max 3, LRU FIFO). 초기값 = intersection × priority.

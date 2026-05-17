@@ -138,14 +138,14 @@ export async function verifyUploadedObject(
 /**
  * 업로드된 PDF 본문의 SHA-256 hex (64자) 계산.
  *
- * eightytwo_judge 분석 리포트와 join key 로 사용. `submitProposal` 이 HEAD 검증
- * 직후 호출 → `Proposal.pdfHash` 컬럼에 저장.
+ * `submitProposal` 이 HEAD 검증 직후 호출 → `Proposal.pdfHash` 컬럼에 저장
+ * (동일 PDF 식별 / audit 용도). NOT NULL 컬럼이라 null 반환 시 호출자가
+ * 제출 자체를 실패시킴 (fail-fast).
  *
  * stream-based — 본문을 메모리에 통째로 올리지 않고 chunk 단위로 hash 에 흘려
  * 보냄. 10MB 이하 파일이라 buffer 방식도 충분하지만, 후속 한도 상향 대비.
  *
- * 실패 처리: GetObject 자체 실패 또는 Body 없음 시 null 반환. 호출자가 hash 없이
- * proposal 을 저장할지 정함 (graceful — 분석 리포트 매칭만 못 함, 제출은 성공).
+ * 실패 처리: GetObject 자체 실패 또는 Body 없음 시 null 반환.
  */
 export async function fetchObjectSha256(s3Key: string): Promise<string | null> {
   const { env, client } = getS3();

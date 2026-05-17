@@ -1,4 +1,4 @@
-import type { AnalysisReportV4 } from "@/features/proposals/analysis-schema";
+import type { AnalysisReportV5 } from "@/features/proposals/analysis-schema";
 import type { ProposalCard } from "@/features/proposals/queries";
 import { computeRoiSeries } from "@/features/proposals/select-scenarios";
 
@@ -6,7 +6,7 @@ import { formatKRW } from "./format-krw";
 import type { CoverageItem, ProposalData, RoiPoint } from "./result-types";
 
 /* ============================================================
- * 실 데이터 (Proposal + Partner + 분석 리포트 v4) → 결과 페이지 mock shape.
+ * 실 데이터 (Proposal + Partner + 분석 리포트) → 결과 페이지 mock shape.
  *
  * 차트/카드 컴포넌트들이 mock fixture 의 `ProposalData` 형태에 강결합돼 있어
  * 어댑터로 변환만 한다.
@@ -26,13 +26,14 @@ const DEFAULT_CUSTOMER_AGE = 33;
 
 export function adaptProposal(
   card: ProposalCard,
-  report: AnalysisReportV4 | null,
+  report: AnalysisReportV5 | null,
   customerAge: number = DEFAULT_CUSTOMER_AGE,
 ): ProposalData {
   const { proposal, partner } = card;
+  const analyzed = proposal.analyzedAt != null;
 
   if (!report) {
-    return makeFallback(proposal, partner);
+    return makeFallback(proposal, partner, analyzed);
   }
 
   const { headline, refund_table, coverage_payout } = report;
@@ -45,6 +46,7 @@ export function adaptProposal(
       yearsOfExperience: partner.yearsOfExperience,
       trustMetric: partner.trustMetric,
     },
+    analyzed,
     insurer: headline.insurer,
     maturityAge,
     monthlyPremium: headline.total_actual_premium,
@@ -74,7 +76,7 @@ export function adaptProposal(
  * 납입 기간 중 해지 시 환급금이 있는가 — `headline.refund_type` 만으로 판단.
  * 새 enum 값이 늘어나면 그 값들은 모두 "환급 있음" 으로 분류.
  */
-function hasRefundDuringPayment(report: AnalysisReportV4): boolean {
+function hasRefundDuringPayment(report: AnalysisReportV5): boolean {
   return report.headline.refund_type !== "no_refund";
 }
 
@@ -87,7 +89,7 @@ function hasRefundDuringPayment(report: AnalysisReportV4): boolean {
  * 한 proposal 당 ~24 시리즈 × ~70 점 = 1700 포인트 — 메모리/페이로드 trivial.
  */
 function roiByCategory(
-  report: AnalysisReportV4,
+  report: AnalysisReportV5,
   customerAge: number,
 ): Record<string, RoiPoint[]> {
   const result: Record<string, RoiPoint[]> = {};
@@ -108,7 +110,7 @@ function roiByCategory(
  * 키 = category id (예: "lung_cancer").
  */
 function coverageByCategory(
-  payout: AnalysisReportV4["coverage_payout"],
+  payout: AnalysisReportV5["coverage_payout"],
 ): Record<string, CoverageItem[]> {
   const result: Record<string, CoverageItem[]> = {};
   for (const group of payout.category_groups) {
@@ -125,12 +127,15 @@ function coverageByCategory(
 }
 
 /**
- * 분석 리포트 매칭 실패 시 — 빈 카드. 차트들은 빈 데이터 가드로 안 그려짐.
- * 운영상은 분석 진행 중 placeholder UI 로 대체 가능.
+ * 분석 리포트 없을 때 — 빈 카드. 호출자는 `analyzed` 플래그로 두 상태 구분:
+ *   - analyzed=false → "분석 중" placeholder UI
+ *   - analyzed=true  → "데이터를 불러올 수 없어요" (드물게 발생 — analyzedAt 있는데
+ *     리포트가 없는 케이스. 스키마 버전 불일치 / 누락 등)
  */
 function makeFallback(
   proposal: ProposalCard["proposal"],
   partner: ProposalCard["partner"],
+  analyzed: boolean,
 ): ProposalData {
   return {
     id: proposal.id,
@@ -139,6 +144,7 @@ function makeFallback(
       yearsOfExperience: partner.yearsOfExperience,
       trustMetric: partner.trustMetric,
     },
+    analyzed,
     insurer: "",
     maturityAge: 100,
     monthlyPremium: 0,

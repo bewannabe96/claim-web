@@ -32,6 +32,9 @@ export default async function AdminRequestDetailPage({
   const submittedCount = details.filter(
     (d) => d.assignment.status === "submitted",
   ).length;
+  const analyzedCount = details.filter(
+    (d) => d.proposal?.analyzedAt != null,
+  ).length;
 
   return (
     <div className="flex flex-col gap-8">
@@ -177,6 +180,10 @@ export default async function AdminRequestDetailPage({
               제출{" "}
               <span className="font-semibold text-black">{submittedCount}</span>
               <span className="text-[#4b4b4b]">/{details.length}</span>
+              <span className="mx-1.5 text-[#e2e2e2]">·</span>
+              분석{" "}
+              <span className="font-semibold text-black">{analyzedCount}</span>
+              <span className="text-[#4b4b4b]">/{submittedCount}</span>
             </>
           }
         />
@@ -256,12 +263,15 @@ function AssignmentItem({
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-bold text-black">{partner.name}</span>
           <span className="text-xs text-[#4b4b4b]">
             경력 {partner.yearsOfExperience}년
           </span>
           <AssignmentStatusPill status={assignment.status} />
+          {proposal && (
+            <AnalysisStatusPill analyzedAt={proposal.analyzedAt ?? null} />
+          )}
         </div>
 
         {proposal ? (
@@ -280,14 +290,43 @@ function AssignmentItem({
         )}
       </div>
 
-      <div className="shrink-0 text-right text-xs text-[#4b4b4b] whitespace-nowrap">
+      <div className="shrink-0 text-right text-xs text-[#4b4b4b] whitespace-nowrap flex flex-col gap-0.5">
         {assignment.submittedAt ? (
-          <>제출 {formatDateTime(assignment.submittedAt)}</>
+          <span>제출 {formatDateTime(assignment.submittedAt)}</span>
         ) : (
-          <>송부 {formatDateTime(assignment.createdAt)}</>
+          <span>송부 {formatDateTime(assignment.createdAt)}</span>
+        )}
+        {proposal?.analyzedAt && (
+          <span className="text-[#afafaf]">
+            분석 {formatDateTime(proposal.analyzedAt)}
+          </span>
         )}
       </div>
     </li>
+  );
+}
+
+/**
+ * proposal 의 분석 상태 pill.
+ *   - analyzedAt 있음 → "분석 완료" (검정)
+ *   - analyzedAt 없음 → "분석 중" (회색 + pulse)
+ */
+function AnalysisStatusPill({ analyzedAt }: { analyzedAt: string | null }) {
+  if (analyzedAt) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-black text-white">
+        분석 완료
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-[#e2e2e2] bg-white text-[#4b4b4b]">
+      <span
+        className="w-1 h-1 rounded-full bg-[#4b4b4b] animate-pulse"
+        aria-hidden
+      />
+      분석 중
+    </span>
   );
 }
 

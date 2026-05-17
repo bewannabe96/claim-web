@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "next-dev",
-      "runtimeExecutable": "/Users/bewannabe/.nvm/versions/node/v20.19.5/bin/pnpm",
+      "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "autoPort": true
     }

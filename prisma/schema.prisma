@@ -31,10 +31,6 @@ datasource db {
   url       = env("DATABASE_URL")        // Supavisor transaction pooler (6543)
   directUrl = env("DIRECT_URL")          // 직결 (5432) — migrate / introspect 용
   schemas   = ["claim", "public"]
-  // `eightytwo_judge` 는 같은 팀이 관리하는 별도 서비스의 schema. prisma 가 그
-  // 스키마의 테이블을 추적하면 migrate dev 가 drift 로 판단해 reset 을 요구함.
-  // → prisma 에는 등록하지 않고, features/proposals/queries.ts 의 raw SQL +
-  //   AnalysisReportV4Schema.parse() 로 application 레이어에서 접근한다.
 }
 
 // ============================================================
@@ -218,20 +214,61 @@ model Proposal {
   /// HEAD 검증 시점 capture. 표시·집계용. null 허용.
   pdfSizeBytes BigInt? @map("pdf_size_bytes")
 
-  /// PDF 본문의 SHA-256 (hex, 64자). eightytwo_judge 의 분석 리포트와 join key.
-  /// 업로드 직후 채우는 게 정상이나 백필 호환 위해 nullable. 채워지면 분석
-  /// 리포트(`eightytwo_judge.proposal_analysis_reports.pdf_hash`) 와 1:1 매칭.
-  pdfHash      String? @map("pdf_hash")
+  /// PDF 본문의 SHA-256 (hex, 64자). 업로드 직후 항상 채워짐. 동일 PDF 식별/audit
+  /// 용도 — 분석 리포트 join 키는 proposal.id 사용 (`ProposalAnalysisReport` 1:1).
+  pdfHash      String  @map("pdf_hash")
 
   /// 100자 한줄 요약 — 가입자 결과 페이지 말풍선에 그대로 노출 (verbatim).
   note String
 
-  submittedAt DateTime @default(now()) @db.Timestamptz(6) @map("submitted_at")
+  submittedAt DateTime  @default(now()) @db.Timestamptz(6) @map("submitted_at")
+  /// 외부 분석 파이프라인 (eightytwo_judge) 콜백 수신 시각.
+  /// 첫 콜백 시점만 기록 (WHERE analyzed_at IS NULL 로 update 한정 → 재시도 시 no-op).
+  /// plan_request 의 모든 match_assignment 가 submitted + 그 proposal 이
+  /// analyzed_at IS NOT NULL 인 경우에만 plan_request.status='completed'
+  /// (pending/expired assignment 가 하나라도 있으면 전이 안 함).
+  /// SQS 메시지 metadata 에 proposal.id + plan_request.id 를 실어보내고, 콜백이 그
+  /// 두 id 로 직접 식별 + 마킹 (cross-validation 으로 페이로드 위조 차단).
+  analyzedAt  DateTime? @db.Timestamptz(6) @map("analyzed_at")
 
-  assignment MatchAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignment     MatchAssignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  analysisReport ProposalAnalysisReport?
 
   @@index([pdfHash])
   @@map("proposal")
+  @@schema("claim")
+}
+
+// ============================================================
+// proposal_analysis_report — 외부 분석 파이프라인 (eightytwo_judge) 결과
+// ============================================================
+// 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 분석 완료 콜백 수신 시 INSERT.
+// proposal 과 1:1 (`proposal_id` PK + FK). SQS metadata 로 보낸 proposal.id 가
+// 콜백에 그대로 passthrough 되어 식별 키로 사용됨.
+//
+// 버전 정책: 매 schema 진화 시 row 교체 운영 (`schemaVersion` 컬럼 + 읽을 때
+// `CURRENT_REPORT_VERSION` 필터). v6 도입 시 새 row 가 v6 로 들어오고, 코드의
+// `analysis-schema.ts` zod + `CURRENT_REPORT_VERSION` 갱신.
+
+model ProposalAnalysisReport {
+  proposalId    String @id @map("proposal_id")
+
+  /// 리포트 schema 버전 (현재 5). 읽을 때 `WHERE schema_version = CURRENT_REPORT_VERSION` 로 gate.
+  schemaVersion Int    @map("schema_version")
+
+  /// AnalysisReportV5 (zod) 의 직렬화. Prisma 가 Json 으로 들고, 읽을 때 parse() 통과.
+  /// `schema_version` 은 본문에 들어가지 않음 (별도 컬럼) — 웹훅이 분리 저장.
+  report        Json
+
+  /// 분석 소요 시간 (ms). 운영 모니터링용. null 허용.
+  durationMs    Int?   @map("duration_ms")
+
+  createdAt     DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([schemaVersion])
+  @@map("proposal_analysis_report")
   @@schema("claim")
 }
 

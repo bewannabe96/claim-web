@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { BrandMark } from "@/components/brand-mark";
-import type { AnalysisReportV4 } from "@/features/proposals/analysis-schema";
+import type { AnalysisReportV5 } from "@/features/proposals/analysis-schema";
 import {
   getAnalysisReport,
   listProposalCardsForRequest,
@@ -25,9 +25,12 @@ import { adaptProposal } from "./_lib/adapt-proposal";
  * 데이터 흐름:
  *   token → plan_request → submitted assignments + proposals + partners
  *        ↓
- *   각 proposal 의 pdfHash → eightytwo_judge.proposal_analysis_reports
+ *   각 proposal.id → claim.proposal_analysis_report (1:1, Prisma 모델)
  *        ↓
  *   adaptProposal(card, report) → 결과 페이지 컴포넌트가 기대하는 shape
+ *
+ * 분석 미완료 proposal 은 report=null 로 들어가서 카드가 "분석 중" placeholder
+ * 로 렌더 (adapt-proposal 의 makeFallback + analyzed=false).
  */
 export default async function ResultPage({
   params,
@@ -41,8 +44,8 @@ export default async function ResultPage({
   // 실 데이터 — submitted proposal + 작성 설계사 카드.
   const cards = await listProposalCardsForRequest(req.id);
 
-  // 각 proposal 의 분석 리포트(v4) — pdfHash 로 정확 매칭. hash 없으면 null.
-  // 우선순위 설정은 admin → app_settings.
+  // 각 proposal 의 분석 리포트 — proposal.id 1:1. 분석 미완료면 null (placeholder UI).
+  // 시나리오 우선순위 설정은 admin → app_settings.
   const [settings, reportEntries] = await Promise.all([
     getSettings(),
     Promise.all(
@@ -52,9 +55,9 @@ export default async function ResultPage({
       }),
     ),
   ]);
-  const reportsById: Record<string, AnalysisReportV4> = Object.fromEntries(
+  const reportsById: Record<string, AnalysisReportV5> = Object.fromEntries(
     reportEntries.filter(
-      (e): e is readonly [string, AnalysisReportV4] => e[1] !== null,
+      (e): e is readonly [string, AnalysisReportV5] => e[1] !== null,
     ),
   );
 
@@ -62,6 +65,10 @@ export default async function ResultPage({
   const proposals = cards.map((card) =>
     adaptProposal(card, reportsById[card.proposal.id] ?? null),
   );
+
+  // 분석 진행 현황 — 분석 안 된 proposal 이 있으면 progress 배지, 모두 완료면 "결과 준비됨".
+  const analyzedCount = proposals.filter((p) => p.analyzed).length;
+  const allAnalyzed = proposals.length > 0 && analyzedCount === proposals.length;
 
   return (
     <main className="flex flex-col flex-1 bg-white">
@@ -83,6 +90,13 @@ export default async function ResultPage({
                 이 제안서를 보내주셨어요
               </p>
             )}
+          {proposals.length > 0 && (
+            <AnalysisStatusBadge
+              analyzed={analyzedCount}
+              total={proposals.length}
+              allDone={allAnalyzed}
+            />
+          )}
         </header>
       </div>
 
@@ -100,13 +114,45 @@ export default async function ResultPage({
 }
 
 /**
- * 한 proposal card 의 분석 리포트 lookup. pdfHash 있어야 매칭. 없으면 null.
- * (이전엔 s3_key 데모 fallback 이 있었으나 pdfHash 컬럼 도입 후 hash 정식 매칭만 사용.)
+ * 한 proposal card 의 분석 리포트 lookup. proposal.id 1:1 join.
+ * 리포트가 아직 생성되지 않았으면 (웹훅 콜백 전) `getAnalysisReport` 가 null 반환
+ * — UI 는 빈 상태로 graceful 렌더.
  */
 async function loadReportForCard(
   card: ProposalCard,
-): Promise<AnalysisReportV4 | null> {
-  const hash = card.proposal.pdfHash;
-  if (!hash) return null;
-  return getAnalysisReport(hash);
+): Promise<AnalysisReportV5 | null> {
+  return getAnalysisReport(card.proposal.id);
+}
+
+/**
+ * 분석 진행 상태 배지 — 헤더 아래 작은 inline.
+ *   - 모두 완료: 검정 dot + "결과 준비됨"
+ *   - 진행 중:   pulse dot + "분석 진행 중 X/N 완료" + "새로고침 안내"
+ */
+function AnalysisStatusBadge({
+  analyzed,
+  total,
+  allDone,
+}: {
+  analyzed: number;
+  total: number;
+  allDone: boolean;
+}) {
+  if (allDone) {
+    return (
+      <div className="inline-flex items-center gap-1.5 text-xs text-[#4b4b4b]">
+        <span className="w-1.5 h-1.5 rounded-full bg-black" aria-hidden />
+        결과 준비됨
+      </div>
+    );
+  }
+  return (
+    <div className="inline-flex items-center gap-1.5 text-xs text-[#4b4b4b]">
+      <span
+        className="w-1.5 h-1.5 rounded-full bg-[#4b4b4b] animate-pulse"
+        aria-hidden
+      />
+      분석 진행 중 · {analyzed}/{total} 완료 (새로고침 시 갱신)
+    </div>
+  );
 }

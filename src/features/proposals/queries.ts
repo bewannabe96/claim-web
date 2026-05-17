@@ -10,9 +10,9 @@ import type { PartnerCard } from "@/features/partners/schema";
 import { prisma } from "@/server/db/prisma";
 
 import {
-  AnalysisReportV4Schema,
+  AnalysisReportV5Schema,
   CURRENT_REPORT_VERSION,
-  type AnalysisReportV4,
+  type AnalysisReportV5,
 } from "./analysis-schema";
 import type {
   AssignmentStatus,
@@ -157,58 +157,25 @@ export async function listProposalCardsForRequest(
 }
 
 /* ============================================================
- * 분석 리포트 (eightytwo_judge.proposal_analysis_reports) — read-only
+ * 분석 리포트 (claim.proposal_analysis_report) — read
  *
- * 외부 schema 접근의 단일 진입점. 호출자는 항상 parsed `AnalysisReportV4` 만 봄.
+ * 저장 책임은 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 보유. 여기선 read 만.
+ * 호출자는 항상 parsed `AnalysisReportV5` 만 봄.
  *
- * 왜 raw SQL 인가:
- *   - eightytwo_judge 는 같은 팀이 관리하는 별도 서비스의 schema. prisma 가 그
- *     테이블을 모델로 두면 migrate dev 가 drift 라고 판단해 reset 을 요구함.
- *   - 그래서 prisma schema 에는 등록하지 않고 raw SQL 로 SELECT 만 한다.
- *   - 권한은 우리 DB user 에 eightytwo_judge schema USAGE + table SELECT.
- *
- * 항상 schema_version = CURRENT_REPORT_VERSION (현재 v4) 로 고정 — 호출자는
- * 버전을 신경 쓰지 않고 parse 결과만 받음. 외부 schema 가 v5 로 진화하면
- * analysis-schema.ts 의 zod + CURRENT_REPORT_VERSION 만 갱신.
+ * 버전 정책: `WHERE schemaVersion = CURRENT_REPORT_VERSION` 로 고정 — 호출자는
+ * 버전 신경 안 씀. v6 도입 시 새 row 가 v6 로 들어오고, analysis-schema.ts 의
+ * zod + CURRENT_REPORT_VERSION 갱신하면 자연스럽게 새 버전 통과.
  * ============================================================ */
 
-type AnalysisReportRow = { report: unknown };
-
 export async function getAnalysisReport(
-  pdfHash: string,
-): Promise<AnalysisReportV4 | null> {
-  const rows = await prisma.$queryRaw<AnalysisReportRow[]>`
-    SELECT report
-    FROM "eightytwo_judge"."proposal_analysis_reports"
-    WHERE pdf_hash = ${pdfHash}
-      AND schema_version = ${CURRENT_REPORT_VERSION}
-    LIMIT 1
-  `;
-  if (rows.length === 0) return null;
-  return AnalysisReportV4Schema.parse(rows[0].report);
-}
-
-/**
- * 데모/임시 — s3_key 로 분석 리포트 조회.
- *
- * 정상 흐름: Proposal.pdfHash 를 업로드 파이프라인이 채우고, 결과 페이지가
- * getAnalysisReport(hash) 호출. 현재 기존 row 들은 hash 가 비어 있고 sample
- * 분석 리포트만 있는 상태라 데모 fallback 으로 s3_key 매칭을 유지한다.
- *
- * pdfHash 백필 + 업로드 파이프라인 hash 계산이 도입되면 이 함수 제거.
- */
-export async function getAnalysisReportByS3Key(
-  s3Key: string,
-): Promise<AnalysisReportV4 | null> {
-  const rows = await prisma.$queryRaw<AnalysisReportRow[]>`
-    SELECT report
-    FROM "eightytwo_judge"."proposal_analysis_reports"
-    WHERE s3_key = ${s3Key}
-      AND schema_version = ${CURRENT_REPORT_VERSION}
-    LIMIT 1
-  `;
-  if (rows.length === 0) return null;
-  return AnalysisReportV4Schema.parse(rows[0].report);
+  proposalId: string,
+): Promise<AnalysisReportV5 | null> {
+  const row = await prisma.proposalAnalysisReport.findUnique({
+    where: { proposalId },
+    select: { report: true, schemaVersion: true },
+  });
+  if (!row || row.schemaVersion !== CURRENT_REPORT_VERSION) return null;
+  return AnalysisReportV5Schema.parse(row.report);
 }
 
 /* ============================================================
@@ -242,5 +209,6 @@ function mapProposal(row: PrismaProposal): Proposal {
     pdfHash: row.pdfHash,
     note: row.note,
     submittedAt: row.submittedAt.toISOString(),
+    analyzedAt: row.analyzedAt?.toISOString() ?? undefined,
   };
 }

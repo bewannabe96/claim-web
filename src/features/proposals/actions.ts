@@ -11,6 +11,7 @@ import {
   presignProposalUpload,
   verifyUploadedObject,
 } from "@/server/s3";
+import { publishAnalysisJob } from "@/server/sqs";
 
 import {
   ProposalSubmissionSchema,
@@ -116,10 +117,19 @@ export async function submitProposal(
     };
   }
 
-  // PDF 본문 SHA-256 — eightytwo_judge 분석 리포트와 join key.
-  // 실패해도 제출 자체는 진행 (graceful) — hash 가 null 이면 결과 페이지의 분석
-  // 리포트 매칭만 안 됨. 운영 모니터링으로 null hash 비율 추적 → 필요 시 backfill.
+  // PDF 본문 SHA-256 — 동일 PDF 식별 / audit 용. NOT NULL 컬럼이므로 계산 실패 시
+  // 제출 자체를 막아 fail-fast (사용자는 재시도).
   const pdfHash = await fetchObjectSha256(parsed.data.pdfS3Key);
+  if (!pdfHash) {
+    return {
+      ok: false,
+      errors: { _form: ["PDF 검증에 실패했어요. 잠시 후 다시 시도해주세요."] },
+    };
+  }
+
+  // proposal id 를 트랜잭션 진입 전에 생성 — SQS metadata.proposal_id 로 함께
+  // 전달해 콜백이 정확히 이 proposal 을 마킹할 수 있게.
+  const proposalId = newId();
 
   // 트랜잭션:
   //   1. proposal insert + assignment status='submitted'
@@ -129,7 +139,7 @@ export async function submitProposal(
   await prisma.$transaction([
     prisma.proposal.create({
       data: {
-        id: newId(),
+        id: proposalId,
         assignmentId: assignment.id,
         pdfS3Key: parsed.data.pdfS3Key,
         pdfSizeBytes: BigInt(head.size),
@@ -146,6 +156,23 @@ export async function submitProposal(
       data: { status: "analyzing" },
     }),
   ]);
+
+  // DB commit 후 SQS publish — eightytwo_judge 파이프라인 트리거.
+  // proposal.id + plan_request.id 를 metadata 로 실어 보내 콜백이 정확히 이 row 들을
+  // 식별. 실패는 로깅만 (사용자 응답은 성공). 누락 메시지는 별도 backfill 잡으로 재발행.
+  try {
+    await publishAnalysisJob({
+      planRequestId: assignment.requestId,
+      s3Key: parsed.data.pdfS3Key,
+      proposalId,
+    });
+  } catch (e) {
+    console.error("[sqs] publishAnalysisJob failed", {
+      planRequestId: assignment.requestId,
+      s3Key: parsed.data.pdfS3Key,
+      error: e,
+    });
+  }
 
   revalidatePath("/partner/assignments");
   revalidatePath("/admin/requests");
