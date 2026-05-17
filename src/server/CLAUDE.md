@@ -9,8 +9,11 @@
 ## 무엇이 들어가나
 
 - `dal.ts` — Data Access Layer. **모든 인증 검사의 단일 진입점.**
-- `auth.ts` (TODO) — Supabase Auth 클라이언트 wrap. 인증 도입 시 추가
-  (`@supabase/ssr` 의 `createServerClient` / `createBrowserClient` 패턴, 서버 cookie-based 세션).
+  - `requireAdminSession()` — Supabase auth.getUser() + admin_users 화이트리스트 2단계 검증.
+  - `requirePartnerSession()` — TODO. 현재 demo 세션 반환.
+- `supabase.ts` — `@supabase/ssr` 의 `createServerClient` wrap. cookie-based 세션 +
+  publishable key 사용 (RLS 적용). Auth flow (signIn/signOut/getUser) 가 이걸 쓰고,
+  routine DB 쿼리는 prisma 사용 (분리).
 - `db/prisma.ts` — **Prisma client 싱글톤. 모든 DB 쿼리/트랜잭션의 단일 진입점.**
 - `s3.ts` — 제안서 PDF 업로드/다운로드 S3 헬퍼. presigned PUT/GET URL + HEAD 검증
   (`verifyUploadedObject`) + 본문 SHA-256 계산 (`fetchObjectSha256`, stream-based — 외부 분석 리포트와 join 할 hash).
@@ -176,8 +179,24 @@ production 배포:
 pnpm prisma migrate deploy  # 대기 중 migration 적용 (DATABASE_URL 사용)
 ```
 
-## 인증 도입 시 (Supabase Auth)
+## Admin 인증 구조 (Supabase + 화이트리스트)
 
-1. `server/auth.ts` 작성 — `@supabase/ssr` 의 `createServerClient` 로 cookie-based 세션.
-2. `server/dal.ts` 의 `getOptionalSession` 이 `auth.getUser()` 호출하도록 교체.
-3. 호출부 무수정 — 시그니처 동일.
+도입 완료 (`server/supabase.ts` + `server/dal.ts` + 루트 `middleware.ts`):
+
+1. **`supabase.ts`** — `@supabase/ssr` 의 `createServerClient` 로 cookie-based 세션.
+2. **`dal.ts:getOptionalAdminSession()`** — `auth.getUser()` (JWT 서버 검증) →
+   `admin_users` 화이트리스트 lookup. 둘 다 통과해야 `AdminSession` 반환.
+   `requireAdminSession()` 는 null 시 `/admin/login` 으로 redirect.
+3. **루트 `middleware.ts`** — `/admin/*` 전용 optimistic 차단 + knock 게이트 +
+   X-Robots-Tag. **인증 boundary 아님** (docs/architecture.md §7.2) — 세션 cookie
+   없는 명백한 비로그인 봇/유저를 즉시 307 로 튕기고, 실제 권한은 DAL 이 판정.
+   PPR 모드에서 layout `redirect()` 가 1초 meta refresh fallback 으로 처리되는
+   문제를 우회하는 목적도 겸함.
+
+## Partner 인증 도입 시
+
+1. `dal.ts:getOptionalPartnerSession()` 의 demo 반환 → `supabase.auth.getUser()` +
+   `partner` 테이블 (uuid 매핑) 조회로 교체. 시그니처 동일 → 호출부 무수정.
+2. `middleware.ts` matcher 에 `/partner/:path*` 추가 + 동일한 optimistic 분기.
+3. Partner.id 를 nanoid → `auth.users.id` (UUID) 마이그레이션 (prisma/schema.prisma
+   에 명시된 계획).

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { requireAdminSession } from "@/server/dal";
 import { updateSettings } from "@/server/settings";
 
 import {
@@ -16,11 +17,16 @@ import {
  *
  * selectLimit ≤ candidateCount 보장 — 가입자가 선택할 수 있는 인원이
  * 후보 인원을 초과하면 안 됨.
+ *
+ * Server action 은 layout 의 인증 게이트를 거치지 않으므로 자체적으로
+ * requireAdminSession() 호출 — 미인증 호출 시 /admin/login 으로 redirect.
  */
 export async function saveSettings(
   _prev: SettingsState,
   formData: FormData,
 ): Promise<SettingsState> {
+  await requireAdminSession();
+
   const parsed = SettingsInputSchema.safeParse({
     candidateCount: formData.get("candidateCount"),
     selectLimit: formData.get("selectLimit"),
@@ -56,11 +62,15 @@ export async function saveSettings(
  *
  * 빈 배열은 허용 (어드민이 우선순위 전부 비울 수도) — 결과 페이지는 그 경우
  * top3 가 0건이라 모달의 others 만 의미 있음.
+ *
+ * Server action 은 layout 게이트 우회하므로 자체 가드 필수.
  */
 export async function saveScenarioPriority(
   _prev: ScenarioPriorityState,
   formData: FormData,
 ): Promise<ScenarioPriorityState> {
+  await requireAdminSession();
+
   const raw = formData.getAll("scenarioPriority").map(String);
 
   // 폼이 단일 JSON 문자열로 보냈을 수도 — drag-drop UI 에 적합.

@@ -136,7 +136,8 @@ model PlanRequestCandidate {
 // 운영:        phone (알림톡), email (로그인), active
 //
 // 향후 Supabase Auth 통합 시 id 가 auth.users.id 와 동일 (uuid) 가 되도록 마이그
-// 레이션 — 지금은 standalone nanoid.
+// 레이션 — 지금은 standalone nanoid. (AdminUser 가 이미 이 패턴으로 도입됨 —
+// 같은 구조 따라가면 됨. 자세한 건 src/app/admin/CLAUDE.md.)
 
 model Partner {
   id String @id
@@ -263,3 +264,24 @@ model AppSettings {
   @@schema("claim")
 }
 
+// ============================================================
+// admin_users — 운영자 권한 화이트리스트
+// ============================================================
+// auth.users.id (uuid) 와 동일한 id. 인증된 사용자가 이 테이블에 있으면 admin.
+// auth 스키마는 Supabase 가 관리하므로 FK 는 두지 않음 (cross-schema 회피).
+// 추가/삭제는 운영 SQL 또는 dashboard 로 수동 — signup 흐름 없음.
+//
+// PK 가 nanoid(16) 가 아닌 UUID 인 이유: Supabase auth.users.id 와 1:1 매핑되는
+// entity 라 동일 UUID 사용. Partner 도 향후 같은 방향으로 마이그레이션 예정.
+
+model AdminUser {
+  id        String   @id @db.Uuid                          // = auth.users.id
+  email     String   @unique
+  name      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@map("admin_users")
+  @@schema("claim")
+}
