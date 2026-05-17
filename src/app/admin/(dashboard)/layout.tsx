@@ -1,8 +1,9 @@
-import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { BrandMark } from "@/components/brand-mark";
+import { requireAdminSession } from "@/server/dal";
 
+import { signOutAdmin } from "./_actions/logout";
 import { AdminNav } from "./_components/admin-nav";
 
 /**
@@ -14,15 +15,16 @@ import { AdminNav } from "./_components/admin-nav";
  * `/admin/login` 은 이 레이아웃 밖 (route group `(dashboard)` 비포함) — 로그인 전엔
  * nav 가 보이지 않아야 함.
  *
- * cacheComponents=true — 어드민은 항상 최신 운영 데이터를 봐야 하므로 `cookies()` 를
- * 한 번 읽어 서브트리 전체를 dynamic 으로 마킹. (실 인증은 후속 단계에서 이 cookie 검증.)
+ * `requireAdminSession()` 가 진짜 인증 boundary — Supabase 인증 + admin_users 권한
+ * 체크 둘 다 통과해야 자식이 렌더링됨. 실패 시 /admin/login 으로 redirect.
  */
 export default async function AdminDashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  await cookies();
+  await requireAdminSession();
+
   return (
     <div className="w-full flex-1 flex flex-col bg-white min-h-screen">
       {/* Top bar */}
@@ -32,12 +34,14 @@ export default async function AdminDashboardLayout({
             <BrandMark />
             <span className="text-sm text-[#4b4b4b]">운영자</span>
           </Link>
-          <Link
-            href="/admin/login"
-            className="text-xs text-[#4b4b4b] hover:text-black transition-colors"
-          >
-            로그아웃
-          </Link>
+          <form action={signOutAdmin}>
+            <button
+              type="submit"
+              className="text-xs text-[#4b4b4b] hover:text-black transition-colors"
+            >
+              로그아웃
+            </button>
+          </form>
         </div>
       </header>
 

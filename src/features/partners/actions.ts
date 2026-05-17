@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { newId } from "@/lib/id";
+import { requireAdminSession } from "@/server/dal";
 import { prisma } from "@/server/db/prisma";
 
 import { PartnerInputSchema, type PartnerInput } from "./schema";
@@ -31,15 +32,19 @@ function parseForm(formData: FormData) {
 }
 
 /**
- * 신규 설계사 등록 — 어드민.
+ * 신규 설계사 등록 — 어드민 전용.
  *
  * 검증은 운영자가 오프라인에서 수행 후 등록 (PRD §5.8).
  * exposureCount=0, recentSubmissions=[] 는 DB default 가 채움.
+ *
+ * Server action 은 layout 의 인증 게이트를 거치지 않으므로 자체 가드 필수.
  */
 export async function createPartner(
   _prev: PartnerMutationState,
   formData: FormData,
 ): Promise<PartnerMutationState> {
+  await requireAdminSession();
+
   const parsed = parseForm(formData);
   if (!parsed.success) {
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
@@ -70,14 +75,18 @@ export async function createPartner(
 }
 
 /**
- * 기존 설계사 수정 — 어드민. 폼 입력 필드만 갱신 가능.
+ * 기존 설계사 수정 — 어드민 전용. 폼 입력 필드만 갱신 가능.
  * exposureCount/recentSubmissions 는 시스템 카운터라 폼 밖.
+ *
+ * Server action 은 layout 의 인증 게이트를 거치지 않으므로 자체 가드 필수.
  */
 export async function updatePartner(
   partnerId: string,
   _prev: PartnerMutationState,
   formData: FormData,
 ): Promise<PartnerMutationState> {
+  await requireAdminSession();
+
   const parsed = parseForm(formData);
   if (!parsed.success) {
     return { ok: false, errors: parsed.error.flatten().fieldErrors };

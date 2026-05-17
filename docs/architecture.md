@@ -28,7 +28,7 @@
 ```
 /
 ├─ next.config.ts
-├─ proxy.ts                      # Next 16에서 middleware.ts 대체
+├─ middleware.ts                 # 공식 이름은 proxy.ts 지만 16.2.4 + Turbopack 버그로 legacy 이름 사용 (§7.1)
 ├─ components.json                # shadcn 설정
 ├─ tsconfig.json                  # paths: { "@/*": ["./src/*"] }
 ├─ public/
@@ -323,40 +323,37 @@ export function RequestProposalForm({ partnerId }: { partnerId: string }) {
 
 ---
 
-## 7. Middleware → Proxy & 인증
+## 7. Middleware / Proxy & 인증
 
-### 7.1 `proxy.ts` (Next 16 신규)
+### 7.1 파일명 — `middleware.ts` (Next 16 + Turbopack 워크어라운드)
 
-`middleware.ts`는 **deprecated**, `proxy.ts`로 이름 변경. **Node.js 런타임 전용** (Edge 불가). geo redirect, A/B 라우팅, rewrite 같은 애플리케이션 레벨 관심사용.
+Next 16 공식 컨벤션은 `proxy.ts` + `export function proxy`. 그러나 **16.2.4 + Turbopack 에서 proxy.ts 가 build manifest 에 등록되지 않는 버그**가 있어, 현재 프로젝트는 **legacy `middleware.ts` + `export async function middleware`** 를 사용. Production build (`pnpm build` / `pnpm start`) 에서는 정상 작동, dev mode (`pnpm dev`) Turbopack 에서는 middleware 자체가 안 돌지만 보안 검증은 production 모드로 수행. 버그 수정 시 `npx @next/codemod@canary middleware-to-proxy` 로 일괄 변환 가능.
 
-```ts
-// proxy.ts
-import { NextRequest, NextResponse } from 'next/server'
+Node.js 런타임 전용 (Edge 불가).
 
-export default function proxy(req: NextRequest) {
-  if (req.nextUrl.pathname === '/old') {
-    return NextResponse.redirect(new URL('/new', req.url))
-  }
-  return NextResponse.next()
-}
-export const config = { matcher: ['/((?!_next/|api/|favicon.ico).*)'] }
-```
+### 7.2 ⚠️ middleware 를 인증 boundary 로 쓰지 말 것 (하지만 optimistic 차단은 필수)
 
-### 7.2 ⚠️ proxy를 인증 boundary로 쓰지 말 것
+공식 가이드: middleware 는 **optimistic redirect** (명백히 비로그인 사용자 튕기기) 용도. 실제 권한 검사는 **Server Component / Layout / Server Action 에서 DAL 호출** 로 수행.
 
-공식 가이드: proxy는 **optimistic redirect** (명백히 비로그인 사용자 튕기기) 용도. 실제 권한 검사는 **Server Component / Layout / Server Action에서 DAL 호출**로 수행. 이렇게 안 하면 "edge가 인가된 응답을 캐시한" 류의 보안 사고가 남.
+**중요 (Next 16 PPR 제약)**: `cacheComponents: true` + PPR 모드에서 layout 의 `redirect()` 가 HTTP 307 이 아니라 1초 `<meta http-equiv="refresh">` fallback 으로 처리되어, 그 1초 동안 admin 셸 HTML 이 응답에 노출되고 크롤러는 200 으로 인식해 색인할 수 있음 (실측 확인). 그래서 middleware 가 **optimistic 으로 Supabase 세션 cookie 부재 시 307** 을 쏘고, DAL 이 admin_users 화이트리스트로 진짜 검증을 함. 두 레이어 모두 필수.
 
-### 7.3 인증 라이브러리 (2026 권장)
+### 7.3 채택 — Supabase Auth + admin_users 화이트리스트
 
-생태계가 크게 정리됨:
+신규 프로젝트 권장은 Better Auth 지만, 이 프로젝트는 이미 Supabase Postgres 사용 중 + RLS 통합 이점 + Auth/Storage 일원화로 **Supabase Auth** 채택.
 
-- **Lucia**: 2025-03 deprecated.
-- **NextAuth/Auth.js**: 2025-09 Better Auth 팀이 메인테인 인계받음. 공식 가이드도 신규 프로젝트에 Better Auth 권장.
-- **Better Auth** ✅ — TypeScript 추론 세션, DB 기반(즉시 invalidation), Next 16 `proxy.ts` 공식 지원. **자체 호스팅 신규 프로젝트의 디폴트.**
-- **Clerk** — 호스티드, 한국어 친화 UI 컴포넌트 제공. MAU 단가 감수 가능하면.
-- **Supabase Auth** — Supabase 쓰면 RLS와 통합.
+**구조 (2단계 인증/권한):**
 
-이 프로젝트(데이터 소유 + 비용 예측 우선): **Better Auth** 추천.
+1. **인증 (authn)** — Supabase `auth.getUser()` (JWT 서버 검증). `server/supabase.ts` 의 `getSupabaseServerClient()` 가 단일 진입점.
+2. **권한 (authz)** — `claim.admin_users` 테이블 화이트리스트 lookup. PK = `auth.users.id` (UUID). active=false 토글로 즉시 차단 가능.
+3. **DAL** (`server/dal.ts`) — `requireAdminSession()` 가 둘 다 통과한 경우에만 세션 반환. 그 외엔 `/admin/login` 으로 redirect. 모든 admin 페이지 layout + 모든 admin server action 진입부에서 호출.
+
+**경로 은닉 (defense in depth, optional)** — `ADMIN_KNOCK_PATH` env 가 설정되면 middleware 가:
+- `/<KNOCK>` 진입 시 `admin_knock` 쿠키 (30일) 발급 후 307 → /admin/login
+- `/admin/*` 요청에 유효한 쿠키 없으면 **404** (admin 존재 자체 부정)
+
+obscurity 이지 보안 아님. MFA / IP 화이트리스트 와 병행 권장. 자세한 건 [src/app/admin/CLAUDE.md](../src/app/admin/CLAUDE.md).
+
+**검색 엔진 색인 차단** — middleware 가 `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex` HTTP 헤더를 모든 `/admin/*` 응답 + 404 응답 + knock 응답에 자동 부착. `src/app/admin/layout.tsx` 의 `metadata.robots` 가 `<meta name="robots">` 로 이중 방어. robots.txt 에 `Disallow: /admin` 은 의도적으로 추가하지 않음 — 경로 존재를 노출하는 역효과.
 
 ---
 
@@ -517,7 +514,7 @@ Next 16에서 stable, opt-in (`reactCompiler: true`). Babel 기반이라 빌드 
 | `revalidateTag(tag)` | **`revalidateTag(tag, profile)`** — 1-arg 형태 deprecated |
 | (없음) | **`updateTag(tag)`** — Server Action read-your-writes |
 | (없음) | **`refresh()`** — uncached dynamic만 재렌더 |
-| `middleware.ts` (Edge) | **`proxy.ts`** (Node 전용) |
+| `middleware.ts` (Edge) | **`proxy.ts`** (Node 전용) — 단 16.2.4 Turbopack 버그로 현재는 `middleware.ts` 사용 (§7.1) |
 | webpack 디폴트 | **Turbopack 디폴트**, webpack은 `--webpack` |
 | `experimental.typedRoutes` | **`typedRoutes: true`** (top-level stable) |
 | `next lint` | **제거** — ESLint/Biome 직접 호출 |
