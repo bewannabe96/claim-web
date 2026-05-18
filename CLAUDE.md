@@ -81,7 +81,7 @@ pnpm db:psql / db:logs / db:stop / db:seed
 
 ## 새 기능 추가 워크플로우
 
-1. **위치 결정** — 인증? `(app)/` : `(marketing)/`. 도메인 로직? `features/<도메인>/`.
+1. **위치 결정** — 가입자/공개 → `(marketing)/`, 설계사 → `partner/`, 운영자 → `admin/(dashboard)/`. 도메인 로직? `features/<도메인>/`.
 2. **schema 먼저** — `features/<x>/schema.ts`에 zod로 입력/상태 정의.
 3. **데이터 접근** — `features/<x>/queries.ts` (`'server-only'`).
 4. **mutation** — `features/<x>/actions.ts` (`'use server'`), 함수 진입부에서 `requireAdminSession()` / `requirePartnerSession()` 호출 (layout 게이트는 server action 에 적용 안 됨 — features/CLAUDE.md 참조).

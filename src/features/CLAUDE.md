@@ -30,7 +30,7 @@ features/<도메인>/
 ## ❌ 안티패턴
 
 - `queries.ts`에 `import 'server-only'` 빼먹기 — 클라이언트 번들 누출
-- `actions.ts` 안에서 인증 검증 안 하기 — 모든 쓰기 액션은 `requireSession()` 호출
+- `actions.ts` 안에서 권한 검증 안 하기 — admin/partner 로그인 액션은 진입부에서 `requireAdminSession()` / `requirePartnerSession()` 호출, 가입자/토큰 기반 액션은 진입부에서 token → row 조회 + status 검증
 - Server Action 내 검증을 zod 없이 수동 if 체크 — 항상 `Schema.safeParse()`
 - 도메인 로직을 `app/<route>/_lib/`에 두기 — 한 라우트만 쓴다고 확신할 때만
 
