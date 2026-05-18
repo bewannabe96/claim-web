@@ -6,12 +6,15 @@ name: Auto-generate migration on develop
 #   3. 새 migration 디렉토리를 develop 에 commit/push
 # 그 commit 이 master 로 merge 되면 Vercel build 의 prisma migrate deploy 가 운영 적용.
 #
-# Required secrets (Repository settings → Secrets and variables → Actions):
-#   - DEV_DATABASE_URL  : 원격 dev Supabase Transaction pooler URL (?schema=claim)
-#   - DEV_DIRECT_URL    : 원격 dev Supabase Session pooler URL    (?schema=claim)
-#   - MIGRATIONS_PUSH_TOKEN : repo `contents:write` 권한 PAT (또는 fine-grained token).
-#     `secrets.GITHUB_TOKEN` 으론 같은 workflow trigger 차단으로 자기 자신 트리거 안 되니 OK
-#     이지만, branch protection 의 "Restrict who can push" 우회를 위해 PAT 권장.
+# Required environment ("dev") secrets:
+#   - DEV_DATABASE_URL      : 원격 dev Supabase Transaction pooler URL (?schema=claim)
+#   - DEV_DIRECT_URL        : 원격 dev Supabase Session pooler URL    (?schema=claim)
+#   - MIGRATIONS_PUSH_TOKEN : fine-grained PAT (Contents: Read and write, repo: claim-web).
+#                             기본 GITHUB_TOKEN 으로도 push 자체는 되지만, 자동 commit 이
+#                             다른 워크플로 트리거 가능해야 하거나 develop 에 branch protection
+#                             "Restrict who can push" 가 걸리는 미래 대비 + 회전·폐기 용이.
+# Settings → Environments → "dev" 생성 후 위 3개를 environment secret 으로 등록.
+# Deployment branches 를 `develop` 로 제한해두면 다른 브랜치에서 접근 차단.
 
 on:
   push:
@@ -27,6 +30,7 @@ concurrency:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    environment: dev          # GitHub environment — DEV_* secrets 격리
     permissions:
       contents: write
     steps:
