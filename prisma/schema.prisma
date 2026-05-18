@@ -138,20 +138,21 @@ model PlanRequestCandidate {
 // 는 auth.users.id (UUID) 와 매핑되는 별도 인증 key.
 //
 // 사용자 생성 흐름:
-//   1. 운영자가 사전 등록 — User row 생성 (authId=null, role/role 별 extension row).
+//   1. 운영자가 사전 등록 — User row 생성 (authId=null) + 역할별 extension row.
 //   2. 첫 로그인 (admin: 비번 / partner: kakao OAuth) 시 callback/action 이 email 로
 //      User row 를 찾아 authId 채움 (claim). 이후 로그인은 authId 로 직접 lookup.
 //
-// role 은 빠른 분기용 discriminator. 실제 권한 검증은 partner/admin extension row
-// 존재 여부로 (defense in depth) — DAL 이 둘 다 확인.
+// 역할(role)은 별도 필드로 두지 않음 — 한 사용자가 여러 역할을 가질 수 있도록
+// Partner / Admin extension row 의 존재(+active) 자체가 권한 판단 기준. DAL 이 단일 진실.
 
 model User {
   id        String   @id                                  // nanoid(16) — 도메인 식별자
   authId    String?  @unique @db.Uuid @map("auth_id")     // = auth.users.id (UUID). 사전 등록 시 null, 첫 로그인 후 claim.
   email     String   @unique
   name      String
-  phone     String?
-  role      String                                        // "general" | "partner" | "admin"
+  // partner 의 phone 은 invitation 단계부터 검증되는 식별자 — 다른 사용자와 충돌 못 함.
+  // admin 은 phone 미입력 가능 (nullable). UNIQUE + NULL 다수 허용 (PostgreSQL 기본).
+  phone     String?  @unique
 
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
@@ -159,7 +160,6 @@ model User {
   partner   Partner?
   admin     Admin?
 
-  @@index([role])
   @@map("user")
   @@schema("claim")
 }
@@ -167,7 +167,7 @@ model User {
 // ============================================================
 // partner — 설계사 추가 정보 (User 와 1:1, PK 공유)
 // ============================================================
-// 가입자 노출:  user.name, avatarUrl, bio, yearsOfExperience, trustMetric
+// 가입자 노출:  user.name, bio, yearsOfExperience, trustMetric
 // 매칭 가중치: exposureCount (형평성), recentSubmissions (페널티)
 // 운영:        user.email (로그인), user.phone (알림톡), active
 //
@@ -177,7 +177,6 @@ model User {
 model Partner {
   id                 String   @id                          // = User.id (공유 nanoid)
 
-  avatarUrl          String   @map("avatar_url")
   bio                String
   yearsOfExperience  Int      @map("years_of_experience")
   trustMetric        String   @map("trust_metric")
@@ -201,6 +200,62 @@ model Partner {
   // 매칭 후보 추출 — active=true 중 exposure_count 적은 순으로 정렬.
   @@index([active, exposureCount])
   @@map("partner")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner_invitation — 운영자가 발행한 설계사 가입 초청 (임시)
+// ============================================================
+// 운영자가 신규 설계사 등록 시 user/partner row 를 즉시 만들지 않고 이 테이블에만
+// INSERT. 설계사가 발급된 일회용 가입 링크 (`/partner/signup/[token]`) 로 진입 →
+// Kakao OAuth → callback 이 phone 매칭 검증 후 user + partner 트랜잭션 생성 +
+// invitation 소비 (consumedAt + consumedUserId).
+//
+// 한 invitation = 한 row. 재발급은 token + expiresAt 회전 (row 신규 INSERT 아님).
+// 소비된 invitation 은 audit 용으로 남기되 token 으론 더 이상 진입 불가
+// (consumedAt IS NOT NULL 가드).
+//
+// 동일 phone / licenseNumber 의 미소비 invitation 중복 차단은 앱 레이어 (zod +
+// actions 의 사전 lookup) 가 책임 — partial unique index 사용 안 함.
+
+model PartnerInvitation {
+  id String @id                                            // nanoid(16)
+
+  // 가입 시 user / partner 로 옮겨질 정보. partner.* 컬럼과 1:1 대응.
+  name              String
+  /// user.phone 후보 + Kakao OAuth 응답의 phone 과 매칭 검증 키.
+  phone             String
+  bio               String
+  yearsOfExperience Int      @map("years_of_experience")
+  trustMetric       String   @map("trust_metric")
+  licenseNumber     String   @map("license_number")
+  /// 가입 시 partner.active 로 복사.
+  active            Boolean  @default(true)
+
+  /// 일회용 가입 토큰. nanoid(32) (`newToken()`). 재발급 시 회전.
+  token     String   @unique
+  expiresAt DateTime @db.Timestamptz(6) @map("expires_at")
+
+  /// 본인인증 (PortOne) 통과 시점. NULL = 미인증 (signup 페이지에서 본인인증 요구).
+  /// Kakao OAuth 콜백은 invitation 미소비 + 미만료 + phoneVerifiedAt 셋 모두
+  /// 통과해야 user/partner 생성. 인증 시점에 PortOne 응답의 phone vs invitation.phone
+  /// 매칭 검증 (콜백이 아니라 인증 액션 책임).
+  phoneVerifiedAt DateTime? @db.Timestamptz(6) @map("phone_verified_at")
+
+  /// 소비 흔적 (가입 완료 시점). NULL = 미소비 (재발급/삭제 가능).
+  consumedAt     DateTime? @db.Timestamptz(6) @map("consumed_at")
+  /// 가입된 user.id (audit). FK 아님 — invitation 보존이 audit 본질이므로
+  /// user 삭제 시 cascade 안 됨. consumedAt IS NOT NULL 일 때만 set.
+  consumedUserId String?   @map("consumed_user_id")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  // 어드민 리스트 정렬 + phone/licenseNumber 충돌 사전 검사 용도.
+  @@index([consumedAt, createdAt(sort: Desc)])
+  @@index([phone])
+  @@index([licenseNumber])
+  @@map("partner_invitation")
   @@schema("claim")
 }
 
@@ -358,7 +413,7 @@ model AppSettings {
 // ============================================================
 // admin — 운영자 추가 정보 (User 와 1:1, PK 공유)
 // ============================================================
-// User.role='admin' + 이 row 가 존재해야 권한 부여 (defense in depth).
+// 이 row 의 존재(+active) 자체가 admin 권한 — User.role 같은 별도 discriminator 없음.
 // 운영자 추가/제거는 운영 SQL 또는 admin 운영 UI 로 수동 — 자체 signup 흐름 없음.
 // RBAC permissions 는 추후 컬럼 추가로 도입 예정 (현재는 active 만 체크).
 

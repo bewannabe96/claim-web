@@ -2,7 +2,12 @@ import "server-only";
 
 import { prisma } from "@/server/db/prisma";
 
-import type { Partner, PartnerCard } from "./schema";
+import type {
+  Partner,
+  PartnerCard,
+  PartnerInvitation,
+  PartnerInvitationView,
+} from "./schema";
 
 const USER_SELECT = {
   user: { select: { id: true, email: true, name: true, phone: true } },
@@ -84,11 +89,60 @@ export async function listAllPartners(): Promise<Partner[]> {
   });
 }
 
+/**
+ * 어드민 — 미소비 가입 초청 목록. 최신 발급 순.
+ *
+ * consumedAt IS NOT NULL 은 audit 용도로 row 자체는 남지만 어드민 화면엔 노출 X
+ * — 가입 완료된 설계사는 partner 리스트로 이동했으므로.
+ */
+export async function listPartnerInvitations(): Promise<PartnerInvitation[]> {
+  return prisma.partnerInvitation.findMany({
+    where: { consumedAt: null },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function getPartnerInvitationById(
+  id: string,
+): Promise<PartnerInvitation | null> {
+  return prisma.partnerInvitation.findUnique({ where: { id } });
+}
+
+/**
+ * 가입 페이지용 — token 으로 미소비 + 미만료 invitation 조회.
+ *
+ * 다음 케이스 모두 null 반환:
+ *   - token 미존재 (오타 / 회전된 구 토큰)
+ *   - 이미 소비됨 (consumedAt IS NOT NULL)
+ *   - 만료됨 (expiresAt < now)
+ *
+ * 호출자는 null 만으로 분기 — 어느 사유인지는 의도적으로 가리지 않음 (열거 방지).
+ * `phoneVerifiedAt` 은 view 에 포함 — 페이지가 본인인증 단계 vs Kakao 가입 단계 분기.
+ */
+export async function getPartnerInvitationByToken(
+  token: string,
+): Promise<PartnerInvitationView | null> {
+  const invitation = await prisma.partnerInvitation.findUnique({
+    where: { token },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      expiresAt: true,
+      consumedAt: true,
+      phoneVerifiedAt: true,
+    },
+  });
+  if (!invitation) return null;
+  if (invitation.consumedAt) return null;
+  if (invitation.expiresAt.getTime() < Date.now()) return null;
+  return invitation;
+}
+
 function toCard(p: Partner): PartnerCard {
   return {
     id: p.id,
     name: p.user.name,
-    avatarUrl: p.avatarUrl,
     bio: p.bio,
     yearsOfExperience: p.yearsOfExperience,
     trustMetric: p.trustMetric,

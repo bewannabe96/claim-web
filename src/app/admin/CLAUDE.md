@@ -7,7 +7,7 @@
 ```
 요청 → [① 루트 middleware.ts] → [② admin/layout.tsx metadata] → [③ (dashboard)/layout.tsx requireAdminSession] → 페이지
                 ↓                                                       ↓
-        knock cookie 검사                                         user.role='admin' + admin.active
+        knock cookie 검사                                         claim.admin row 존재 + active
         X-Robots-Tag 부착                                         (claim.user.authId = auth.users.id)
         Supabase 세션 optimistic 검사
 ```
@@ -26,7 +26,7 @@
 ### ③ `admin/(dashboard)/layout.tsx` (진짜 auth boundary)
 
 ```ts
-await requireAdminSession();  // dal.ts — Supabase getUser() → user(authId) → role + admin.active 확인
+await requireAdminSession();  // dal.ts — Supabase getUser() → user(authId) → admin extension active 확인
 ```
 
 이게 단일 진실 공급원. 자식 페이지는 admin 인증된 세션을 신뢰. `(dashboard)` route group 이라 URL 에 안 박힘.
@@ -67,7 +67,11 @@ admin/
    ├─ page.tsx                   # 대시보드 홈
    ├─ requests/...               # 요청 모니터링 (상세 페이지에서 분석 실패도 인라인 노출)
    ├─ analysis-failures/page.tsx # 미해결 분석 실패 모니터링 + 재시도
-   ├─ partners/...               # 설계사 풀 관리 (User + Partner 통합 CRUD)
+   ├─ partners/...               # 설계사 풀 관리 (가입 초청 발급 + 등록된 partner 편집)
+   │  ├─ page.tsx                # 가입 대기 (invitation) + 등록 완료 (partner) 2-섹션 리스트
+   │  ├─ new/page.tsx            # 신규 초청 발급 (createPartnerInvitation 액션)
+   │  ├─ invitations/[id]/...    # 초청 상세 — 가입 URL 복사 + 재발급/삭제/정보수정
+   │  └─ [id]/page.tsx           # 등록 완료된 partner 편집 (updatePartner)
    ├─ settings/...               # 시스템 설정
    ├─ _actions/logout.ts         # signOutAdmin server action
    └─ _components/                # 어드민 공용 UI
@@ -86,10 +90,26 @@ admin/
 | `ADMIN_KNOCK_PATH` | (옵션, 권장) admin 경로 은닉. `/<value>` 진입 시 쿠키 발급. 미설정 시 knock 검사 스킵. |
 | `LOCAL_DEV_ADMIN_USER_ID` | (dev 전용) 본인 auth.users.id (UUID). seed 가 user.authId 채움. |
 | `LOCAL_DEV_ADMIN_EMAIL` | (dev 전용) 본인 이메일. seed 가 user.email 로 upsert. |
+| `PARTNER_INVITATION_TTL_DAYS` | (옵션, 기본 7) 신규 설계사 가입 초청 token 만료 (일). |
 
 자세한 형식/회전 절차는 [.env.example](../../../.env.example).
 
 ## 운영 절차
+
+### 새 partner 등록 (가입 초청 발급)
+
+partner 는 어드민이 직접 INSERT 하지 않음. 다음 흐름:
+
+1. `/admin/partners/new` 에서 이름/휴대폰 + partner 정보 입력 → "초청 발급"
+2. `createPartnerInvitation` 액션이 partner_invitation row + token + expiresAt 생성, `/admin/partners/invitations/<id>` 로 자동 이동
+3. 발급된 가입 URL (`/partner/signup/<token>`) 복사 → 메신저로 설계사에게 전달
+4. 설계사가 **PortOne 본인인증 + 카카오 OAuth** 두 단계 완료 시점에 콜백이 user + partner 트랜잭션 INSERT + invitation 소비
+5. 자세한 흐름은 [src/app/partner/CLAUDE.md](../partner/CLAUDE.md) 참조
+
+같은 페이지에서 가능한 운영 액션:
+- 초청 정보 수정 (이름/휴대폰/partner 필드)
+- 토큰 재발급 (만료 임박/통과 시 — token 회전 + expiresAt 갱신)
+- 초청 삭제 (미소비 invitation 만)
 
 ### 새 admin 계정 추가 (운영 환경)
 
@@ -98,8 +118,8 @@ admin/
 3. SQL editor 에서 user + admin 두 row 생성 (한 트랜잭션):
    ```sql
    WITH new_user AS (
-     INSERT INTO claim."user" (id, auth_id, email, name, role, updated_at)
-     VALUES (<nanoid>, '<auth.users.id>', '<email>', '<name>', 'admin', now())
+     INSERT INTO claim."user" (id, auth_id, email, name, updated_at)
+     VALUES (<nanoid>, '<auth.users.id>', '<email>', '<name>', now())
      RETURNING id
    )
    INSERT INTO claim.admin (id, updated_at)
@@ -127,4 +147,5 @@ DAL 이 매 요청마다 확인하므로 next 요청부터 차단.
 - ❌ middleware 에서 DB 쿼리 (user 조회 등) — middleware 는 매 요청 실행. DB 호출은 layout/action 의 DAL 에서만
 - ❌ `ADMIN_KNOCK_PATH` 를 평문 코드/git 에 커밋 — env 로만 관리
 - ❌ MFA 없이 obscurity (knock) 에만 의존 — 코드 한 번 새면 끝
-- ❌ User row 만 만들고 Admin row 누락 — role='admin' 이어도 admin extension 없으면 DAL 통과 안 됨 (의도, defense in depth)
+- ❌ User row 만 만들고 Admin row 누락 — admin extension row 자체가 권한. 누락 시 DAL 통과 안 됨
+- ❌ partner 를 어드민에서 직접 INSERT 하는 액션 부활 — `createPartner` 없음. 반드시 `createPartnerInvitation` → 콜백 흐름으로만 생성

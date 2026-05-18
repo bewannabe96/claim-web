@@ -335,37 +335,69 @@ Node.js 런타임 전용 (Edge 불가).
 
 공식 가이드: middleware 는 **optimistic redirect** (명백히 비로그인 사용자 튕기기) 용도. 실제 권한 검사는 **Server Component / Layout / Server Action 에서 DAL 호출** 로 수행.
 
-**중요 (Next 16 PPR 제약)**: `cacheComponents: true` + PPR 모드에서 layout 의 `redirect()` 가 HTTP 307 이 아니라 1초 `<meta http-equiv="refresh">` fallback 으로 처리되어, 그 1초 동안 셸 HTML 이 응답에 노출되고 크롤러는 200 으로 인식해 색인할 수 있음 (실측 확인). 그래서 middleware 가 **optimistic 으로 Supabase 세션 cookie 부재 시 307** 을 쏘고, DAL 이 user + role extension 화이트리스트로 진짜 검증을 함. 두 레이어 모두 필수.
+**중요 (Next 16 PPR 제약)**: `cacheComponents: true` + PPR 모드에서 layout 의 `redirect()` 가 HTTP 307 이 아니라 1초 `<meta http-equiv="refresh">` fallback 으로 처리되어, 그 1초 동안 셸 HTML 이 응답에 노출되고 크롤러는 200 으로 인식해 색인할 수 있음 (실측 확인). 그래서 middleware 가 **optimistic 으로 Supabase 세션 cookie 부재 시 307** 을 쏘고, DAL 이 user + 역할 extension active 화이트리스트로 진짜 검증을 함. 두 레이어 모두 필수.
 
-### 7.3 채택 — Supabase Auth + User/role extension 화이트리스트
+### 7.3 채택 — Supabase Auth + 역할 extension 화이트리스트
 
-신규 프로젝트 권장은 Better Auth 지만, 이 프로젝트는 이미 Supabase Postgres 사용 중 + RLS 통합 이점 + Auth/Storage 일원화로 **Supabase Auth** 채택. 모든 role (일반/파트너/운영자) 은 단일 Supabase auth 풀을 공유하고, 우리 도메인 테이블 (`claim.user` + `claim.partner` / `claim.admin`) 이 role 화이트리스트.
+신규 프로젝트 권장은 Better Auth 지만, 이 프로젝트는 이미 Supabase Postgres 사용 중 + RLS 통합 이점 + Auth/Storage 일원화로 **Supabase Auth** 채택. 모든 역할 (일반/파트너/운영자) 은 단일 Supabase auth 풀을 공유하고, 우리 도메인 테이블 (`claim.user` + `claim.partner` / `claim.admin`) 이 역할 화이트리스트.
 
-**사용자 모델 (1:1 extension):**
+**사용자 모델 (1:1 extension, 다중 역할 가능):**
 
 ```
 auth.users (Supabase 관리)
    │ 1:1 via user.authId (UUID, nullable — 첫 로그인 시 claim)
    ▼
-claim.user (id=nanoid, email/name/phone, role 'general'|'partner'|'admin')
-   │ 1:1 (PK 공유)
-   ├──▶ claim.partner (avatarUrl, bio, yearsOfExperience, trustMetric, licenseNumber, active)
+claim.user (id=nanoid, email/name/phone[UNIQUE])
+   │ 1:1 (PK 공유) — 한 사용자가 둘 다 가질 수 있음
+   ├──▶ claim.partner (bio, yearsOfExperience, trustMetric, licenseNumber, active)
    └──▶ claim.admin   (active, 추후 permissions)
+
+claim.partner_invitation (임시) — partner 가입 진행 중 임시 보관
+   ↓ 가입 완료 시 → user + partner 트랜잭션 INSERT + consumed 마킹
 ```
 
-`User.authId` 가 nullable 인 이유 — 운영자가 사전 등록 (User + extension row 생성, authId=null) 후, 해당 사용자의 첫 로그인 (admin 비번 / partner Kakao) 시점에 login action / OAuth callback 이 email 로 user 찾아 `authId = auth.users.id` 채움. 이후 로그인은 DAL 이 `where: { authId }` 로 바로 lookup. authId mismatch (이미 다른 auth.users 와 매핑된 user 의 email 로 다른 Supabase 계정 로그인) 는 거부 — 운영자가 수동 정정.
+User 에는 role discriminator 컬럼이 없음 — 역할은 partner / admin extension row 존재(+active) 자체로 판정. 한 사용자가 partner + admin 둘 다 가질 수 있고, 각 require\*Session() 은 자신이 필요로 하는 extension 만 확인.
+
+`User.authId` 가 nullable 인 이유 — admin 은 운영자가 Supabase 에서 직접 생성 + SQL 로 user/admin row 사전 등록 (authId=null) → 첫 비번 로그인 시 `signInAdmin` 이 email 로 매칭해 authId 채움. partner 는 그 사전 등록 단계를 거치지 않고, **`partner_invitation` → Kakao 가입 콜백 시점에 user/partner row 와 authId 가 동시에 INSERT** 되므로 authId 가 nullable 인 채로 유지되는 케이스가 거의 없음. authId mismatch (이미 다른 auth.users 와 매핑된 user 의 email 로 다른 Supabase 계정 로그인) 는 거부 — 운영자가 수동 정정.
 
 **구조 (3단계 인증/권한):**
 
 1. **인증 (authn)** — Supabase `auth.getUser()` (JWT 서버 검증). `server/supabase.ts` 의 `getSupabaseServerClient()` 가 단일 진입점.
 2. **사용자 lookup** — `dal.ts:getOptionalUser()` 가 `claim.user where authId = auth.users.id` 로 도메인 user 조회. cache 로 same-request dedupe.
-3. **권한 (authz)** — role 별 `getOptional*Session()` 가 `user.role` 확인 + 해당 extension row (`claim.admin` / `claim.partner`) 의 `active=true` 확인. 둘 다 통과해야 세션 발급. `require*Session()` 는 null 시 각 영역 login 페이지로 redirect (admin: `/admin/login`, partner: `/partner/login`). 모든 보호 페이지 layout + 모든 mutation server action 진입부에서 호출.
+3. **권한 (authz)** — 역할별 `getOptional*Session()` 가 해당 extension row (`claim.admin` / `claim.partner`) 의 존재 + `active=true` 확인. 통과해야 세션 발급. `require*Session()` 는 null 시 각 영역 login 페이지로 redirect (admin: `/admin/login`, partner: `/partner/login`). 모든 보호 페이지 layout + 모든 mutation server action 진입부에서 호출.
 
 **로그인 흐름:**
 
-- **Admin** (`/admin/login`) — 이메일/비밀번호. `signInAdmin` action 이 `signInWithPassword` → user lookup → role/admin.active 검증 → authId claim → `/admin` 으로 redirect.
-- **Partner** (`/partner/login`) — Kakao OAuth. `signInWithKakao` action 이 `signInWithOAuth` URL 반환 → Kakao 인증 → `/api/auth/callback` 라우트가 code→session 교환 + user lookup + role/partner.active 검증 + authId claim → `/partner` 로 redirect.
+- **Admin** (`/admin/login`) — 이메일/비밀번호. `signInAdmin` action 이 `signInWithPassword` → user lookup → admin.active 검증 → authId claim → `/admin` 으로 redirect.
+- **Partner — 로그인** (`/partner/login`) — 이미 가입한 partner. Kakao OAuth. `signInWithKakao` action 이 `signInWithOAuth` URL 반환 → Kakao 인증 → `/api/auth/callback` 라우트가 code→session 교환 + user lookup + partner.active 검증 → `/partner` 로 redirect.
+- **Partner — 가입** (`/partner/signup/<invitation_token>`) — 아래 §7.4 참조.
 - 등록 안 된 이메일은 두 흐름 모두 동일 에러 메시지 ("로그인에 실패했습니다." / "등록된 설계사 계정이 아닙니다.") 로 응답해 enumeration 방어.
+
+### 7.4 Partner 가입 — invitation 경유 single source
+
+partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일회용 가입 초청 token** 으로만 가입. 어드민에 partner 직접 INSERT 액션 없음 (`createPartner` 없음 — `createPartnerInvitation` 만).
+
+**흐름 (2단계 인증):**
+
+1. 어드민 `/admin/partners/new` 입력 → `createPartnerInvitation` 이 `claim.partner_invitation` row INSERT (name/phone/bio/.../active + token + expiresAt = now + `PARTNER_INVITATION_TTL_DAYS`). user/partner row 없음.
+2. 어드민이 `/admin/partners/invitations/<id>` 에서 가입 URL (`/partner/signup/<token>`) 복사 → 메신저로 설계사에게 전달.
+3. 설계사가 링크 진입 → invitation 유효성 (미소비 + 미만료) 확인 → `phoneVerifiedAt` 기준으로 페이지 단계 분기:
+   - **Step 1 — 본인인증 (`phoneVerifiedAt IS NULL`)**: 이름 / 주민번호 앞6+1 / 휴대폰 입력 → PortOne 본인인증 → 통과 시 PortOne 응답의 phone vs invitation.phone 매칭 → `phoneVerifiedAt = now()` 업데이트.
+   - **Step 2 — Kakao 가입 (`phoneVerifiedAt IS NOT NULL`)**: "카카오톡으로 가입" 버튼 → `signUpWithKakao` action 이 Supabase `signInWithOAuth` 의 `redirectTo` 에 `?signup=<token>` 실어 Kakao 로 이동.
+4. Kakao 인증 후 `/api/auth/callback?signup=<token>` 진입:
+   - `exchangeCodeForSession` → session cookie
+   - invitation 재조회 + **소비/만료/phoneVerifiedAt 세 게이트** 통과 확인. 불통 시 `signOut` + 적절한 에러 (`phone_unverified` 등).
+   - Kakao 가 phone 을 제공하지 않으므로 콜백에서 phone 매칭은 하지 않음 (Step 1 책임).
+   - 트랜잭션: `user` (authId=kakao, email=kakao, name/phone=invitation) + `partner` (invitation 의 partner 필드들) + invitation 소비 (`consumedAt + consumedUserId`). 트랜잭션 안에서 세 게이트 한 번 더 재확인 (race-safe).
+   - 성공 → `/partner` redirect.
+
+**재발급/삭제** — `/admin/partners/invitations/<id>` 에서 `reissuePartnerInvitationToken` (token 회전 + expiresAt 갱신, 구 token 즉시 무효) / `deletePartnerInvitation` (미소비만). 소비된 invitation 은 audit 용 보존.
+
+**race-safety** — 콜백 트랜잭션 안에서 invitation 을 재조회 (`consumedAt IS NULL AND phoneVerifiedAt IS NOT NULL AND expiresAt > now()`) → 동시 클릭/이중 OAuth 시 한쪽만 통과. `user.phone` / `user.authId` / `partner.licenseNumber` UNIQUE 가 추가 방어. 충돌 시 `?error=already_registered` 로 안내.
+
+**외부 의존**:
+- **Kakao Developers**: "카카오계정(이메일)" 동의항목 필수 (`?error=no_email` 방지). Kakao 자체는 전화번호를 제공하지 않으므로 phone scope 는 불필요.
+- **PortOne (본인인증)**: V2 API 기준. env `PORTONE_STORE_ID` / `PORTONE_CHANNEL_KEY` / `PORTONE_API_SECRET`. signup 페이지 Step 1 이 PortOne 본인인증 SDK 호출 → 결과로 PortOne API 서버 검증 → phoneVerifiedAt 갱신.
 
 **경로 은닉 (admin 만, defense in depth, optional)** — `ADMIN_KNOCK_PATH` env 가 설정되면 middleware 가:
 - `/<KNOCK>` 진입 시 `admin_knock` 쿠키 (30일) 발급 후 307 → /admin/login

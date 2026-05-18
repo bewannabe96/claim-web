@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { BrandMark } from "@/components/brand-mark";
@@ -8,6 +9,7 @@ import {
   type ProposalCard,
 } from "@/features/proposals/queries";
 import { getRequestByResultToken } from "@/features/requests/queries";
+import { nowMs } from "@/lib/wall-clock";
 import { getSettings } from "@/server/settings";
 
 import { ExpiredState } from "./_components/expired-state";
@@ -40,6 +42,9 @@ export default async function ResultPage({
 }: {
   params: Promise<{ token: string }>;
 }) {
+  // dynamic 인디케이터 — nowMs() 가 prerender 단계에서 실행되지 않도록.
+  await cookies();
+
   const { token } = await params;
   const req = await getRequestByResultToken(token);
   if (!req) notFound();
@@ -50,7 +55,7 @@ export default async function ResultPage({
   // 채우므로 undefined 인 경우는 이론상 없으나, 보수적으로 만료 처리 스킵.
   const isExpired =
     req.dispatchedAt !== undefined &&
-    Date.now() - new Date(req.dispatchedAt).getTime() >
+    nowMs() - new Date(req.dispatchedAt).getTime() >
       settings.resultRetentionDays * MS_PER_DAY;
 
   if (isExpired) {

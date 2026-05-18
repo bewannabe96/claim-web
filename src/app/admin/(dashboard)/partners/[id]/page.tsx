@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { updatePartner } from "@/features/partners/actions";
 import { getPartnerById } from "@/features/partners/queries";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,8 @@ export default async function AdminPartnerDetailPage({
   const partner = await getPartnerById(id);
   if (!partner) notFound();
 
+  const action = updatePartner.bind(null, partner.id);
+
   const missRate = partner.recentSubmissions.length
     ? partner.recentSubmissions.filter((s) => !s).length /
       partner.recentSubmissions.length
@@ -31,7 +34,7 @@ export default async function AdminPartnerDetailPage({
         <BackLink href="/admin/partners">설계사 풀</BackLink>
         <PageHeader
           title={partner.user.name}
-          description={`${partner.id} · ${partner.user.email}`}
+          description={`${partner.id} · ${partner.user.phone ?? partner.user.email}`}
         />
       </div>
 
@@ -82,12 +85,11 @@ export default async function AdminPartnerDetailPage({
 
       {/* 편집 폼 */}
       <PartnerForm
-        partnerId={partner.id}
+        action={action}
+        submitLabel="변경 저장"
         initial={{
           name: partner.user.name,
-          email: partner.user.email,
           phone: partner.user.phone ?? "",
-          avatarUrl: partner.avatarUrl,
           bio: partner.bio,
           yearsOfExperience: partner.yearsOfExperience,
           trustMetric: partner.trustMetric,
