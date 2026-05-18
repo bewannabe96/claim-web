@@ -539,7 +539,7 @@ function NotesFields({
       onChange={(e) =>
         setData((d) => ({ ...d, additionalNotes: e.target.value }))
       }
-      className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10"
+      className="w-full px-4 py-3 text-base md:text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10"
     />
   );
 }
@@ -581,7 +581,7 @@ function MedicalEntryCard({
           placeholder="예: 고혈압, 갑상선 결절"
           value={entry.diagnosis}
           onChange={(e) => onChange({ diagnosis: e.target.value })}
-          className="h-12 px-3 text-sm"
+          className="h-12 px-3 text-base md:text-sm"
         />
       </SubField>
 
@@ -604,7 +604,7 @@ function MedicalEntryCard({
           type="date"
           value={entry.treatmentStartDate}
           onChange={(e) => onChange({ treatmentStartDate: e.target.value })}
-          className="h-12 px-3 text-sm"
+          className="h-12 px-3 text-base md:text-sm"
         />
       </SubField>
 
@@ -806,7 +806,7 @@ function UnitInput({
         min={0}
         value={value}
         onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
-        className="h-12 px-3 pr-10 text-sm"
+        className="h-12 px-3 pr-10 text-base md:text-sm"
       />
       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#4b4b4b] pointer-events-none">
         {suffix}
