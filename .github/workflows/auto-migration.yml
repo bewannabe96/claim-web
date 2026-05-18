@@ -57,21 +57,43 @@ jobs:
         run: |
           set -euo pipefail
           NAME="auto_$(date -u +%Y%m%d_%H%M%S)"
+          MIG_DIR="prisma/migrations/${NAME}"
 
-          # 1. 기존 migration 모두 적용 (dev DB 가 이미 따라가고 있으면 no-op)
+          # 1. 기존 migration 모두 적용 — dev DB 를 last-applied 상태로 정렬.
+          #    (이미 따라가고 있으면 "No pending migrations to apply." no-op.)
           pnpm prisma migrate deploy
 
-          # 2. schema.prisma 와 diff → 새 migration 생성 + 적용
-          #    --create-only 안 씀: 만들고 바로 적용하길 원함.
-          #    schema 변경이 없으면 "no schema changes" 로 종료 (exit 0) — created=false 로 flag.
-          OUT=$(pnpm prisma migrate dev --name "$NAME" --skip-seed 2>&1)
-          echo "$OUT"
-          if echo "$OUT" | grep -q "Already in sync"; then
+          # 2. live dev DB ↔ schema.prisma 의 diff 를 SQL 로 산출.
+          #    `migrate dev` 는 shadow DB 를 요구 → managed Supabase 에서 CREATE DATABASE
+          #    권한 없어 실패. `migrate diff --from-schema-datasource` 는 live DB 를
+          #    introspect 해 비교하므로 shadow 불필요. 위 deploy 로 DB 가 마지막 migration
+          #    상태와 동일하다고 보장되니, 결과 diff = 새 schema 변경분.
+          DIFF_FILE=$(mktemp)
+          pnpm prisma migrate diff \
+            --from-schema-datasource prisma/schema.prisma \
+            --to-schema-datamodel    prisma/schema.prisma \
+            --script \
+          > "$DIFF_FILE"
+
+          # 3. 변경 없음 판정 — Prisma 는 빈 diff 일 때 "-- This is an empty migration." 한 줄만 출력.
+          if [ ! -s "$DIFF_FILE" ] || grep -qE "^-- This is an empty migration\.?$" "$DIFF_FILE"; then
+            echo "No schema changes detected — skipping migration."
             echo "created=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "created=true"  >> "$GITHUB_OUTPUT"
-            echo "name=$NAME"    >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          echo "Generated migration SQL:"
+          echo "------------------------"
+          cat "$DIFF_FILE"
+          echo "------------------------"
+
+          # 4. 새 migration 디렉토리 생성 + 적용 (deploy 가 _prisma_migrations 에 기록).
+          mkdir -p "$MIG_DIR"
+          mv "$DIFF_FILE" "$MIG_DIR/migration.sql"
+          pnpm prisma migrate deploy
+
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME"   >> "$GITHUB_OUTPUT"
 
       - name: Commit & push migration
         if: steps.gen.outputs.created == 'true'
