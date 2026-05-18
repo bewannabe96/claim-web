@@ -44,13 +44,19 @@ export type AdminSession = { kind: "admin"; user: SessionUser; adminId: string }
  */
 export const getOptionalUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = getSupabaseServerClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) return null;
+  let authUserId: string | null = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    authUserId = data.user?.id ?? null;
+  } catch {
+    // refresh 실패 (refresh_token_not_found 등) / 네트워크 오류 → graceful null.
+    // stale cookie 청소는 middleware 가 mutable context 에서 담당.
+    return null;
+  }
+  if (!authUserId) return null;
 
   const user = await prisma.user.findUnique({
-    where: { authId: authUser.id },
+    where: { authId: authUserId },
     select: {
       id: true,
       authId: true,

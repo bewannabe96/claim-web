@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { isAuthError } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
@@ -29,9 +30,11 @@ import { NextResponse, type NextRequest } from "next/server";
  *    검사 (admin_users / partner 화이트리스트) 는 layout 의 `requireAdminSession()` /
  *    `requirePartnerSession()` 가 single source of truth.
  *
- * 3. **Supabase 세션 cookie silent refresh** — 토큰 만료 임박 시점에
- *    @supabase/ssr 의 setAll 콜백을 통해 Set-Cookie 자동 갱신. getUser()
- *    호출이 부수 효과로 갱신 트리거.
+ * 3. **Supabase 세션 cookie silent refresh + stale cleanup** — 토큰 만료
+ *    임박 시 @supabase/ssr 의 setAll 콜백으로 Set-Cookie 자동 갱신. getUser()
+ *    호출이 부수 효과로 갱신 트리거. refresh 실패 (refresh_token_not_found 등
+ *    AuthError) 면 stale `sb-*-auth-token*` cookie 를 명시 청소 — 라이브러리는
+ *    AuthSessionMissingError 에서만 자동 청소하므로 refresh 실패 경로는 수동.
  *
  * 4. **크롤러 차단 (admin 만)** — X-Robots-Tag 헤더로 search engine indexing 금지.
  *    `/admin/login` 까지 포함 모든 admin 응답 + knock 응답 + 404 응답 모두 적용.
@@ -44,6 +47,8 @@ import { NextResponse, type NextRequest } from "next/server";
  * - `/partner/assignments/*` — 알림톡 일회용 토큰 진입 (PRD §5.4). 토큰 자체가
  *   인증이므로 Supabase 세션 없어도 통과. `done` 페이지도 토큰 흐름 후속이라
  *   동일 carve-out.
+ * - `/partner/signup/*` — 어드민이 발급한 가입 초청 token 진입 (docs/architecture.md
+ *   §7.4). token 자체가 1차 인증.
  *
  * 그 외 `/partner/*` (예: `/partner` 대시보드) 는 admin 과 동일한 optimistic 차단.
  */
@@ -141,9 +146,21 @@ export async function middleware(req: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
     hasUser = !!user;
-  } catch {
-    // env 미설정 / 네트워크 실패 등 — auth 게이트는 layout 이 책임.
-    // middleware 가 무한 redirect 일으키지 않도록 hasUser=false 로 그대로 진행.
+  } catch (e) {
+    // 무한 redirect 회피용 hasUser=false fallthrough. 실제 게이트는 layout DAL.
+    //
+    // AuthError (refresh_token_not_found 등) 면 stale auth cookie 명시 청소 —
+    // @supabase/auth-js 는 AuthSessionMissingError 에서만 자동 _removeSession 하므로
+    // refresh 실패는 cookie 가 남아 매 요청 반복 + login 페이지 DAL 도 throw 됨.
+    // 307 응답의 Set-Cookie 는 브라우저가 redirect 따라가기 전에 적용. env / 네트워크
+    // 오류엔 cookie 안 건드림 (일시 장애로 세션 날리지 않기 위함).
+    if (isAuthError(e)) {
+      for (const c of req.cookies.getAll()) {
+        if (/^sb-.+-auth-token(\.\d+)?$/.test(c.name)) {
+          res.cookies.set(c.name, "", { path: "/", maxAge: 0 });
+        }
+      }
+    }
   }
 
   // ④ 비인증 → 307 (PPR 모드에서 layout redirect 가 meta refresh fallback 되는 것 차단)
