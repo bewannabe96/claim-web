@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 
+import { getPartnerCardsByIds } from "@/features/partners/queries";
+import type { PartnerCard } from "@/features/partners/schema";
 import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
 import { type AssignmentStatus } from "@/features/proposals/schema";
 import { getRequestById } from "@/features/requests/queries";
@@ -29,6 +31,10 @@ export default async function AdminRequestDetailPage({
   if (!request) notFound();
 
   const details = await listAssignmentDetailsForRequest(id);
+  const candidatePartners = await getPartnerCardsByIds(
+    request.candidatePartnerIds,
+  );
+  const selectedSet = new Set(request.selectedPartnerIds);
   const submittedCount = details.filter(
     (d) => d.assignment.status === "submitted",
   ).length;
@@ -153,24 +159,19 @@ export default async function AdminRequestDetailPage({
             </>
           }
         />
-        <div className="flex flex-wrap gap-1.5">
-          {request.candidatePartnerIds.map((aid) => {
-            const selected = request.selectedPartnerIds.includes(aid);
-            return (
-              <span
-                key={aid}
-                className={cn(
-                  "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium",
-                  selected
-                    ? "bg-black text-white"
-                    : "bg-[#efefef] text-[#4b4b4b]",
-                )}
-              >
-                {aid}
-              </span>
-            );
-          })}
-        </div>
+        {candidatePartners.length === 0 ? (
+          <p className="text-sm text-[#afafaf]">아직 후보가 없어요</p>
+        ) : (
+          <ul className="grid grid-cols-2 gap-2.5">
+            {candidatePartners.map((p) => (
+              <PartnerProfileCard
+                key={p.id}
+                partner={p}
+                selected={selectedSet.has(p.id)}
+              />
+            ))}
+          </ul>
+        )}
       </Card>
 
       {/* Assignment 별 제안서 현황 */}
@@ -209,9 +210,15 @@ export default async function AdminRequestDetailPage({
           <p className="text-sm text-[#4b4b4b]">
             가입자가 알림톡으로 받는 결과 화면 (운영자도 동일 URL 로 검토 가능):
           </p>
-          <code className="mt-2 block px-3 py-2 rounded-lg bg-[#fafafa] text-xs text-black break-all">
+          <a
+            href={`/result/${request.resultToken}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="새 탭에서 열기 — 가입자 POV"
+            className="mt-2 block px-3 py-2 rounded-lg bg-[#fafafa] text-xs text-black break-all hover:bg-[#efefef] transition-colors"
+          >
             /result/{request.resultToken}
-          </code>
+          </a>
         </Card>
       )}
     </div>
@@ -246,6 +253,61 @@ function MedicalRow({ entry }: { entry: MedicalHistoryEntry }) {
           {entry.hadSurgery ? "수술 있음" : "수술 없음"}
         </span>
       </p>
+    </li>
+  );
+}
+
+function PartnerProfileCard({
+  partner,
+  selected,
+}: {
+  partner: PartnerCard;
+  selected: boolean;
+}) {
+  const initial = partner.name.charAt(0);
+  return (
+    <li
+      className={cn(
+        "flex items-start gap-3 px-3.5 py-3 rounded-xl border",
+        selected
+          ? "border-black bg-black/[0.02]"
+          : "border-[#efefef] bg-white",
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold shrink-0",
+          selected ? "bg-black text-white" : "bg-[#efefef] text-[#4b4b4b]",
+        )}
+      >
+        {initial}
+      </div>
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-bold text-black truncate">
+            {partner.name}
+          </span>
+          <span className="text-[11px] text-[#4b4b4b]">
+            경력 {partner.yearsOfExperience}년
+          </span>
+          {selected && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-black text-white">
+              선택
+            </span>
+          )}
+          {partner.isNew && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium border border-[#e2e2e2] bg-white text-[#4b4b4b]">
+              신규
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-[#4b4b4b] leading-snug line-clamp-2">
+          {partner.bio}
+        </p>
+        <p className="text-[11px] text-[#afafaf] truncate">
+          {partner.trustMetric}
+        </p>
+      </div>
     </li>
   );
 }
@@ -290,6 +352,16 @@ function AssignmentItem({
                 : "—"}
           </p>
         )}
+
+        <a
+          href={`/partner/assignments/${assignment.token}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="새 탭에서 열기 — 설계사 POV"
+          className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs text-black break-all hover:bg-[#efefef] transition-colors"
+        >
+          /partner/assignments/{assignment.token}
+        </a>
       </div>
 
       <div className="shrink-0 text-right text-xs text-[#4b4b4b] whitespace-nowrap flex flex-col gap-0.5">
