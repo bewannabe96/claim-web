@@ -253,9 +253,9 @@ function ClockIcon() {
  * ============================================================ */
 
 function CustomerContext({ request }: { request: PlanRequest }) {
-  const { step1, step3 } = request;
+  const { step1, step3, gender } = request;
   const budgetLabel = `${formatBudget(step1.monthlyBudgetMin)}~${formatBudget(step1.monthlyBudgetMax)}`;
-  // 설계사가 보는 시점은 dispatched 이후라 step3 가 항상 존재. 방어적 fallback.
+  // 설계사가 보는 시점은 dispatched 이후라 step3 + gender 가 항상 존재. 방어적 fallback.
   const customerName = step3?.name ?? "이름 미상";
 
   return (
@@ -267,7 +267,7 @@ function CustomerContext({ request }: { request: PlanRequest }) {
       <div className="flex flex-col gap-1">
         <h3 className="text-base font-bold text-black">{customerName}</h3>
         <p className="text-sm text-[#4b4b4b]">
-          {GENDER_LABEL[step1.gender]} · {step1.occupation}
+          {gender ? GENDER_LABEL[gender] : "—"} · {step1.occupation}
         </p>
       </div>
 

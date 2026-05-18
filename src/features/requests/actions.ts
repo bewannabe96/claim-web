@@ -56,7 +56,6 @@ export async function submitStep1(
   }
 
   const parsed = Step1Schema.safeParse({
-    gender: formData.get("gender"),
     occupation: formData.get("occupation"),
     coverage,
     monthlyBudgetMin: formData.get("monthlyBudgetMin"),
@@ -80,7 +79,7 @@ export async function submitStep1(
     prisma.planRequest.create({
       data: {
         id,
-        gender: parsed.data.gender,
+        // 성별은 Step3 finalize 에서 주민번호로 set. 여기서는 비워둠.
         occupation: parsed.data.occupation,
         monthlyBudgetMin: parsed.data.monthlyBudgetMin,
         monthlyBudgetMax: parsed.data.monthlyBudgetMax,
@@ -292,7 +291,6 @@ export async function finalizeRequest(
     where: { id: requestId },
     select: {
       id: true,
-      gender: true,
       status: true,
       candidates: {
         where: { selected: true },
@@ -307,22 +305,14 @@ export async function finalizeRequest(
     return { ok: false, errors: { _form: ["선택된 설계사가 없습니다."] } };
   }
 
-  // 3-a) 주민번호 → birthDate + gender derive + Step1 gender 와 cross-check.
-  //      refine 이 이미 valid 보장하지만 narrow 위해 재호출. 성별 path 를 back1 로
-  //      두는 건 의도적 — 그 자리가 실제 성별을 결정하는 입력이라 UX 가 맞음.
+  // 3-a) 주민번호 → birthDate + gender derive. zod refine 이 valid 를 보장하지만
+  //      narrow 위해 재호출. gender 는 Step1 에서 받지 않으므로 cross-check 없이
+  //      여기서 transaction 의 update 단계에 set 한다.
   const rrn = deriveRrn(parsed.data.rrnFront, parsed.data.rrnBack1);
   if (!rrn) {
     return {
       ok: false,
       errors: { rrnFront: ["올바른 생년월일이 아닙니다."] },
-    };
-  }
-  if (rrn.gender !== req.gender) {
-    return {
-      ok: false,
-      errors: {
-        rrnBack1: ["주민번호의 성별이 처음 입력하신 정보와 다릅니다."],
-      },
     };
   }
 
@@ -350,6 +340,7 @@ export async function finalizeRequest(
         name: parsed.data.name,
         phone: parsed.data.phone,
         birthDate: rrn.birthDate,
+        gender: rrn.gender,
         // Step3 검증 통과 시점에 두 consent 모두 literal "on" 으로 강제됨.
         consentThirdParty: true,
         consentMessaging: true,

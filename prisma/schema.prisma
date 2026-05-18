@@ -40,8 +40,8 @@ datasource db {
 model PlanRequest {
   id String @id
 
-  // Step1: 요청서 본체
-  gender             String
+  // Step1: 요청서 본체 (gender 는 Step3 finalize 에서 주민번호로 set)
+  gender             String?
   occupation         String
   monthlyBudgetMin   Int    @map("monthly_budget_min")
   monthlyBudgetMax   Int    @map("monthly_budget_max")

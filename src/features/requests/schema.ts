@@ -113,12 +113,13 @@ export function coverageRequestToText(coverage: CoverageRequest): string {
 }
 
 /* ============================================================
- * Step 1 — 요청서 본문 (전화번호 제외, 매칭 및 제안서 작성에 필요한 모든 정보)
+ * Step 1 — 요청서 본문 (전화번호·성별 제외, 매칭 및 제안서 작성에 필요한 모든 정보)
+ *
+ * 성별은 Step3 의 주민번호에서 derive — Step1 에서는 받지 않음.
  * ============================================================ */
 
 export const Step1Schema = z
   .object({
-    gender: z.enum(["male", "female"] satisfies [Gender, Gender]),
     occupation: z
       .string()
       .min(1, "직업을 입력해주세요.")
@@ -317,6 +318,8 @@ export type Step3Stored = Omit<Step3Input, "rrnFront" | "rrnBack1"> & {
 
 export type PlanRequest = {
   id: string;
+  /** 성별 — Step1 시점엔 비어있고, Step3 finalize 에서 주민번호로부터 set. */
+  gender?: Gender;
   step1: Step1Input;
   step3?: Step3Stored;
   candidatePartnerIds: string[];   // N명 후보

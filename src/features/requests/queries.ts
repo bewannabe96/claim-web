@@ -88,8 +88,8 @@ export async function listAllRequests(): Promise<PlanRequest[]> {
 function mapPlanRequest(row: PlanRequestRow): PlanRequest {
   return {
     id: row.id,
+    gender: (row.gender as Gender | null) ?? undefined,
     step1: {
-      gender: row.gender as Gender,
       occupation: row.occupation,
       monthlyBudgetMin: row.monthlyBudgetMin,
       monthlyBudgetMax: row.monthlyBudgetMax,
