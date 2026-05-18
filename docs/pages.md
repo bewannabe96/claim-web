@@ -33,7 +33,7 @@
 | `/request/[id]/candidates` | 매칭된 설계사 후보 카드 + 선택 (최대 selectLimit) | 가입자 | **W**: pr_cand.selected, pr.status=confirming · **R**: pr, pt, cfg | §5.2 | ✅ |
 | `/request/[id]/confirm` | 본인 인증 (이름·휴대폰·OTP) + 동의 + 요청 내용 검토 | 가입자 | **W**: pr.{name,phone,consent,status=dispatched,...}, assign(K개 생성) — 트랜잭션 · **R**: pr, cfg | §5.3 | ✅ (OTP는 demo `000000`) |
 | `/request/[id]/dispatched` | 송부 완료 안내 + 마감 시간 노출 | 누구나 (id 안다면) | **R**: pr | §5.3 | ✅ |
-| `/result/[token]` | 제안서 비교 — 설계사 chip 탭 / 시나리오 chip(top-3 + 검색) + ROI(log) 차트 + 해지손실 차트 + 보장 패널 | 가입자(token) | **R**: pr, assignment + proposal(+pdfHash) + partner, `eightytwo_judge.proposal_analysis_reports` (raw SQL), app_settings.scenario_priority | §5.6 | ✅ 분석 리포트 v4 연동 완료 (Proposal.pdfHash 매칭) |
+| `/result/[token]` | 제안서 비교 — 설계사 chip 탭 / 시나리오 chip(top-3 + 검색) + ROI(log) 차트 + 해지 시 월부담 차트 + 보장 패널 | 가입자(token) | **R**: pr, assignment + proposal(+pdfHash) + partner, `eightytwo_judge.proposal_analysis_reports` (raw SQL), app_settings.scenario_priority | §5.6 | ✅ 분석 리포트 v4 연동 완료 (Proposal.pdfHash 매칭) |
 
 ---
 

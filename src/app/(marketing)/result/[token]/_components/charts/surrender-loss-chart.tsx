@@ -2,23 +2,16 @@
 
 import { useRef, useState } from "react";
 
-import {
-  type ProposalData,
-  type SurrenderLossPoint,
-} from "../../_lib/result-types";
+import { type ProposalData } from "../../_lib/result-types";
 
 /**
- * 해지 시 손실 곡선 — "내가 아프지 않은 채로 해지하면 얼마 날리나".
+ * 해지 시 월평균 부담 곡선 — "그 시점까지 월 얼마꼴로 부담한 셈인가".
  *
- * ROI 가 best-case (질병 발생 시 회수) 라면 이 그래프는 worst-case —
- * 아무 일도 안 생긴 채로 도중 해지할 때의 순손익.
+ * y = (그때까지 낸 보험료 − 해지환급금) ÷ 가입 후 경과 개월.
+ * 가입 직후엔 환급률이 낮아 월평균이 높다가, 시간이 지나며 안정화되고
+ * 납입 종료 + 만기 환급에 가까워지면 내려감.
  *
- * **방향**: 곡선이 위로 올라가면 손실 (낸 돈을 못 돌려받음), 아래로 내려가면
- * 이득 (환급이 낸 돈을 초과). ROI 와 같은 시각적 방향성 (↑ = 절댓값 큼).
- *
- * **라벨**: y축 위쪽 = 마이너스 값 (손실의 부호 의미), 아래쪽 = 플러스 값 (이득).
- * 데이터의 `loss` 는 `납입 − 환급` (양수=손실, 분석 리포트 refund_table.rows 정의)
- * 이지만, 라벨 표시는 부호를 뒤집어 "손실 = 마이너스 금액" 으로 자연스럽게 읽힘.
+ * 가입 나이 점(elapsed=0)은 0 나누기라 곡선에서 제외. cursor 도 +1세부터.
  */
 export function SurrenderLossChart({
   proposals,
@@ -27,33 +20,42 @@ export function SurrenderLossChart({
   proposals: ProposalData[];
   activeId: string;
 }) {
-  // 인터랙티브 cursor — 기본은 가입 나이 (33세). 호버/터치 시 x → 나이 환산.
-  const [cursorAge, setCursorAge] = useState<number>(33);
+  // 가입 나이 = surrenderLoss 첫 점의 age (adapter: customerAge + elapsed_year 0).
+  const entryAge = proposals[0]?.surrenderLoss[0]?.age ?? 33;
+  const [cursorAge, setCursorAge] = useState<number>(() => entryAge + 1);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   if (proposals.length === 0) return null;
-  // 분석 리포트가 없는 케이스 (pdfHash 매칭 실패 등) — surrenderLoss 가 비어 있으면
-  // 차트 자체를 그리지 않음. 차트 좌표 계산이 undefined 로 깨지는 걸 방지.
   if (proposals.every((p) => p.surrenderLoss.length === 0)) return null;
 
-  const allLosses = proposals.flatMap((p) =>
-    p.surrenderLoss.map((pt) => pt.loss),
-  );
-  const yMaxRaw = Math.max(...allLosses, 0);
-  const yMinRaw = Math.min(...allLosses, 0);
+  // 각 proposal 별 월평균 시계열 (가입 직후 점 제외).
+  type MonthlyPoint = { age: number; monthly: number };
+  const series = proposals.map((p) => ({
+    id: p.id,
+    partner: p.partner,
+    points: p.surrenderLoss
+      .filter((pt) => pt.age > entryAge)
+      .map<MonthlyPoint>((pt) => ({
+        age: pt.age,
+        monthly: pt.loss / ((pt.age - entryAge) * 12),
+      })),
+  }));
 
-  // tick step 을 2,000만원 (= 20,000,000) 단위로 묶음 → 5개 내외 ticks
-  const STEP = 20_000_000;
+  const allMonthly = series.flatMap((p) => p.points.map((pt) => pt.monthly));
+  const yMaxRaw = Math.max(...allMonthly, 0);
+  const yMinRaw = Math.min(...allMonthly, 0);
+
+  // tick step 5만원 — 월 부담 보통 5~30만원 범위라 5~7개 ticks.
+  const STEP = 50_000;
   const yMin = Math.floor(yMinRaw / STEP) * STEP;
   const yMax = Math.ceil(yMaxRaw / STEP) * STEP;
   const yTicks: number[] = [];
   for (let v = yMin; v <= yMax; v += STEP) yTicks.push(v);
 
-  const ages = proposals[0].surrenderLoss.map((p) => p.age);
-  const minAge = ages[0] ?? 0;
+  const ages = series[0].points.map((p) => p.age);
+  const minAge = ages[0] ?? entryAge + 1;
   const maxAge = ages[ages.length - 1] ?? 100;
 
-  // svg 좌표계 — ROI 차트와 동일 톤
   const W = 320;
   const H = 220;
   const padding = { left: 52, right: 16, top: 16, bottom: 28 };
@@ -62,15 +64,14 @@ export function SurrenderLossChart({
 
   const xOf = (age: number) =>
     padding.left + ((age - minAge) / (maxAge - minAge)) * plotW;
-  /** loss 가 클수록 위쪽으로 plot (ROI 와 같은 방향성). */
-  const yOf = (loss: number) =>
-    padding.top + (1 - (loss - yMin) / (yMax - yMin)) * plotH;
+  /** 월평균이 클수록 위쪽 — 부담 큰 쪽. */
+  const yOf = (m: number) =>
+    padding.top + (1 - (m - yMin) / (yMax - yMin)) * plotH;
 
-  const pathOf = (points: SurrenderLossPoint[]) =>
+  const pathOf = (points: MonthlyPoint[]) =>
     points
       .map(
-        (p, i) =>
-          `${i === 0 ? "M" : "L"}${xOf(p.age)},${yOf(p.loss)}`,
+        (p, i) => `${i === 0 ? "M" : "L"}${xOf(p.age)},${yOf(p.monthly)}`,
       )
       .join(" ");
 
@@ -81,13 +82,13 @@ export function SurrenderLossChart({
     maxAge,
   ];
 
-  const active = proposals.find((p) => p.id === activeId) ?? proposals[0];
-  const inactive = proposals.filter((p) => p.id !== active.id);
+  const active = series.find((p) => p.id === activeId) ?? series[0];
+  const inactive = series.filter((p) => p.id !== active.id);
 
   const clampedCursorAge = Math.max(minAge, Math.min(maxAge, cursorAge));
   const cursorPoint =
-    active.surrenderLoss.find((p) => p.age === clampedCursorAge) ??
-    active.surrenderLoss[active.surrenderLoss.length - 1];
+    active.points.find((p) => p.age === clampedCursorAge) ??
+    active.points[active.points.length - 1];
 
   function updateCursorFromPointer(clientX: number) {
     const svg = svgRef.current;
@@ -103,47 +104,18 @@ export function SurrenderLossChart({
     setCursorAge(Math.round(ageRaw));
   }
 
-  // 풀이용 — loss > 0 은 손해, < 0 은 이득 (부호 뒤집어 보여줌)
-  const cursorLossManwon = Math.round(cursorPoint.loss / 10_000);
-  const isGain = cursorPoint.loss < 0;
-  const cursorAbsManwon = Math.abs(cursorLossManwon);
+  // 실제 월 부담 (원). Math.max(0, …): 도메인상 음수 없지만 데이터 이상 안전망.
+  const monthlyWon = Math.max(0, Math.round(cursorPoint.monthly));
 
   return (
     <div className="flex flex-col gap-4">
-      {/* cursor 위치 풀이 — ROI 차트와 평행 구조 (조건 / 결과+금액).
-       *
-       *   loss > 0:  X세에 해지하면 / 그동안 건강한 대가로 Y만원을 지불해요
-       *   loss < 0:  X세에 해지하면 / 그동안 건강하고도 오히려 Y만원이 남아요
-       *   loss == 0: X세에 해지하면 / 그동안 손해 없이 보장만 받았어요
-       */}
       <p className="text-base text-black leading-snug">
-        {isGain ? (
-          <>
-            <span className="font-bold">{clampedCursorAge}세</span>에 해지하면
-            <br />
-            그동안 건강하고도 오히려{" "}
-            <span className="font-bold">
-              {cursorAbsManwon.toLocaleString("ko-KR")}만원
-            </span>
-            이 남아요
-          </>
-        ) : cursorAbsManwon === 0 ? (
-          <>
-            <span className="font-bold">{clampedCursorAge}세</span>에 해지하면
-            <br />
-            그동안 손해 없이 보장만 받았어요
-          </>
-        ) : (
-          <>
-            <span className="font-bold">{clampedCursorAge}세</span>에 해지하면
-            <br />
-            그동안 건강한 대가로{" "}
-            <span className="font-bold">
-              {cursorAbsManwon.toLocaleString("ko-KR")}만원
-            </span>
-            을 지불해요
-          </>
-        )}
+        <span className="font-bold">{clampedCursorAge}세</span>에 해지한다면
+        <br />월{" "}
+        <span className="font-bold">
+          {monthlyWon.toLocaleString("ko-KR")}원
+        </span>
+        으로 건강을 챙기는 거에요
       </p>
 
       <svg
@@ -151,7 +123,7 @@ export function SurrenderLossChart({
         viewBox={`0 0 ${W} ${H}`}
         className="w-full h-auto touch-none"
         role="img"
-        aria-label={`해지 시 손실 — ${active.partner.name} 강조`}
+        aria-label={`해지 시 월평균 부담 — ${active.partner.name} 강조`}
         onPointerMove={(e) => updateCursorFromPointer(e.clientX)}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -163,7 +135,7 @@ export function SurrenderLossChart({
           }
         }}
       >
-        {/* y grid + 라벨 — 0 선 강조 */}
+        {/* y grid + 라벨 */}
         {yTicks.map((v) => (
           <g key={`y-${v}`}>
             <line
@@ -172,7 +144,7 @@ export function SurrenderLossChart({
               y1={yOf(v)}
               y2={yOf(v)}
               stroke={v === 0 ? "#afafaf" : "#efefef"}
-              strokeWidth={v === 0 ? 1 : 1}
+              strokeWidth={1}
             />
             <text
               x={padding.left - 6}
@@ -180,7 +152,7 @@ export function SurrenderLossChart({
               textAnchor="end"
               className="fill-[#4b4b4b] text-[10px]"
             >
-              {formatLossLabel(v)}
+              {formatMonthlyLabel(v)}
             </text>
           </g>
         ))}
@@ -189,7 +161,7 @@ export function SurrenderLossChart({
         {inactive.map((p) => (
           <path
             key={p.id}
-            d={pathOf(p.surrenderLoss)}
+            d={pathOf(p.points)}
             stroke="#e2e2e2"
             strokeWidth={1.5}
             fill="none"
@@ -198,7 +170,7 @@ export function SurrenderLossChart({
 
         {/* active 곡선 — 검정 굵게 */}
         <path
-          d={pathOf(active.surrenderLoss)}
+          d={pathOf(active.points)}
           stroke="#000"
           strokeWidth={2.5}
           strokeLinejoin="round"
@@ -218,7 +190,7 @@ export function SurrenderLossChart({
         />
         <circle
           cx={xOf(clampedCursorAge)}
-          cy={yOf(cursorPoint.loss)}
+          cy={yOf(cursorPoint.monthly)}
           r={4}
           fill="#000"
           stroke="white"
@@ -244,26 +216,16 @@ export function SurrenderLossChart({
       <p className="text-[11px] text-[#4b4b4b] leading-relaxed bg-[#fafafa] border border-[#efefef] rounded-lg px-3 py-2">
         보험을 도중에 해지하면{" "}
         <span className="font-medium text-black">해지환급금</span>
-        이라는 일부 금액이 돌아와요. 그래프 수치는 그동안 낸 보험료에서 예상
-        환급금을 뺀 금액이에요.
+        이라는 일부 금액이 돌아와요. 그래프는 (그동안 낸 보험료 − 예상
+        환급금) ÷ 가입 후 경과 개월로 환산한 월평균이에요.
       </p>
     </div>
   );
 }
 
-/**
- * loss (원, 양수=손실) → 라벨 표시.
- *
- * **부호 뒤집기**: 손실은 사용자에게 "-N만" (마이너스) 로, 이득은 "+N만" 으로
- * 표시. 곡선 방향은 그대로지만 (위로 갈수록 손실), 라벨이 금융 직관을 반영.
- */
-function formatLossLabel(v: number): string {
+/** monthly (원) → 라벨. "{N}만" 형식 — 차트 압축 표시용. */
+function formatMonthlyLabel(v: number): string {
   if (v === 0) return "0";
-  const inManwon = Math.round(v / 10_000);
-  // v > 0 (손실) → 라벨은 "-N만"
-  if (inManwon > 0) {
-    return `-${inManwon.toLocaleString("ko-KR")}만`;
-  }
-  // v < 0 (이득) → 라벨은 "+N만"
-  return `+${(-inManwon).toLocaleString("ko-KR")}만`;
+  const manwon = Math.round(v / 10_000);
+  return `${manwon.toLocaleString("ko-KR")}만`;
 }
