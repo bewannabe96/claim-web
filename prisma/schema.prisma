@@ -18,8 +18,12 @@
 // (app_settings), race-safe 중복 차단 (phone-active, result_token) 같은 도메인
 // 규칙은 모두 features/<x>/{queries,actions}.ts 가 책임.
 //
-// 스키마 분리: 모든 도메인 테이블은 `claim` 스키마. `public` 에는 Prisma 의
-// `_prisma_migrations` 만 (DATABASE_URL 의 `?schema=claim` 로 default 가 claim).
+// 스키마 분리: 모든 도메인 테이블 + `_prisma_migrations` 모두 `claim` 스키마.
+// (DATABASE_URL 의 `?schema=claim` 로 default 가 claim → Prisma 가 그 안에 둠.)
+// `schemas` 배열에 `public` 을 넣지 말 것 — `prisma migrate reset` 이 namespace
+// 마다 `DROP SCHEMA … CASCADE` 를 도는데, Supabase `public` 은 extension
+// (pg_graphql / pg_net / supabase_realtime 등) 들이 살아서 drop 권한 없음 +
+// 강제 drop 시 프로젝트가 깨짐.
 // ============================================================
 
 generator client {
@@ -30,7 +34,7 @@ datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")        // Supavisor transaction pooler (6543)
   directUrl = env("DIRECT_URL")          // 직결 (5432) — migrate / introspect 용
-  schemas   = ["claim", "public"]
+  schemas   = ["claim"]
 }
 
 // ============================================================
