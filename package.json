@@ -8,16 +8,12 @@
     "start": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
-    "db:start": "bash scripts/db/start.sh",
-    "db:stop": "bash scripts/db/stop.sh",
-    "db:reset": "bash scripts/db/reset.sh",
-    "db:status": "bash scripts/db/status.sh",
-    "db:psql": "bash scripts/db/psql.sh",
-    "db:logs": "bash scripts/db/logs.sh",
-    "db:push": "bash scripts/db/push.sh",
-    "db:migrate:deploy": "bash scripts/db/migrate-deploy.sh",
-    "db:cleanup-orphans": "bash scripts/db/cleanup-orphans.sh",
-    "db:seed": "bash -c 'source scripts/db-env.sh && pnpm prisma db seed'"
+    "workspace:setup": "bash scripts/setup-workspace-env.sh",
+    "db:reset": "bash scripts/db-container/reset.sh",
+    "db:push": "bash scripts/db-container/push.sh",
+    "db:migrate:deploy": "bash scripts/db-container/migrate-deploy.sh",
+    "cleanup:orphan-db-containers": "bash scripts/db-container/cleanup-orphans.sh",
+    "db:seed": "bash -c 'source scripts/set-workspace-env-vars.sh && pnpm prisma db seed'"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1047.0",

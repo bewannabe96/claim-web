@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/hooks/session-start-db.sh"
+            "command": "bash scripts/hooks/worktree-session-start.sh"
           }
         ]
       }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash scripts/hooks/session-end-db.sh",
+            "command": "bash scripts/hooks/worktree-session-end.sh",
             "timeout": 30
           }
         ]

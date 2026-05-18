@@ -18,7 +18,7 @@ docker info >/dev/null 2>&1 || exit 0
 [ -f docker-compose.yml ] || exit 0
 
 # shellcheck disable=SC1091
-source scripts/db-env.sh 2>/dev/null || exit 0
+source scripts/set-workspace-env-vars.sh 2>/dev/null || exit 0
 docker compose down -v >/dev/null 2>&1 || true
 
 exit 0

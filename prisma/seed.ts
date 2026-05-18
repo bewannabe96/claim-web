@@ -1,7 +1,7 @@
 /**
  * Prisma seed — 로컬 dev DB 초기 데이터.
  *
- * 멱등: upsert / 존재 검사 후 create 만 사용. 매 `pnpm db:start` 마다 호출돼도 안전.
+ * 멱등: upsert / 존재 검사 후 create 만 사용. 매 `pnpm workspace:setup` 마다 호출돼도 안전.
  *
  * 무엇을 채우나:
  *   1. claim.app_settings('app') — 운영 튜닝 단일 row. 없으면 src/server/settings.ts 의

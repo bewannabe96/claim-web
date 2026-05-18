@@ -4,7 +4,7 @@
  * 여기서 명시적으로 dotenv 로 로드한다.
  *
  * 우선순위 (Next.js 와 동일하게):
- *   1. 프로세스 env (shell export — 예: `pnpm db:push` 가 source 하는 `scripts/db-env.sh`)
+ *   1. 프로세스 env (shell export — 예: `pnpm db:push` 가 source 하는 `scripts/set-workspace-env-vars.sh`)
  *   2. .env.local
  *   3. .env
  *

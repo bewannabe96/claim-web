@@ -12,7 +12,7 @@
 # Migration 생성이 정말 필요한 경우 (data migration 등 manual SQL) 는 별도 절차.
 set -euo pipefail
 # shellcheck disable=SC1091
-source "$(dirname "$0")/../db-env.sh"
+source "$(dirname "$0")/../set-workspace-env-vars.sh"
 
 pnpm prisma db push --skip-generate
 pnpm prisma generate

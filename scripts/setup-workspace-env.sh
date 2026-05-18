@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# pnpm db:start — Docker postgres 기동 + .env.local 생성 + migration 적용 + seed.
+# pnpm workspace:setup — Docker postgres 기동 + .env.local 생성 + migration 적용 + seed.
 # 멱등. 컨테이너가 이미 떠 있어도 안전 (docker compose up -d 는 no-op).
 set -euo pipefail
 
 # shellcheck disable=SC1091
-source "$(dirname "$0")/../db-env.sh"
+source "$(dirname "$0")/set-workspace-env-vars.sh"
 
 echo "[db] Worktree: $WORKTREE_NAME"
 echo "[db] Project:  $COMPOSE_PROJECT_NAME"
@@ -54,7 +54,7 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-bash "$(dirname "$0")/../write-env-local.sh"
+bash "$(dirname "$0")/write-env-local.sh"
 
 # Prisma 마이그레이션 — DIRECT_URL 사용 (datasource.directUrl).
 echo "[db] Applying migrations..."

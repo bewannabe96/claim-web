@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pnpm db:cleanup-orphans — 메인 리포의 .claude/worktrees/ 에 없는 worktree 의
+# pnpm cleanup:orphan-db-containers — 메인 리포의 .claude/worktrees/ 에 없는 worktree 의
 # claim_*_postgres 컨테이너 + pgdata 볼륨을 일괄 삭제. 확인 없이 진행.
 #
 # 메인 리포 / worktree 어디서 호출하든 동작.
@@ -21,7 +21,7 @@ fi
 MAIN_REPO="$(cd "$COMMON_DIR/.." && pwd)"
 WORKTREES_DIR="$MAIN_REPO/.claude/worktrees"
 
-# safe-name 변환은 db-env.sh 와 동일한 룰 유지 필수.
+# safe-name 변환은 set-workspace-env-vars.sh 와 동일한 룰 유지 필수.
 to_safe() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-'
 }
