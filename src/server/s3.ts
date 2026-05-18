@@ -20,10 +20,14 @@ import { newId } from "@/lib/id";
  *   1. `presignProposalUpload(assignmentId)` → presigned PUT URL + s3Key.
  *      클라가 직접 PUT 으로 업로드.
  *   2. `verifyUploadedObject(s3Key)` → HEAD 로 실제 업로드 확인 + size 캡처.
- *   3. (다운로드용) `presignProposalDownload(s3Key)` → presigned GET URL.
+ *   3. `fetchObjectSha256(s3Key)` → 업로드 본문 SHA-256 계산 (audit / 외부
+ *      분석 리포트 join 키).
  *
  * Vercel 함수 body 4.5MB 한도 + 메모리 효율 이유로 PDF 바이트는 우리 함수를
- * 거치지 않음. 검증은 키 패턴 + HEAD 만.
+ * 거치지 않음 (PUT 은 클라 직결). 검증은 키 패턴 + HEAD 만.
+ *
+ * 다운로드 (GET presign) 는 미구현 — 결과/어드민 페이지가 PDF 본문을 직접
+ * 노출하지 않음. 필요 시 `GetObjectCommand` 로 신규 함수 추가할 것.
  */
 
 const EnvSchema = z.object({
@@ -95,19 +99,6 @@ export async function presignProposalUpload(
   });
   const url = await getSignedUrl(client, cmd, { expiresIn: 600 });
   return { url, s3Key };
-}
-
-/**
- * 제안서 PDF 다운로드용 presigned GET URL. 가입자 결과 페이지 / 어드민에서 사용.
- * TTL 짧게 (10분) — 새로고침마다 새로 발급.
- */
-export async function presignProposalDownload(s3Key: string): Promise<string> {
-  const { env, client } = getS3();
-  const cmd = new PutObjectCommand({
-    Bucket: env.S3_BUCKET_PROPOSALS,
-    Key: s3Key,
-  });
-  return getSignedUrl(client, cmd, { expiresIn: 600 });
 }
 
 /**
