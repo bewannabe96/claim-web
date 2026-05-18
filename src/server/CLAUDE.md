@@ -188,31 +188,46 @@ const session = await getOptionalSession();
 - Prisma 모델 객체를 그대로 페이지/액션 응답으로 노출 — 컬럼명 변경 시 외부 영향. 도메인 타입으로 한 번 mapping.
 - `supabase.from('x').select(...)` 로 DB 쿼리 — DB 는 Prisma 로 통일. supabase-js 는 Auth/Storage 도입 시 그 영역만.
 
-## 마이그레이션 워크플로우
+## 마이그레이션 워크플로우 — schema-first
 
 **schema.prisma 가 DB 구조의 단일 진실 공급원.** 트리거/CHECK/partial index 같이
 Prisma 가 모르는 SQL 은 이 프로젝트에선 사용 안 함 (앱 레이어로 통일). RLS 는
 Supabase 가 자동 enable. 따라서 마이그레이션 SQL 은 Prisma 가 생성한 그대로
 사용 — 수동 보강 불필요.
 
-연결 분리: 런타임 쿼리는 `DATABASE_URL` (Transaction pooler 6543), migrate 명령은
-`DIRECT_URL` (Session pooler 5432). 무료 플랜에서 Direct connection (5432, 진짜 DB 호스트)
-은 IPv4 유료라 둘 다 pooler 호스트 사용.
+**핵심 규칙**: PR 에는 `schema.prisma` 만 변경. `prisma/migrations/` 는 develop merge
+후 GitHub Actions (`.github/workflows/auto-migration.yml`) 이 단일 writer 로 자동 생성.
+사람/AI 가 `prisma migrate dev` 호출하지 말 것 (PR CI `check-no-migrations.yml` 이 차단).
+
+3단 계층:
+
+| 환경 | DB | 적용 방식 |
+|---|---|---|
+| 로컬 worktree | 격리 Docker Postgres | `pnpm db:push` (즉시 sync, migration 안 만듦) |
+| develop dev | 원격 Supabase dev project | develop push → CI 가 `prisma migrate dev` 자동 호출 + commit |
+| 운영 prod | 원격 Supabase prod | master push (migrations/ 변경) → GitHub Actions `deploy-migrations.yml` 가 `prisma migrate deploy` 자동 (Vercel build 와 분리) |
+
+연결 URL:
+- **로컬 (Docker postgres)**: `DATABASE_URL` = `DIRECT_URL` (pooler 없음, 같은 포트).
+  `pnpm db:start` 가 `.env.local` 에 자동 채움.
+- **Vercel / staging / prod**: `DATABASE_URL` = Transaction pooler (6543, `?pgbouncer=true`),
+  `DIRECT_URL` = Session pooler (5432, advisory lock / DDL in tx 필요).
+
+전체 흐름과 충돌 카탈로그: [docs/worktree-workflow.md](../../docs/worktree-workflow.md).
 
 스키마 변경 절차:
 
 ```bash
 # 1. schema.prisma 수정
-# 2. dev migration 생성 + 적용 (DIRECT_URL 필요)
-pnpm prisma migrate dev --name <설명>
-# 3. Prisma client 재생성 (자동 호출됨, 수동 시 `pnpm prisma generate`)
+# 2. 로컬 격리 DB 에 즉시 sync (migration 안 만듦)
+pnpm db:push
+# 3. 작동 확인 후 schema.prisma 만 commit/push → PR
+# 4. develop merge 후 CI 가 정식 migration 생성/commit/push
+# 5. 다른 worktree: git pull && pnpm db:migrate:deploy
 ```
 
-production 배포:
-
-```bash
-pnpm prisma migrate deploy  # 대기 중 migration 적용 (DATABASE_URL 사용)
-```
+수동 SQL (data migration / rename 등) 이 필요한 경우만 예외: PR 에 `manual-migration`
+label 추가 → CI 차단 우회 → 직접 `prisma/migrations/<...>/migration.sql` 작성.
 
 ## Admin 인증 구조 (Supabase + 화이트리스트)
 

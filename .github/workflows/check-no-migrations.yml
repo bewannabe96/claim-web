@@ -1,0 +1,33 @@
+name: Block migration files in PR
+
+# PR 은 schema.prisma 만 수정. prisma/migrations/ 변경은 develop merge 후 CI 가
+# 자동 생성 (auto-migration.yml). 작성자가 로컬에서 실수로 `prisma migrate dev` 호출했을 때
+# 그 결과물이 PR 에 들어오는 것을 차단.
+#
+# 우회가 필요한 경우 (data migration 등 수동 SQL):
+#   - PR 에 `manual-migration` label 추가 → 이 job skip.
+#   - 단, 그런 경우엔 schema-first 자동화 의도와 어긋나므로 신중하게.
+
+on:
+  pull_request:
+    branches: [develop]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'manual-migration') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect prisma/migrations changes
+        run: |
+          CHANGED=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- 'prisma/migrations/**' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "::error::PR 에 prisma/migrations/ 변경 포함됨. schema.prisma 만 수정하세요."
+            echo "::error::CI 가 develop merge 후 자동 migration 생성. 자세히: docs/worktree-workflow.md"
+            echo "Changed files:"
+            echo "$CHANGED"
+            exit 1
+          fi
+          echo "OK — no prisma/migrations/ changes."
