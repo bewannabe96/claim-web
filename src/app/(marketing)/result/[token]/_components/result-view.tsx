@@ -136,7 +136,7 @@ function ProposalBody({
     <>
     <article className="px-6 pb-32 flex flex-col gap-16">
       {/*
-       * 본문 흐름: 설계사 한줄평 → 핵심 수치 → ROI → 해지 손실 → 매칭 → 메모.
+       * 본문 흐름: 설계사 한줄평 → 핵심 수치 → ROI → 해지 시 월부담 → 매칭 → 메모.
        * 한줄평을 맨 위로 두어 chip 으로 선택한 설계사의 "한마디" 가 데이터 보기
        * 전 컨텍스트를 잡음. 메모 카드 (avatar / 경력 / 신뢰지표) 는 본문 끝에서
        * attribution 역할.
@@ -280,7 +280,7 @@ function ProposalBody({
         />
       ) : null}
 
-      {/* 해지 시 손실 — 회수 배율의 flip side: 아무 일 없이 해지하면 얼마 날리나 */}
+      {/* 해지 시 월부담 — 회수 배율의 flip side: 아무 일 없이 해지하면 월 얼마꼴로 부담한 셈인가 */}
       {proposal.analyzed && (
         <SurrenderLossChart proposals={proposals} activeId={proposal.id} />
       )}
