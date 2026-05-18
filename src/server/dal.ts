@@ -13,21 +13,14 @@ import { getSupabaseServerClient } from "@/server/supabase";
  *
  * PRD 모델:
  * - 가입자: 계정 없음 (휴대폰 번호가 식별자) → DAL 미사용
- * - 설계사: 이메일/비번 로그인 → PartnerSession
+ * - 설계사: 일회용 토큰 기반 (현재 MVP) → DAL 미사용. 실 인증 도입 시 여기에 추가.
  * - 어드민: Supabase Auth + admin_users 화이트리스트 → AdminSession
  *
  * Admin 식별 = 인증(authn, Supabase) + 권한(authz, admin_users) 2단계.
- * "Supabase 로그인 == admin" 은 위험 — 같은 auth.users 풀에 Partner 도 들어옴.
+ * "Supabase 로그인 == admin" 은 위험 — 같은 auth.users 풀에 Partner 도 들어올 예정.
  */
 
 export type AdminSession = { kind: "admin"; userId: string };
-export type PartnerSession = { kind: "partner"; userId: string; partnerId: string };
-
-const DEMO_PARTNER: PartnerSession = {
-  kind: "partner",
-  userId: "partner-user-demo",
-  partnerId: "partner-001",
-};
 
 /**
  * React.cache 로 same-request dedupe — server action 이 호출한 결과를 후속 layout
@@ -57,16 +50,5 @@ export const getOptionalAdminSession = cache(
 export async function requireAdminSession(): Promise<AdminSession> {
   const s = await getOptionalAdminSession();
   if (!s) redirect("/admin/login");
-  return s;
-}
-
-export async function getOptionalPartnerSession(): Promise<PartnerSession | null> {
-  // TODO(auth): 실제 설계사 인증
-  return DEMO_PARTNER;
-}
-
-export async function requirePartnerSession(): Promise<PartnerSession> {
-  const s = await getOptionalPartnerSession();
-  if (!s) redirect("/partner/login");
   return s;
 }

@@ -14,7 +14,7 @@
   - `가입자(token)` — 알림톡으로 받은 일회용 토큰
   - `설계사(token)` — 알림톡 진입 토큰 (Auth 도입 전 임시)
   - `설계사` — Supabase Auth (도입 예정)
-  - `운영자` — DAL `requireSession()`
+  - `운영자` — DAL `requireAdminSession()` (Supabase auth + admin_users 화이트리스트)
 - **DB 컬럼 R/W**
   - 표 안 약어: `plan_request` → `pr`, `plan_request_medical_history` → `pr_mh`,
     `plan_request_candidate` → `pr_cand`, `match_assignment` → `assign`,
@@ -170,7 +170,7 @@
 
 - `/partner/login` 실 구현 — Supabase Auth (email + password)
 - `/admin/login` 실 구현 — 같은 패턴
-- `/(auth)/*` 그룹 — 가입자 OTP → Supabase Auth phone provider 전환 시 위치
+- 가입자 OTP → Supabase Auth phone provider 전환 시 신규 라우트 (예: `auth/otp/...`) 추가 위치 결정 필요
 - 분석 리포트 카테고리별 incidence (발병률) 곡선 도입 — 현재 ROI 차트는 incidence 부재
   로 발병률 area / 우측 y축 / 풀이 2번째 줄 모두 hide. v5 또는 product 상수로 채우면 자동 활성
 - 가입자 birthdate/age 컬럼 — adapter 의 `DEFAULT_CUSTOMER_AGE=33` hardcode 제거 트리거

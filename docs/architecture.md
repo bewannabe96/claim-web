@@ -32,57 +32,61 @@
 ├─ components.json                # shadcn 설정
 ├─ tsconfig.json                  # paths: { "@/*": ["./src/*"] }
 ├─ public/
+├─ prisma/
+│  └─ schema.prisma
 └─ src/
    ├─ app/
    │  ├─ layout.tsx               # 루트 레이아웃 (html/body, 폰트, providers)
    │  ├─ globals.css              # Tailwind v4 (@import + @theme)
-   │  ├─ page.tsx                 # 랜딩
+   │  ├─ page.tsx
    │  ├─ loading.tsx
    │  ├─ error.tsx                # 'use client' 필수
    │  ├─ not-found.tsx
-   │  ├─ (marketing)/             # 비인증 영역 (route group)
+   │  ├─ (marketing)/             # 비인증 — 가입자 흐름 + 랜딩 (route group)
+   │  │  ├─ layout.tsx            # 480px 컨테이너
+   │  │  ├─ page.tsx              # 랜딩
+   │  │  ├─ request/
+   │  │  │  ├─ new/                       # Step1 — 요청서 작성
+   │  │  │  └─ [id]/{candidates,confirm,dispatched}/  # Step2/3 + 안내
+   │  │  └─ result/[token]/        # 결과 페이지 (알림톡 일회용 토큰)
+   │  ├─ partner/                  # 설계사 (현재 token 기반, 향후 supabase auth)
    │  │  ├─ layout.tsx
-   │  │  └─ planners/[slug]/page.tsx
-   │  ├─ (app)/                   # 인증 영역
-   │  │  ├─ layout.tsx            # 세션 검증 (DAL 호출)
-   │  │  ├─ dashboard/
-   │  │  │  ├─ page.tsx
-   │  │  │  ├─ loading.tsx
-   │  │  │  ├─ _components/       # 라우트 전용 UI (라우팅 안 됨)
-   │  │  │  └─ _lib/
-   │  │  │     ├─ queries.ts      # 'server-only' import
-   │  │  │     └─ actions.ts      # 'use server'
-   │  │  └─ proposals/[id]/page.tsx
-   │  ├─ (auth)/
-   │  │  ├─ login/page.tsx
-   │  │  └─ signup/page.tsx
-   │  └─ api/                     # Route Handler 전용 (웹훅, OAuth 콜백 등)
-   │     └─ webhooks/stripe/route.ts
+   │  │  ├─ login/page.tsx         # ⚪ placeholder
+   │  │  └─ assignments/[token]/   # 제안서 제출
+   │  ├─ admin/                    # 운영자 (Supabase + admin_users)
+   │  │  ├─ layout.tsx             # metadata.robots noindex
+   │  │  ├─ login/                 # signInAdmin server action
+   │  │  └─ (dashboard)/           # route group — requireAdminSession() boundary
+   │  │     ├─ layout.tsx
+   │  │     ├─ page.tsx            # 대시보드
+   │  │     ├─ requests/...
+   │  │     ├─ partners/...
+   │  │     └─ settings/...
+   │  └─ api/
+   │     └─ webhooks/eightytwo-judge-analysis/route.ts  # HMAC-SHA256
    ├─ components/
-   │  └─ ui/                      # shadcn 생성 프리미티브
-   ├─ features/                   # 기능 단위 모듈 (앱이 커지면 분리)
-   │  └─ proposals/
-   │     ├─ schema.ts             # zod 스키마 (서버/클라 공유)
-   │     ├─ actions.ts            # 'use server'
-   │     ├─ queries.ts            # 'server-only'
-   │     └─ ui/
-   ├─ lib/
-   │  ├─ utils.ts                 # cn() 등
-   │  └─ env.ts                   # @t3-oss/env-nextjs (zod 검증)
-   ├─ server/                     # 서버 전용 모듈
-   │  ├─ auth.ts                  # 인증 인스턴스 (예: Better Auth)
-   │  ├─ db.ts                    # ORM 클라이언트 (drizzle/prisma)
-   │  └─ dal.ts                   # Data Access Layer (세션 검증 + 쿼리)
-   ├─ db/
-   │  └─ schema.ts                # ORM 스키마
+   │  └─ ui/                      # shadcn (Nova preset) 프리미티브
+   ├─ features/                   # 도메인 모듈
+   │  ├─ admin/                   # 시스템 설정 액션 (admin 전용)
+   │  ├─ partners/                # 설계사 풀 + 매칭 후보 추출
+   │  ├─ proposals/               # 제안서 + 분석 리포트
+   │  └─ requests/                # 가입자 요청 wizard
+   ├─ lib/                        # 순수 유틸 (cn, id, format 등)
+   ├─ server/                     # 서버 전용 (import 'server-only')
+   │  ├─ dal.ts                   # Data Access Layer (admin 세션 검증)
+   │  ├─ supabase.ts              # @supabase/ssr 래퍼
+   │  ├─ db/prisma.ts             # Prisma client 싱글톤
+   │  ├─ s3.ts                    # 제안서 PDF presigned PUT + HEAD + SHA-256
+   │  ├─ sqs.ts                   # eightytwo_judge 분석 잡 발행
+   │  └─ settings.ts              # app_settings 단일 row CRUD
    └─ types/
-      └─ index.ts
 ```
 
 **규칙**
 
 - **`_components`, `_lib`** (private folder) → 해당 라우트에서만 쓰는 컴포넌트/로직 콜로케이션. 언더스코어 prefix가 라우팅 시스템에서 제외시킴.
-- **`(marketing)`, `(app)`** (route group) → URL에 영향 주지 않고 layout만 분리. `(app)`은 인증 가드, `(marketing)`은 공개 영역에 다른 chrome 적용.
+- **`(marketing)`, `(dashboard)`** (route group) → URL에 영향 주지 않고 layout만 분리. `(marketing)` 은 공개 영역 chrome, `admin/(dashboard)` 는 `requireAdminSession()` 인증 boundary.
+- **`partner/`, `admin/`** (일반 폴더) → URL 에 박힘. 별도 layout/auth chrome 필요해서 route group 으로 묶지 않음.
 - **`server/`** + 모든 파일에 `import 'server-only'` → 클라이언트 번들에 실수로 포함되면 빌드 실패. DB/세션을 다루는 모든 모듈의 표준.
 - **`features/`** → 라우트와 직교(orthogonal)한 도메인 모듈. 각 도메인은 `schema.ts` (zod) + `queries.ts` (server-only read) + `actions.ts` (use server write).
 
@@ -110,12 +114,14 @@
 - **Intercepting route `(.)`, `(..)`, `(...)`**: 다른 라우트의 컨텍스트에서 렌더. 대표 패턴 — 모달:
 
 ```
-app/(app)/
+app/admin/(dashboard)/
 ├─ @modal/
 │  ├─ default.tsx                 # 필수 (보통 return null)
-│  └─ (.)proposals/[id]/page.tsx  # /proposals/[id] 모달 버전
-└─ proposals/[id]/page.tsx        # 직접 진입(새로고침 등)은 풀 페이지
+│  └─ (.)requests/[id]/page.tsx   # /admin/requests/[id] 모달 버전
+└─ requests/[id]/page.tsx         # 직접 진입(새로고침 등)은 풀 페이지
 ```
+
+(이 프로젝트는 현재 modal/parallel route 안 씀 — 패턴 참고용.)
 
 ### 2.3 ⚠️ Next 16 변경 — `params`, `searchParams`는 Promise
 
@@ -148,22 +154,22 @@ export default async function Page({
 데이터는 서버에서 fetch, 인터랙션이 필요한 leaf만 클라이언트:
 
 ```tsx
-// app/(app)/dashboard/page.tsx — Server Component
-import { listProposalsForUser } from '@/server/dal'
-import { ProposalListInteractive } from './_components/proposal-list-interactive'
+// app/admin/(dashboard)/partners/page.tsx — Server Component
+import { listAllPartners } from '@/features/partners/queries'
+import { PartnerTable } from './_components/partner-table'
 
-export default async function DashboardPage() {
-  const proposals = await listProposalsForUser()
-  return <ProposalListInteractive initial={proposals} />
+export default async function AdminPartnersPage() {
+  const partners = await listAllPartners()
+  return <PartnerTable initial={partners} />
 }
 ```
 
 ```tsx
-// app/(app)/dashboard/_components/proposal-list-interactive.tsx
+// app/admin/(dashboard)/partners/_components/partner-table.tsx
 'use client'
 import { useState } from 'react'
 
-export function ProposalListInteractive({ initial }: { initial: Proposal[] }) {
+export function PartnerTable({ initial }: { initial: Partner[] }) {
   const [filter, setFilter] = useState('')
   // ...필터 UI만 클라이언트
 }
@@ -236,66 +242,103 @@ export async function getPartner(id: string) {
 
 ## 5. Mutation (Server Actions)
 
-전체 패턴 — zod 검증 + read-your-writes + 점진적 향상(JS 없이도 동작):
+전체 패턴 — DAL 가드 (admin) 또는 token 검증 (가입자/설계사) → zod safeParse →
+prisma write → revalidate/redirect.
+
+### 5.1 Admin mutation (DAL 가드)
 
 ```ts
-// src/features/proposals/schema.ts
+// src/features/partners/schema.ts
 import { z } from 'zod'
 
-export const RequestProposalSchema = z.object({
-  partnerId: z.string().min(1),
-  message: z.string().min(10).max(1000),
+export const PartnerInputSchema = z.object({
+  name: z.string().min(1),
+  bio: z.string().min(1),
+  yearsOfExperience: z.number().int().nonnegative(),
+  // ... 생략
 })
 
-export type RequestProposalState =
-  | { errors?: Record<string, string[]>; message?: string }
-  | undefined
+export type PartnerInput = z.infer<typeof PartnerInputSchema>
 ```
+
+```ts
+// src/features/partners/actions.ts
+'use server'
+import { Prisma } from '@prisma/client'
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+
+import { newId } from '@/lib/id'
+import { requireAdminSession } from '@/server/dal'
+import { prisma } from '@/server/db/prisma'
+
+import { PartnerInputSchema, type PartnerInput } from './schema'
+
+export async function createPartner(
+  _prev: PartnerMutationState,
+  formData: FormData,
+): Promise<PartnerMutationState> {
+  await requireAdminSession()                              // ① layout 게이트 우회 차단
+
+  const parsed = PartnerInputSchema.safeParse({            // ② zod 검증
+    name: formData.get('name'),
+    /* ... */
+  })
+  if (!parsed.success) {
+    return { ok: false, errors: parsed.error.flatten().fieldErrors }
+  }
+
+  try {
+    await prisma.partner.create({                          // ③ DB write
+      data: { id: newId(), ...parsed.data },
+    })
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      return { ok: false, errors: { _form: ['중복된 휴대폰/이메일'] } }
+    }
+    throw err
+  }
+
+  revalidatePath('/admin/partners')                        // ④ 캐시 무효화
+  redirect('/admin/partners')                              // ⑤ post-redirect-get
+}
+```
+
+### 5.2 가입자/설계사 mutation (token 검증)
+
+DAL 미사용. token 으로 row 를 직접 조회하고 status 검증이 권한 판정 역할.
 
 ```ts
 // src/features/proposals/actions.ts
 'use server'
-import { updateTag } from 'next/cache'
-import { redirect } from 'next/navigation'
-import { RequestProposalSchema, RequestProposalState } from './schema'
-import { requireSession } from '@/server/dal'
-
-export async function requestProposal(
-  _prev: RequestProposalState,
-  formData: FormData,
-): Promise<RequestProposalState> {
-  const session = await requireSession()
-
-  const parsed = RequestProposalSchema.safeParse({
-    partnerId: formData.get('partnerId'),
-    message: formData.get('message'),
+export async function submitProposal(token: string, input: ProposalSubmissionInput) {
+  const assignment = await prisma.matchAssignment.findUnique({
+    where: { token },                                      // ① token → row
+    select: { id: true, status: true, requestId: true },
   })
-  if (!parsed.success) return { errors: parsed.error.flatten().fieldErrors }
+  if (!assignment) return { ok: false, errors: { _form: ['유효하지 않은 링크'] } }
+  if (assignment.status !== 'pending') return { ok: false, ... }   // ② status 게이트
 
-  const proposal = await db.proposals.create({
-    customerId: session.userId,
-    ...parsed.data,
-  })
-
-  updateTag(`user-${session.userId}-proposals`) // read-your-writes
-  redirect(`/proposals/${proposal.id}`)
+  const parsed = ProposalSubmissionSchema.safeParse(input)  // ③ zod 검증
+  if (!parsed.success) return { ok: false, errors: parsed.error.flatten().fieldErrors }
+  // ... s3 키 검증 → HEAD → SHA-256 → 트랜잭션 → SQS 발행
 }
 ```
 
+### 5.3 Client 측 연결
+
 ```tsx
-// src/app/(app)/partners/[id]/_components/request-form.tsx
 'use client'
 import { useActionState } from 'react'
-import { requestProposal } from '@/features/proposals/actions'
+import { createPartner } from '@/features/partners/actions'
 
-export function RequestProposalForm({ partnerId }: { partnerId: string }) {
-  const [state, action, pending] = useActionState(requestProposal, undefined)
+export function PartnerForm() {
+  const [state, action, pending] = useActionState(createPartner, undefined)
   return (
     <form action={action}>
-      <input type="hidden" name="partnerId" value={partnerId} />
-      <textarea name="message" />
-      {state?.errors?.message && <p>{state.errors.message[0]}</p>}
-      <button disabled={pending}>제안 요청</button>
+      <input name="name" />
+      {state?.errors?.name && <p>{state.errors.name[0]}</p>}
+      <button disabled={pending}>등록</button>
     </form>
   )
 }

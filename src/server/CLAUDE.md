@@ -8,15 +8,17 @@
 
 ## 무엇이 들어가나
 
-- `dal.ts` — Data Access Layer. **모든 인증 검사의 단일 진입점.**
-  - `requireAdminSession()` — Supabase auth.getUser() + admin_users 화이트리스트 2단계 검증.
-  - `requirePartnerSession()` — TODO. 현재 demo 세션 반환.
+- `dal.ts` — Data Access Layer. **Admin 인증 검사의 단일 진입점.**
+  - `requireAdminSession()` / `getOptionalAdminSession()` — Supabase auth.getUser() + admin_users 화이트리스트 2단계 검증.
+  - 가입자/설계사는 현재 token 기반이라 DAL 미사용 — 액션이 직접 `token → row` 조회 + status 검증으로 권한 판정.
 - `supabase.ts` — `@supabase/ssr` 의 `createServerClient` wrap. cookie-based 세션 +
   publishable key 사용 (RLS 적용). Auth flow (signIn/signOut/getUser) 가 이걸 쓰고,
   routine DB 쿼리는 prisma 사용 (분리).
 - `db/prisma.ts` — **Prisma client 싱글톤. 모든 DB 쿼리/트랜잭션의 단일 진입점.**
-- `s3.ts` — 제안서 PDF 업로드/다운로드 S3 헬퍼. presigned PUT/GET URL + HEAD 검증
-  (`verifyUploadedObject`) + 본문 SHA-256 계산 (`fetchObjectSha256`, stream-based — 외부 분석 리포트와 join 할 hash).
+- `s3.ts` — 제안서 PDF 업로드 S3 헬퍼. presigned PUT (`presignProposalUpload`) +
+  HEAD 검증 (`verifyUploadedObject`) + 본문 SHA-256 계산 (`fetchObjectSha256`,
+  stream-based — 외부 분석 리포트와 join 할 hash). 다운로드 (GET) 는 현재 미구현 —
+  결과/어드민 페이지가 PDF 본문을 직접 노출하지 않음.
 - `settings.ts` — single-row `app_settings` 로드/갱신. `SettingsPatch` 가 admin 폼에서 갱신
   가능한 필드 (candidateCount / selectLimit / submissionDeadlineHours / penaltyWindow /
   resultRetentionDays / scenarioPriority).
@@ -162,17 +164,31 @@ await prisma.$transaction(async (tx) => {
 Supavisor transaction pooler 모드에서 한 트랜잭션 = 한 connection 점유, 종료 시 반환.
 `SET LOCAL` 는 OK, `SET` (세션-wide) 는 NG.
 
-## DAL 사용 패턴
+## DAL 사용 패턴 (admin 전용)
 
 ```ts
-// 인증 필수 — 비로그인 시 자동 redirect
-const session = await requireSession();
+// 인증 필수 — 비로그인 / 비-admin 시 /admin/login 으로 자동 redirect
+const session = await requireAdminSession();
 
-// 인증 선택 — 비로그인 시 null
-const session = await getOptionalSession();
+// 인증 선택 — 미인증 또는 admin 아니면 null
+const session = await getOptionalAdminSession();
 ```
 
-**모든 인증 검사는 DAL 호출로 통일.** `cookies().get('session')` 같은 raw 코드를 페이지/액션에서 직접 쓰지 말 것 — DAL 이 추상화 boundary.
+**Admin 인증 검사는 DAL 호출로 통일.** `cookies().get('sb-...')` 같은 raw Supabase
+cookie 직접 파싱 금지 — DAL 이 추상화 boundary.
+
+가입자/설계사 흐름은 token 기반이라 DAL 미사용:
+
+```ts
+// features/proposals/actions.ts 패턴
+const assignment = await prisma.matchAssignment.findUnique({
+  where: { token }, select: { id: true, status: true, requestId: true },
+});
+if (!assignment) return { ok: false, errors: { _form: ["유효하지 않은 링크입니다."] } };
+if (assignment.status !== "pending") return { ok: false, ... };
+```
+
+token 조회 + status 검증이 권한 판정의 단일 진입점.
 
 ## features/<x>/queries.ts 와의 관계
 
@@ -245,8 +261,16 @@ label 추가 → CI 차단 우회 → 직접 `prisma/migrations/<...>/migration.
 
 ## Partner 인증 도입 시
 
-1. `dal.ts:getOptionalPartnerSession()` 의 demo 반환 → `supabase.auth.getUser()` +
-   `partner` 테이블 (uuid 매핑) 조회로 교체. 시그니처 동일 → 호출부 무수정.
-2. `middleware.ts` matcher 에 `/partner/:path*` 추가 + 동일한 optimistic 분기.
-3. Partner.id 를 nanoid → `auth.users.id` (UUID) 마이그레이션 (prisma/schema.prisma
-   에 명시된 계획).
+현재 partner 영역은 알림톡 일회용 토큰 (`/partner/assignments/[token]`) 만 있고
+DAL 미사용. 실 로그인 도입 시 추가 작업:
+
+1. `dal.ts` 에 `getOptionalPartnerSession()` / `requirePartnerSession()` 신규 작성
+   — `supabase.auth.getUser()` + `partner` 테이블 (uuid 매핑) 조회. admin 두 함수의
+   구조 그대로 따라가면 됨.
+2. `middleware.ts` matcher 에 `/partner/:path*` 추가 + admin 과 동일한 optimistic
+   분기 (세션 cookie 없으면 307 → `/partner/login`).
+3. `Partner.id` 를 nanoid → `auth.users.id` (UUID) 로 마이그레이션
+   (prisma/schema.prisma 에 명시된 계획).
+4. 모든 partner server action 진입부에 `await requirePartnerSession()` 호출 +
+   세션 `partnerId` 와 액션이 다루는 row 의 `partnerId` 일치 검증 (admin 과 달리
+   partner 는 자기 row 만 접근 가능).
