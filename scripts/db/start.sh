@@ -59,6 +59,14 @@ bash "$(dirname "$0")/../write-env-local.sh"
 # Prisma 마이그레이션 — DIRECT_URL 사용 (datasource.directUrl).
 echo "[db] Applying migrations..."
 pnpm prisma migrate deploy
+# Feature 브랜치 동안에는 schema.prisma 가 prisma/migrations/ 보다 앞서 있을 수 있음
+# (마이그레이션은 develop merge 후 CI 가 단일 writer). 매 SessionStart 마다 컨테이너
+# 가 새로 부트스트랩되면 옛 init migration 만 적용되므로, 여기서 schema.prisma 와
+# 한 번 더 reconcile 해 dev DB 가 항상 코드와 일치하도록 함.
+# 격리 Docker DB 이므로 --accept-data-loss 는 안전 (개발자가 의도한 schema 변경 반영).
+# 차이가 없으면 no-op.
+echo "[db] Reconciling schema.prisma → DB (db push)..."
+pnpm prisma db push --skip-generate --accept-data-loss
 echo "[db] Generating Prisma Client..."
 pnpm prisma generate >/dev/null
 echo "[db] Seeding..."

@@ -4,34 +4,36 @@ import { useActionState, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  createPartner,
-  updatePartner,
-  type PartnerMutationState,
-} from "@/features/partners/actions";
+import { type PartnerMutationState } from "@/features/partners/actions";
 import type { PartnerInput } from "@/features/partners/schema";
 import { cn } from "@/lib/utils";
 
+type FormAction = (
+  state: PartnerMutationState,
+  formData: FormData,
+) => Promise<PartnerMutationState>;
+
 /**
- * 설계사 등록/편집 폼 — 어드민.
+ * 설계사 폼 — 가입 초청 발급 / 미소비 초청 수정 / 등록된 설계사 편집 공용.
  *
- * `initial` 가 주어지면 update 모드 (수정), 없으면 create 모드 (신규).
- * 전문 보험(specialties) 필드는 현 도메인에서 제거됨 — 매칭은 활성 + 노출 분포로만 수행.
+ * 상위 페이지가 사용 시점에 맞는 server action 을 `action` prop 으로 주입.
+ * 폼 필드 자체는 세 시나리오 모두 동일 (이메일 없음).
  */
 export function PartnerForm({
-  partnerId,
+  action,
   initial,
+  submitLabel = "저장",
+  pendingLabel = "저장 중...",
 }: {
-  partnerId?: string;
+  action: FormAction;
   initial?: PartnerInput;
+  submitLabel?: string;
+  pendingLabel?: string;
 }) {
-  const isEdit = !!partnerId;
-  const action = isEdit ? updatePartner.bind(null, partnerId!) : createPartner;
-
   const [state, formAction, pending] = useActionState<
     PartnerMutationState,
     FormData
-  >(action as (s: PartnerMutationState, fd: FormData) => Promise<PartnerMutationState>, undefined);
+  >(action, undefined);
 
   const [active, setActive] = useState<boolean>(initial?.active ?? true);
 
@@ -52,12 +54,12 @@ export function PartnerForm({
               className="h-11"
             />
           </Field>
-          <Field label="아바타 URL" error={errors?.avatarUrl?.[0]}>
+          <Field label="휴대폰" error={errors?.phone?.[0]}>
             <Input
-              name="avatarUrl"
-              type="url"
-              defaultValue={initial?.avatarUrl ?? ""}
-              placeholder="https://..."
+              name="phone"
+              type="tel"
+              defaultValue={initial?.phone ?? ""}
+              placeholder="01012345678"
               className="h-11"
             />
           </Field>
@@ -92,29 +94,6 @@ export function PartnerForm({
               defaultValue={initial?.trustMetric ?? ""}
               placeholder="예: 고객 96%가 계속 함께해요"
               maxLength={40}
-              className="h-11"
-            />
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="연락처 (운영 — 가입자 비노출)">
-        <div className="grid grid-cols-2 gap-6">
-          <Field label="휴대폰 (알림톡)" error={errors?.phone?.[0]}>
-            <Input
-              name="phone"
-              type="tel"
-              defaultValue={initial?.phone ?? ""}
-              placeholder="01012345678"
-              className="h-11"
-            />
-          </Field>
-          <Field label="이메일 (카카오톡 로그인 매칭)" error={errors?.email?.[0]}>
-            <Input
-              name="email"
-              type="email"
-              defaultValue={initial?.email ?? ""}
-              placeholder="partner@dopda.kr"
               className="h-11"
             />
           </Field>
@@ -177,7 +156,7 @@ export function PartnerForm({
           disabled={pending}
           className="h-11 rounded-full px-8 text-sm font-medium"
         >
-          {pending ? "저장 중..." : isEdit ? "변경 저장" : "등록"}
+          {pending ? pendingLabel : submitLabel}
         </Button>
       </div>
     </form>

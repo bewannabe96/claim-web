@@ -61,11 +61,13 @@ function withRobots<T extends NextResponse>(res: T): T {
 }
 
 function isPartnerPublicPath(pathname: string): boolean {
-  // 토큰 진입 + 로그인은 비인증 통과. done 도 토큰 흐름 후속이므로 carve-out.
+  // 토큰 진입 + 로그인 + 신규 가입은 비인증 통과. done 도 토큰 흐름 후속이므로 carve-out.
+  // signup 은 어드민이 발급한 초청 token 으로 진입 — token 자체가 1차 인증.
   return (
     pathname === "/partner/login" ||
     pathname.startsWith("/partner/assignments/") ||
-    pathname === "/partner/assignments"
+    pathname === "/partner/assignments" ||
+    pathname.startsWith("/partner/signup/")
   );
 }
 
