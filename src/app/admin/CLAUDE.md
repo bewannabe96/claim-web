@@ -65,11 +65,16 @@ admin/
 └─ (dashboard)/                  # route group — 모든 인증 영역
    ├─ layout.tsx                 # requireAdminSession + top bar + nav + 로그아웃 form
    ├─ page.tsx                   # 대시보드 홈
-   ├─ requests/...               # 요청 모니터링
+   ├─ requests/...               # 요청 모니터링 (상세 페이지에서 분석 실패도 인라인 노출)
+   ├─ analysis-failures/page.tsx # 미해결 분석 실패 모니터링 + 재시도
    ├─ partners/...               # 설계사 풀 관리 (User + Partner 통합 CRUD)
    ├─ settings/...               # 시스템 설정
    ├─ _actions/logout.ts         # signOutAdmin server action
-   └─ _components/...
+   └─ _components/                # 어드민 공용 UI
+      ├─ admin-nav.tsx
+      ├─ analysis-error-pill.tsx # 분석 실패 group 색상/라벨 단일화 — pill 직접 정의 금지
+      ├─ page-shell.tsx
+      └─ retry-analysis-button.tsx  # 분석 재시도 client 버튼 (useTransition + retryProposalAnalysis)
 ```
 
 ## ENV

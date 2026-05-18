@@ -14,10 +14,12 @@ import {
   CURRENT_REPORT_VERSION,
   type AnalysisReportV5,
 } from "./analysis-schema";
-import type {
-  AssignmentStatus,
-  MatchAssignment,
-  Proposal,
+import {
+  AnalysisErrorSchema,
+  type AnalysisError,
+  type AssignmentStatus,
+  type MatchAssignment,
+  type Proposal,
 } from "./schema";
 
 /** 결과 페이지에서 카드 1개를 그릴 때 필요한 모든 정보 */
@@ -198,6 +200,11 @@ function mapAssignment(row: AssignmentRow): MatchAssignment {
 /**
  * Prisma row → 도메인 Proposal. pdfSizeBytes 는 BigInt (Prisma) → number (app)
  * 변환 — 우리 한도 10MB 라 number 범위 안전.
+ *
+ * `analysisError` 는 raw JSON 이라 zod 로 parse — 외부 페이로드를 직접 저장한
+ * 컬럼이므로 read 시 schema 검증 후 도메인 타입으로 노출. parse 실패한 row 는
+ * 노출하지 않음 (undefined). 페이로드 컨트랙트가 깨졌다는 신호이므로 로그만 남기고
+ * 어드민 UI 에선 단순 "분석 중" 으로 보이게 됨 — 필요 시 별도 모니터링 추가.
  */
 function mapProposal(row: PrismaProposal): Proposal {
   return {
@@ -210,5 +217,65 @@ function mapProposal(row: PrismaProposal): Proposal {
     note: row.note,
     submittedAt: row.submittedAt.toISOString(),
     analyzedAt: row.analyzedAt?.toISOString() ?? undefined,
+    analysisError: parseAnalysisError(row.analysisError),
+    analysisErrorAt: row.analysisErrorAt?.toISOString() ?? undefined,
   };
+}
+
+function parseAnalysisError(raw: unknown): AnalysisError | undefined {
+  if (raw == null) return undefined;
+  const parsed = AnalysisErrorSchema.safeParse(raw);
+  if (!parsed.success) {
+    console.warn("[proposals/queries] analysisError parse failed", {
+      issues: parsed.error.flatten(),
+    });
+    return undefined;
+  }
+  return parsed.data;
+}
+
+/* ============================================================
+ * 분석 실패 모니터링 — 어드민 "분석 실패" 페이지 전용
+ *
+ * `analyzedAt IS NULL AND analysisErrorAt IS NOT NULL` 인 proposal —
+ * 콜백을 받았으나 마지막 시도가 실패 상태로 남은 것. 성공이 한 번이라도 들어오면
+ * (analyzedAt 채워짐) 더 이상 실패로 표시하지 않음.
+ *
+ * partner + request 정보를 함께 join 해서 어드민이 컨텍스트 한 화면에 보도록.
+ * ============================================================ */
+
+export type FailedProposalRow = {
+  proposal: Proposal;
+  partner: PartnerCard;
+  /** 부모 plan_request 의 id — 어드민 상세 페이지로 link 용. */
+  planRequestId: string;
+};
+
+export async function listFailedAnalysisProposals(): Promise<
+  FailedProposalRow[]
+> {
+  const rows = await prisma.proposal.findMany({
+    where: { analyzedAt: null, analysisErrorAt: { not: null } },
+    include: {
+      assignment: { select: { partnerId: true, requestId: true } },
+    },
+    orderBy: { analysisErrorAt: "desc" },
+  });
+
+  const partners = await getPartnerCardsByIds(
+    rows.map((r) => r.assignment.partnerId),
+  );
+  const partnerById = new Map(partners.map((p) => [p.id, p]));
+
+  return rows
+    .map((row) => {
+      const partner = partnerById.get(row.assignment.partnerId);
+      if (!partner) return null;
+      return {
+        proposal: mapProposal(row),
+        partner,
+        planRequestId: row.assignment.requestId,
+      };
+    })
+    .filter((r): r is FailedProposalRow => r !== null);
 }

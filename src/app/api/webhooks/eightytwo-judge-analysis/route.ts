@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -7,6 +8,7 @@ import {
   AnalysisReportV5Schema,
   CURRENT_REPORT_VERSION,
 } from "@/features/proposals/analysis-schema";
+import { AnalysisErrorSchema } from "@/features/proposals/schema";
 import { prisma } from "@/server/db/prisma";
 
 /**
@@ -20,7 +22,8 @@ import { prisma } from "@/server/db/prisma";
  *     request_id: string,                 // 메시지 correlation ID (random UUID, log 용)
  *     status: "succeeded" | "failed",
  *     result: AnalysisReportV5 | null,    // succeeded 시 필수
- *     error:  { code, message } | null,   // failed 시 필수
+ *     error:  AnalysisError | null,       // failed 시 필수
+ *                                          // { group, type, message, detail? }
  *     metadata: {
  *       proposal_id: string,              // 우리 도메인 식별자
  *       plan_request_id: string,          // pending 체크 + 전이 기준
@@ -29,7 +32,11 @@ import { prisma } from "@/server/db/prisma";
  *   }
  *
  * 동작:
- *   - `failed` → 로그만 (proposal.analyzedAt=null 유지, 재시도 가능), 200 ack.
+ *   - `failed` → proposal.analysisError + analysisErrorAt 마킹 (analyzedAt 은
+ *     건드리지 않음 → plan_request 전이 안 일어남). updateMany + WHERE id +
+ *     assignment.requestId + analyzedAt IS NULL → 성공 분석이 이미 들어와 있으면
+ *     덮어쓰기 금지 (race-safe). 어드민 "분석 실패" 페이지에서 인지 + 수동 fix
+ *     후 `retryProposalAnalysis` 액션으로 재발행.
  *   - `succeeded` → 트랜잭션:
  *       1. proposal.analyzedAt = now() (첫 콜백만, WHERE id + assignment.requestId
  *          매치 + analyzedAt IS NULL — plan_request_id cross-check 로 페이로드 위조 차단)
@@ -55,9 +62,12 @@ const PayloadSchema = z
     request_id: z.string().min(1),
     status: z.enum(["succeeded", "failed"]),
     result: ResultSchema.nullable(),
-    error: z
-      .object({ code: z.string(), message: z.string() })
-      .nullable(),
+    /**
+     * failed 시 필수. `{ group, type, message, detail? }` — features/proposals/schema.ts
+     * 의 `AnalysisErrorSchema` 와 동일 컨트랙트. group 은 우리 도메인 enum 으로 고정 —
+     * 외부에서 새 group 보내면 여기서 reject 되어 미정의 케이스가 DB 에 들어가지 않음.
+     */
+    error: AnalysisErrorSchema.nullable(),
     metadata: z.object({
       proposal_id: z.string().min(1),
       plan_request_id: z.string().min(1),
@@ -113,6 +123,39 @@ export async function POST(req: Request) {
       error,
       duration_ms,
     });
+
+    // refine() 이 failed → error !== null 을 보장하지만 TS narrowing 은 못 따라옴.
+    // cast — zod 통과한 객체는 JSON-serializable, Prisma `InputJsonValue` 와
+    // 구조적으로 안전 (단순히 `unknown` index signature 가 nominal 일치 안 함).
+    const errorPayload = error! as unknown as Prisma.InputJsonValue;
+
+    // 마지막 실패만 보존 (시도 history 는 추적 안 함). WHERE 절:
+    //   - analyzedAt IS NULL → 성공 분석이 이미 들어와 있으면 덮어쓰기 금지.
+    //     (외부 파이프라인이 success 후 failed 재전송하는 비정상 케이스 방어.)
+    //   - assignment.requestId 매치 → succeeded 분기와 동일한 cross-validation.
+    const updated = await prisma.proposal.updateMany({
+      where: {
+        id: proposal_id,
+        analyzedAt: null,
+        assignment: { requestId: plan_request_id },
+      },
+      data: {
+        analysisError: errorPayload,
+        analysisErrorAt: new Date(),
+      },
+    });
+
+    if (updated.count !== 1) {
+      console.warn(
+        "[webhook/analysis] failed payload no-op (already analyzed, mismatched plan_request_id, or unknown id)",
+        { request_id, proposal_id, plan_request_id },
+      );
+    } else {
+      // 어드민 "분석 실패" 뷰 + 해당 요청 상세 즉시 반영.
+      revalidatePath("/admin/analysis-failures");
+      revalidatePath(`/admin/requests/${plan_request_id}`);
+    }
+
     return Response.json({ ok: true });
   }
 

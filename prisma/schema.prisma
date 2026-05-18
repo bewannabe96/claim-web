@@ -270,10 +270,22 @@ model Proposal {
   /// 두 id 로 직접 식별 + 마킹 (cross-validation 으로 페이로드 위조 차단).
   analyzedAt  DateTime? @db.Timestamptz(6) @map("analyzed_at")
 
+  /// 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 payload.
+  /// `{ group: "input_error"|"product_id_match"|"internal_error", type, message, detail? }`.
+  /// 어드민이 group=product_id_match 등 수기 대응 필요한 케이스를 인지하는 용도.
+  /// 분석 성공 (analyzedAt 채워질 때) 시점에 명시적으로 null 초기화하진 않음 —
+  /// 어차피 read 측은 analyzedAt 으로 우선 분기. 재시도 (retryProposalAnalysis)
+  /// 시점에 두 컬럼 모두 null 로 초기화.
+  analysisError   Json?     @map("analysis_error")
+  analysisErrorAt DateTime? @db.Timestamptz(6) @map("analysis_error_at")
+
   assignment     MatchAssignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   analysisReport ProposalAnalysisReport?
 
   @@index([pdfHash])
+  /// 어드민 "분석 실패" 뷰 — analyzedAt IS NULL AND analysisErrorAt IS NOT NULL
+  /// 조건 스캔이 작은 테이블이지만 자주 호출되므로 보조 인덱스.
+  @@index([analysisErrorAt])
   @@map("proposal")
   @@schema("claim")
 }

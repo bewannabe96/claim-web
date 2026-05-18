@@ -82,4 +82,46 @@ export type Proposal = {
   submittedAt: string;
   /** 외부 분석 파이프라인 콜백 수신 시각. null = 아직. */
   analyzedAt?: string;
+  /**
+   * 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 정보.
+   * 성공 시점이 와도 명시적으로 비우지 않으므로, read 측은 `analyzedAt` 우선 분기.
+   * 재시도 (retryProposalAnalysis) 시점에 두 필드 모두 초기화.
+   */
+  analysisError?: AnalysisError;
+  analysisErrorAt?: string;
+};
+
+/* ============================================================
+ * 분석 실패 페이로드 — webhook `status=failed` 시 외부 파이프라인이 보내는 본문.
+ *
+ * group 분류:
+ *   - input_error      → 입력 자체 문제 (잘못된 PDF, 파싱 불능 등)
+ *   - product_id_match → 카탈로그에 없는 상품 — 어드민 수기 매핑 후 재시도
+ *   - internal_error   → 파이프라인 내부 오류 — 보통 재시도로 회복
+ *
+ * `type` 은 그룹별 세부 사유 (no_catalog_match 등) — 외부에서 확장될 수 있으므로
+ * enum 으로 고정하지 않고 open string. `detail` 은 타입별 자유 JSON (디버깅 용).
+ * ============================================================ */
+
+export const ANALYSIS_ERROR_GROUPS = [
+  "input_error",
+  "product_id_match",
+  "internal_error",
+] as const;
+
+export type AnalysisErrorGroup = (typeof ANALYSIS_ERROR_GROUPS)[number];
+
+export const AnalysisErrorSchema = z.object({
+  group: z.enum(ANALYSIS_ERROR_GROUPS),
+  type: z.string().min(1),
+  message: z.string().min(1),
+  detail: z.record(z.string(), z.unknown()).optional(),
+});
+
+export type AnalysisError = z.infer<typeof AnalysisErrorSchema>;
+
+export const ANALYSIS_ERROR_GROUP_LABEL: Record<AnalysisErrorGroup, string> = {
+  input_error: "입력 오류",
+  product_id_match: "상품 매칭 실패",
+  internal_error: "내부 오류",
 };
