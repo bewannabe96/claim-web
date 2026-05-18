@@ -88,9 +88,8 @@ export function Step1Wizard() {
     medicalHistory: [],
     focusedConcerns: [],
   });
-  const [phase, setPhase] = useState<"form" | "matching">("form");
   const [serverError, setServerError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
   const total = PHASE_KEYS.length;
   const phaseKey = PHASE_KEYS[phaseIdx];
@@ -108,7 +107,6 @@ export function Step1Wizard() {
   function handleSubmit() {
     if (!canProceed) return;
     setServerError(null);
-    setPhase("matching");
 
     const fd = new FormData();
     if (data.occupation) fd.append("occupation", data.occupation);
@@ -131,10 +129,9 @@ export function Step1Wizard() {
       if (result && "ok" in result && result.ok) {
         // Next.js Router Cache 가 client state 를 보존하므로 navigate 직전에
         // 초기화 — 다음에 /request/new 로 돌아왔을 때 폼이 처음부터 보이도록.
-        // (그대로 두면 캐시된 phase="matching" 이 살아남아 진입 즉시 MatchingScreen.)
-        // startTransition 안이라 state 업데이트 + nav 가 batch 되어 flash 없음.
-        // replace 로 /request/new 가 history 에 남지 않게 함.
-        setPhase("form");
+        // isPending 이 router.replace 완료까지 true 라 form view 가 flash 되지
+        // 않고 MatchingScreen 이 유지됨. replace 로 /request/new 가 history 에
+        // 남지 않게 함.
         setPhaseIdx(0);
         setData({ medicalHistory: [], focusedConcerns: [] });
         router.replace(`/request/${result.requestId}/candidates`);
@@ -146,11 +143,10 @@ export function Step1Wizard() {
           ? result.errors._form[0]
           : "매칭에 실패했습니다. 다시 시도해주세요.";
       setServerError(msg);
-      setPhase("form");
     });
   }
 
-  if (phase === "matching") return <MatchingScreen />;
+  if (isPending) return <MatchingScreen />;
 
   return (
     <main className="flex flex-col flex-1 px-6 pt-10 pb-8 bg-white">
