@@ -16,6 +16,7 @@
     "db:logs": "bash scripts/db/logs.sh",
     "db:push": "bash scripts/db/push.sh",
     "db:migrate:deploy": "bash scripts/db/migrate-deploy.sh",
+    "db:cleanup-orphans": "bash scripts/db/cleanup-orphans.sh",
     "db:seed": "bash -c 'source scripts/db-env.sh && pnpm prisma db seed'"
   },
   "prisma": {

@@ -9,12 +9,14 @@ db-env.sh ←─ source ─┬─ write-env-local.sh
                      ├─ db/start.sh ──→ write-env-local.sh
                      ├─ db/stop.sh
                      ├─ db/reset.sh
-                     ├─ db/status.sh       (source 안 함 — claim_ prefix grep)
+                     ├─ db/status.sh           (source 안 함 — claim_ prefix grep)
+                     ├─ db/cleanup-orphans.sh  (source 안 함 — git-common-dir + 자체 to_safe)
                      ├─ db/psql.sh
                      ├─ db/logs.sh
                      ├─ db/push.sh
                      ├─ db/migrate-deploy.sh
-                     └─ hooks/session-start-db.sh
+                     ├─ hooks/session-start-db.sh   (백그라운드 db/start.sh 호출)
+                     └─ hooks/session-end-db.sh     (worktree 한정 down -v)
 ```
 
 `db-env.sh` 가 **단일 진실 공급원** — 다른 모든 스크립트가 source 해서 env 받아옴.
@@ -56,17 +58,18 @@ db-env.sh ←─ source ─┬─ write-env-local.sh
 **시퀀스**:
 1. worktree 에 `.env` 없으면 메인 리포의 `.env` 자동 복사 (git common-dir 로 메인 리포 위치 추론). 메인 리포에도 없으면 WARN 후 계속.
 2. `docker info` 체크 (daemon 없으면 명확한 ERROR 후 exit 1).
-3. `docker compose up -d postgres` (이미 떠 있으면 no-op).
-4. `pg_isready` healthcheck 대기 (최대 ~60 초).
-5. `write-env-local.sh` 호출 → `.env.local` 갱신.
-6. `pnpm prisma migrate deploy` → `prisma/migrations/` 의 모든 migration 적용.
-7. `pnpm prisma generate` → Prisma Client 재생성.
-8. `pnpm prisma db seed` → `app_settings('app')` + `admin_users(본인)` upsert.
+3. `node_modules` 또는 `node_modules/.bin/prisma` 없으면 `pnpm install` 자동 호출 (이후 prisma 단계에 필요). 이미 설치되어 있으면 skip.
+4. `docker compose up -d postgres` (이미 떠 있으면 no-op).
+5. `pg_isready` healthcheck 대기 (최대 ~60 초).
+6. `write-env-local.sh` 호출 → `.env.local` 갱신.
+7. `pnpm prisma migrate deploy` → `prisma/migrations/` 의 모든 migration 적용.
+8. `pnpm prisma generate` → Prisma Client 재생성.
+9. `pnpm prisma db seed` → `app_settings('app')` + `admin_users(본인)` upsert.
 
 **언제 호출**:
-- 새 worktree 진입 직후 (최초 1회 필수 — hook 은 컨테이너만 띄우고 migration/seed 안 함).
-- `pnpm db:reset` 직후.
-- 평소엔 SessionStart hook 이 컨테이너만 챙기므로 명시 호출 거의 없음.
+- 수동 호출 거의 필요 없음 — SessionStart hook 이 컨테이너 없을 때 자동으로 백그라운드 호출.
+- `pnpm db:reset` 직후 명시 호출.
+- hook 백그라운드 진행 중인데 latency 가 거슬릴 때 foreground 로 재호출.
 
 ---
 
@@ -120,6 +123,21 @@ db-env.sh ←─ source ─┬─ write-env-local.sh
 
 ---
 
+## scripts/db/cleanup-orphans.sh — `pnpm db:cleanup-orphans`
+
+**무엇을**: `.claude/worktrees/` 에 더 이상 디렉토리가 없는 worktree 의 `claim_*_postgres` 컨테이너 + `claim_*_pgdata` 볼륨을 일괄 삭제. 확인 프롬프트 없음.
+
+**언제**:
+- `git worktree remove` 직후 (정상적으로 SessionEnd hook 이 down -v 했으면 잡을 게 없지만, 외부에서 worktree 디렉토리 강제 삭제 시 잔존 컨테이너 정리).
+- 옛 흐름에서 남은 잔재 일괄 정리.
+- `pnpm db:status` 가 모르는 컨테이너로 차 있을 때.
+
+**Keep 룰**: 메인 리포 basename + `.claude/worktrees/*/` 의 basename — `db-env.sh` 와 동일한 safe-name 변환 적용. 이 두 룰 중 하나에 매칭되는 컨테이너는 보존.
+
+**메인 리포 / worktree 어디서든 호출 가능**: `git rev-parse --git-common-dir` 로 메인 리포 root 추론.
+
+---
+
 ## scripts/db/psql.sh — `pnpm db:psql [...args]`
 
 **무엇을**: `docker compose exec postgres psql -U postgres -d postgres "$@"`. 컨테이너 안 psql shell. 인자가 그대로 전달됨.
@@ -142,21 +160,40 @@ db-env.sh ←─ source ─┬─ write-env-local.sh
 
 ## scripts/hooks/session-start-db.sh
 
-**무엇을**: Claude Code 의 `SessionStart` hook. 세션 시작 시점에 Docker 컨테이너만 silent 기동.
+**무엇을**: Claude Code 의 `SessionStart` hook. 컨테이너 running 이면 no-op, 없거나 정지면 **백그라운드 풀 부트스트랩** (`bash scripts/db/start.sh`).
 
 **시퀀스** (모두 fail-soft):
-1. `docker` CLI 없음 → exit 0
-2. `docker info` fail → exit 0
-3. `docker-compose.yml` 없음 → exit 0
-4. `db-env.sh` source
-5. `docker compose up -d postgres >/dev/null 2>&1 || true`
-6. exit 0
+1. `docker` CLI / daemon / `docker-compose.yml` 없음 → exit 0
+2. `db-env.sh` source
+3. `${COMPOSE_PROJECT_NAME}_postgres` 가 `docker ps` 에 있음 → exit 0 (latency 절약)
+4. 없음 → `nohup bash scripts/db/start.sh >.claude/db-bootstrap.log 2>&1 & disown`
+5. exit 0
 
-**의도된 동작**:
-- 매 세션마다 사용자/AI 가 `pnpm db:start` 안 쳐도 컨테이너 살아있음.
-- **Migration/seed 는 안 함** — latency 큼. 컨테이너 기동만.
-- Docker daemon 안 떠있어도 세션 진입 차단하지 않음 — 사용자가 필요할 때 명시적으로 띄움.
+**왜 백그라운드**:
+- SessionStart hook 은 사용자 프롬프트 받기 전에 실행됨. blocking 으로 30~60초 기다리면 UX 망함.
+- 부트스트랩 중에 사용자/AI 가 DB 를 치면 prisma 명령이 잠시 실패할 수 있음 → `tail -f .claude/db-bootstrap.log` 로 진행 확인.
+- 정 latency 가 거슬리면 foreground `pnpm db:start` 명시 호출.
+
+**SessionEnd 가 down -v 하므로 매 세션마다 트리거**: 컨테이너 + 볼륨 완전 삭제 → 다음 SessionStart 가 자동 재구축.
 
 **등록 위치**: [.claude/settings.json](../../.claude/settings.json) 의 `hooks.SessionStart` (matcher: `startup|resume|clear`).
 
-**처음 한 번**: hook 은 컨테이너만 챙기므로, 신규 worktree 의 최초 1 회는 반드시 `pnpm db:start` 명시 호출 (`.env.local` 생성 + migration + seed). 이후엔 hook 이 챙김.
+---
+
+## scripts/hooks/session-end-db.sh
+
+**무엇을**: Claude Code 의 `SessionEnd` hook. **worktree 한정** 으로 `docker compose down -v` 호출 (컨테이너 + 볼륨 완전 삭제).
+
+**시퀀스** (모두 fail-soft):
+1. `git-dir != git-common-dir` 체크 — 메인 리포면 exit 0 (worktree 만 정리).
+2. `docker` CLI / daemon / `docker-compose.yml` 없음 → exit 0
+3. `db-env.sh` source
+4. `docker compose down -v >/dev/null 2>&1 || true`
+5. exit 0
+
+**의도**:
+- 세션 종료 = 그 worktree 작업 흐름 종료라고 가정 → 자원 회수.
+- 다음에 같은 worktree 로 돌아와도 SessionStart 가 자동 풀 부트스트랩하므로 사용자 경험 끊김 없음 (latency 외).
+- 메인 리포에서는 동작 안 함 (개인 작업 + 다른 worktree 컨테이너 영향 X).
+
+**등록 위치**: [.claude/settings.json](../../.claude/settings.json) 의 `hooks.SessionEnd` (matcher: `*`, timeout: 30s).

@@ -13,6 +13,18 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/session-end-db.sh",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }
