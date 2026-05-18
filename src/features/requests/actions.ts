@@ -15,6 +15,7 @@ import {
   Step1Schema,
   Step2Schema,
   Step3Schema,
+  deriveRrn,
   type FinalizeState,
   type MedicalHistoryEntry,
   type SendOtpState,
@@ -264,9 +265,11 @@ export async function finalizeRequest(
   _prev: FinalizeState,
   formData: FormData,
 ): Promise<FinalizeState> {
-  // 1) 이름 + 전화번호 + 동의 검증
+  // 1) 이름 + 주민번호 + 전화번호 + 동의 검증
   const parsed = Step3Schema.safeParse({
     name: formData.get("name"),
+    rrnFront: formData.get("rrnFront"),
+    rrnBack1: formData.get("rrnBack1"),
     phone: formData.get("phone"),
     consentThirdParty: formData.get("consentThirdParty"),
     consentMessaging: formData.get("consentMessaging"),
@@ -289,6 +292,7 @@ export async function finalizeRequest(
     where: { id: requestId },
     select: {
       id: true,
+      gender: true,
       status: true,
       candidates: {
         where: { selected: true },
@@ -301,6 +305,25 @@ export async function finalizeRequest(
   }
   if (req.candidates.length === 0) {
     return { ok: false, errors: { _form: ["선택된 설계사가 없습니다."] } };
+  }
+
+  // 3-a) 주민번호 → birthDate + gender derive + Step1 gender 와 cross-check.
+  //      refine 이 이미 valid 보장하지만 narrow 위해 재호출. 성별 path 를 back1 로
+  //      두는 건 의도적 — 그 자리가 실제 성별을 결정하는 입력이라 UX 가 맞음.
+  const rrn = deriveRrn(parsed.data.rrnFront, parsed.data.rrnBack1);
+  if (!rrn) {
+    return {
+      ok: false,
+      errors: { rrnFront: ["올바른 생년월일이 아닙니다."] },
+    };
+  }
+  if (rrn.gender !== req.gender) {
+    return {
+      ok: false,
+      errors: {
+        rrnBack1: ["주민번호의 성별이 처음 입력하신 정보와 다릅니다."],
+      },
+    };
   }
 
   // 4) 다시 한번 phone 중복 체크 (sendOtp 이후 다른 요청이 들어왔을 수 있음).
@@ -326,6 +349,7 @@ export async function finalizeRequest(
       data: {
         name: parsed.data.name,
         phone: parsed.data.phone,
+        birthDate: rrn.birthDate,
         // Step3 검증 통과 시점에 두 consent 모두 literal "on" 으로 강제됨.
         consentThirdParty: true,
         consentMessaging: true,

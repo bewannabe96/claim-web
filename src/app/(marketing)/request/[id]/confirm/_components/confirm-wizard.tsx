@@ -22,6 +22,10 @@ import { cn } from "@/lib/utils";
 
 type FormState = {
   name: string;
+  /** 주민번호 앞 6자리 — YYMMDD */
+  rrnFront: string;
+  /** 주민번호 뒤 첫자리 — 1~4 (1900s 남/여, 2000s 남/여) */
+  rrnBack1: string;
   /** digits only — 11자리 (010xxxxxxxx) */
   phone: string;
   /** 6자리 OTP — digits only */
@@ -41,6 +45,24 @@ function isValidPhone(p: string): boolean {
   return /^01\d{8,9}$/.test(p);
 }
 
+/**
+ * RRN 클라이언트 유효성 — schema.ts 의 deriveRrn 와 동일 로직.
+ * 서버가 진실의 원천이고, 여기서는 제출 버튼 disabled 제어용.
+ */
+function isValidRrn(front: string, back1: string): boolean {
+  if (!/^\d{6}$/.test(front) || !/^[1-4]$/.test(back1)) return false;
+  const yy = Number(front.slice(0, 2));
+  const mm = Number(front.slice(2, 4));
+  const dd = Number(front.slice(4, 6));
+  const year = (back1 === "1" || back1 === "2" ? 1900 : 2000) + yy;
+  const d = new Date(Date.UTC(year, mm - 1, dd));
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === mm - 1 &&
+    d.getUTCDate() === dd
+  );
+}
+
 export function ConfirmWizard({
   requestId,
   selectedCount,
@@ -52,6 +74,8 @@ export function ConfirmWizard({
 }) {
   const [data, setData] = useState<FormState>({
     name: "",
+    rrnFront: "",
+    rrnBack1: "",
     phone: "",
     otpCode: "",
     consentThirdParty: false,
@@ -70,8 +94,10 @@ export function ConfirmWizard({
 
   const phoneValid = isValidPhone(data.phone);
   const nameValid = data.name.trim().length > 0 && data.name.length <= 20;
+  const rrnValid = isValidRrn(data.rrnFront, data.rrnBack1);
   const canSubmit =
     nameValid &&
+    rrnValid &&
     phoneValid &&
     otpSent &&
     data.otpCode.length === 6 &&
@@ -137,6 +163,63 @@ export function ConfirmWizard({
             className="h-14 px-4 text-base"
             autoComplete="name"
           />
+        </Field>
+
+        {/* 주민등록번호 — 앞 6자리(YYMMDD) + 뒤 1자리(성별/세기).
+            원본은 저장 X, birthDate + gender 만 derive. */}
+        <Field label="주민등록번호">
+          <div className="flex items-center gap-2">
+            <Input
+              type="tel"
+              inputMode="numeric"
+              placeholder="YYMMDD"
+              maxLength={6}
+              value={data.rrnFront}
+              onChange={(e) =>
+                setData((d) => ({
+                  ...d,
+                  rrnFront: e.target.value.replace(/\D/g, "").slice(0, 6),
+                }))
+              }
+              className="h-14 px-4 text-base tracking-wider flex-1"
+              aria-invalid={state?.errors?.rrnFront ? true : undefined}
+              autoComplete="off"
+            />
+            <span className="text-[#afafaf]" aria-hidden>
+              -
+            </span>
+            <Input
+              type="tel"
+              inputMode="numeric"
+              maxLength={1}
+              value={data.rrnBack1}
+              onChange={(e) =>
+                setData((d) => ({
+                  ...d,
+                  rrnBack1: e.target.value.replace(/\D/g, "").slice(0, 1),
+                }))
+              }
+              className="h-14 px-3 text-base text-center w-12"
+              aria-invalid={state?.errors?.rrnBack1 ? true : undefined}
+              autoComplete="off"
+            />
+            <span
+              className="text-[#afafaf] tracking-[0.2em] select-none"
+              aria-hidden
+            >
+              ●●●●●●
+            </span>
+          </div>
+          {state?.errors?.rrnFront?.[0] && (
+            <p className="mt-2 text-xs text-red-600">
+              {state.errors.rrnFront[0]}
+            </p>
+          )}
+          {state?.errors?.rrnBack1?.[0] && (
+            <p className="mt-2 text-xs text-red-600">
+              {state.errors.rrnBack1[0]}
+            </p>
+          )}
         </Field>
 
         {/* 휴대폰 번호 + 인증번호 전송 */}
@@ -237,6 +320,8 @@ export function ConfirmWizard({
           <input type="hidden" name="consentMessaging" value="on" />
         )}
         <input type="hidden" name="name" value={data.name} />
+        <input type="hidden" name="rrnFront" value={data.rrnFront} />
+        <input type="hidden" name="rrnBack1" value={data.rrnBack1} />
         <input type="hidden" name="phone" value={data.phone} />
         <input type="hidden" name="code" value={data.otpCode} />
         <Button

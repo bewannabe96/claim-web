@@ -109,6 +109,7 @@ function mapPlanRequest(row: PlanRequestRow): PlanRequest {
         ? {
             name: row.name,
             phone: row.phone,
+            birthDate: row.birthDate?.toISOString().slice(0, 10) ?? undefined,
             consentThirdParty: "on",
             consentMessaging: "on",
           }

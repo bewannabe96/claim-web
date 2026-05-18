@@ -53,6 +53,9 @@ model PlanRequest {
   // Step3: 본인 인증 (1:1 sparse — 인증 완료 시 채워짐)
   name               String?
   phone              String?
+  // 주민번호 앞6자리+뒤1자리 → birth_date + gender(=Step1 gender) derive 후 폐기.
+  // 원본 RRN 은 어디에도 저장하지 않음 (개인정보 최소화).
+  birthDate          DateTime? @db.Date @map("birth_date")
   consentThirdParty  Boolean @default(false) @map("consent_third_party")
   consentMessaging   Boolean @default(false) @map("consent_messaging")
 
