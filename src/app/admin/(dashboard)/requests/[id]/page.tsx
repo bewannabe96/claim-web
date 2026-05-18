@@ -3,7 +3,11 @@ import { notFound } from "next/navigation";
 import { getPartnerCardsByIds } from "@/features/partners/queries";
 import type { PartnerCard } from "@/features/partners/schema";
 import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
-import { type AssignmentStatus } from "@/features/proposals/schema";
+import {
+  type AnalysisError,
+  type AssignmentStatus,
+  type Proposal,
+} from "@/features/proposals/schema";
 import { getRequestById } from "@/features/requests/queries";
 import {
   TREATMENT_PERIOD_LABEL,
@@ -14,12 +18,14 @@ import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
 import { cn } from "@/lib/utils";
 import { GENDER_LABEL } from "@/types";
 
+import { AnalysisErrorPill } from "../../_components/analysis-error-pill";
 import {
   BackLink,
   Card,
   CardHeader,
   PageHeader,
 } from "../../_components/page-shell";
+import { RetryAnalysisButton } from "../../_components/retry-analysis-button";
 
 export default async function AdminRequestDetailPage({
   params,
@@ -333,15 +339,22 @@ function AssignmentItem({
             경력 {partner.yearsOfExperience}년
           </span>
           <AssignmentStatusPill status={assignment.status} />
-          {proposal && (
-            <AnalysisStatusPill analyzedAt={proposal.analyzedAt ?? null} />
-          )}
+          {proposal && <AnalysisStatusPill proposal={proposal} />}
         </div>
 
         {proposal ? (
           <div className="flex flex-col gap-1.5 text-xs text-[#4b4b4b]">
             <Spec label="PDF" value={pdfBasename(proposal.pdfS3Key)} />
             <Spec label="한줄 요약" value={proposal.note} />
+            {/* 분석 실패 상태 — analyzedAt 이 없고 analysisError 가 있을 때만 노출.
+                성공이 들어오면 자연스럽게 사라짐. */}
+            {!proposal.analyzedAt && proposal.analysisError && (
+              <AnalysisFailureBlock
+                proposalId={proposal.id}
+                error={proposal.analysisError}
+                erroredAt={proposal.analysisErrorAt}
+              />
+            )}
           </div>
         ) : (
           <p className="text-xs text-[#afafaf]">
@@ -381,17 +394,21 @@ function AssignmentItem({
 }
 
 /**
- * proposal 의 분석 상태 pill.
- *   - analyzedAt 있음 → "분석 완료" (검정)
- *   - analyzedAt 없음 → "분석 중" (회색 + pulse)
+ * proposal 의 분석 상태 pill (우선순위: 성공 > 실패 > 진행 중).
+ *   - analyzedAt 있음           → "분석 완료" (검정)
+ *   - analysisError 있음         → group 별 색상의 실패 pill
+ *   - 둘 다 없음                 → "분석 중" (회색 + pulse)
  */
-function AnalysisStatusPill({ analyzedAt }: { analyzedAt: string | null }) {
-  if (analyzedAt) {
+function AnalysisStatusPill({ proposal }: { proposal: Proposal }) {
+  if (proposal.analyzedAt) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-black text-white">
         분석 완료
       </span>
     );
+  }
+  if (proposal.analysisError) {
+    return <AnalysisErrorPill group={proposal.analysisError.group} />;
   }
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-[#e2e2e2] bg-white text-[#4b4b4b]">
@@ -401,6 +418,49 @@ function AnalysisStatusPill({ analyzedAt }: { analyzedAt: string | null }) {
       />
       분석 중
     </span>
+  );
+}
+
+/**
+ * 실패 상세 + 재시도 버튼. type/message 와 (있으면) detail JSON 토글 + 재시도 액션.
+ * 어드민 "분석 실패" 페이지의 카드와 같은 정보를 행 내부에 인라인으로 노출.
+ */
+function AnalysisFailureBlock({
+  proposalId,
+  error,
+  erroredAt,
+}: {
+  proposalId: string;
+  error: AnalysisError;
+  erroredAt: string | undefined;
+}) {
+  return (
+    <div className="mt-1 rounded-lg border border-[#fcd34d] bg-[#fffbeb] px-3 py-2.5 flex flex-col gap-2">
+      <div className="flex flex-col gap-1 text-xs text-black">
+        <div>
+          <span className="text-[#92400e] font-mono">{error.type}</span>
+          {erroredAt && (
+            <span className="ml-2 text-[#afafaf]">
+              {formatDateTime(erroredAt)}
+            </span>
+          )}
+        </div>
+        <p>{error.message}</p>
+      </div>
+      {error.detail && (
+        <details className="rounded border border-[#fcd34d] bg-white/60 px-2 py-1.5">
+          <summary className="cursor-pointer text-[11px] text-[#92400e]">
+            detail
+          </summary>
+          <pre className="mt-1.5 text-[10px] text-black whitespace-pre-wrap break-all">
+            {JSON.stringify(error.detail, null, 2)}
+          </pre>
+        </details>
+      )}
+      <div className="flex justify-end">
+        <RetryAnalysisButton proposalId={proposalId} size="sm" />
+      </div>
+    </div>
   );
 }
 

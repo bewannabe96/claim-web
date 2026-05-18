@@ -1,8 +1,10 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { requireAdminSession } from "@/server/dal";
 import { newId } from "@/lib/id";
 import { prisma } from "@/server/db/prisma";
 import {
@@ -177,4 +179,65 @@ export async function submitProposal(
   revalidatePath("/partner/assignments");
   revalidatePath("/admin/requests");
   redirect("/partner/assignments/done");
+}
+
+/* ============================================================
+ * 분석 재시도 — 어드민 전용
+ *
+ * 외부 파이프라인이 `status=failed` 를 보낸 proposal 에 대해 어드민이 수기 수정
+ * (예: product_id_match 시 카탈로그 매핑 추가) 후 재발행. webhook 측에서 이미
+ * `analysisError` 가 마킹되어 있고, 우리는:
+ *   1. analyzedAt 이 차 있으면 거부 (이미 성공 — 외부에서 늦은 success 콜백이 와서
+ *      덮어쓴 케이스).
+ *   2. analysisError 두 컬럼 null 로 초기화 (race-safe: WHERE analyzedAt IS NULL).
+ *   3. SQS 재발행 — 페이로드는 최초 submit 과 동일 (proposalId/planRequestId/s3Key).
+ *      webhook 이 첫 콜백처럼 동일하게 처리.
+ *
+ * 실패 응답 (`ok: false`) 은 UI 에서 토스트/알럿으로 노출. publish 실패는 throw —
+ * 호출부 (client component) 가 catch 해서 사용자에게 알림.
+ * ============================================================ */
+
+export type RetryAnalysisResult =
+  | { ok: true }
+  | { ok: false; error: "not_found" | "already_analyzed" };
+
+export async function retryProposalAnalysis(
+  proposalId: string,
+): Promise<RetryAnalysisResult> {
+  await requireAdminSession();
+
+  const proposal = await prisma.proposal.findUnique({
+    where: { id: proposalId },
+    select: {
+      id: true,
+      pdfS3Key: true,
+      analyzedAt: true,
+      assignment: { select: { requestId: true } },
+    },
+  });
+
+  if (!proposal) return { ok: false, error: "not_found" };
+  if (proposal.analyzedAt) return { ok: false, error: "already_analyzed" };
+
+  // race-safe 초기화 — 동시에 webhook 이 success 콜백을 처리 중이면 analyzedAt 이
+  // 채워지면서 이 update 가 0 row 가 되고, 그 경우 success 가 이미 들어왔단 뜻이라
+  // 재시도 자체가 무의미. 그래도 publish 는 멱등 (webhook 이 또 다른 success 받아도
+  // updateMany WHERE analyzedAt IS NULL 로 no-op) 이므로 그대로 진행.
+  await prisma.proposal.updateMany({
+    where: { id: proposalId, analyzedAt: null },
+    // nullable Json 컬럼을 명시적으로 비우려면 sentinel `Prisma.JsonNull` 사용
+    // (raw `null` 은 "필드 자체를 건드리지 말라"는 의미라 컴파일 거부).
+    data: { analysisError: Prisma.JsonNull, analysisErrorAt: null },
+  });
+
+  await publishAnalysisJob({
+    planRequestId: proposal.assignment.requestId,
+    s3Key: proposal.pdfS3Key,
+    proposalId,
+  });
+
+  revalidatePath("/admin/analysis-failures");
+  revalidatePath(`/admin/requests/${proposal.assignment.requestId}`);
+
+  return { ok: true };
 }
