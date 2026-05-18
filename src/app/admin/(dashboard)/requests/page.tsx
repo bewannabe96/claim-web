@@ -61,8 +61,12 @@ export default async function AdminRequestsPage() {
                   )}
                 </span>
                 <span className="text-xs text-[#4b4b4b]">
-                  {request.step1.gender === "male" ? "남" : "여"} ·{" "}
-                  {request.step1.occupation}
+                  {request.gender
+                    ? request.gender === "male"
+                      ? "남"
+                      : "여"
+                    : "—"}{" "}
+                  · {request.step1.occupation}
                 </span>
               </div>
             </Td>

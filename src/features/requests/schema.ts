@@ -113,12 +113,13 @@ export function coverageRequestToText(coverage: CoverageRequest): string {
 }
 
 /* ============================================================
- * Step 1 — 요청서 본문 (전화번호 제외, 매칭 및 제안서 작성에 필요한 모든 정보)
+ * Step 1 — 요청서 본문 (전화번호·성별 제외, 매칭 및 제안서 작성에 필요한 모든 정보)
+ *
+ * 성별은 Step3 의 주민번호에서 derive — Step1 에서는 받지 않음.
  * ============================================================ */
 
 export const Step1Schema = z
   .object({
-    gender: z.enum(["male", "female"] satisfies [Gender, Gender]),
     occupation: z
       .string()
       .min(1, "직업을 입력해주세요.")
@@ -171,21 +172,73 @@ export type Step2State =
   | undefined;
 
 /* ============================================================
- * Step 3 — 본인 식별 (이름 + 전화번호) + OTP + 동의
+ * Step 3 — 본인 식별 (이름 + 주민번호 + 전화번호) + OTP + 동의
  *
- * 가입자 식별 정보(이름·전화번호)와 동의는 본인 인증 시점에 함께 받음 —
- * 제안서 정보(생년월일/직업/병력 등)는 Step1 에서 이미 수집됨.
+ * 가입자 식별 정보(이름·주민번호·전화번호)와 동의는 본인 인증 시점에 함께 받음 —
+ * 제안서 정보(직업/병력 등)는 Step1 에서 이미 수집됨.
+ *
+ * 주민번호는 저장하지 않음 — front6+back1 에서 birthDate + gender 만 derive
+ * 후 폐기. gender 는 Step1 의 값과 cross-check (actions 에서).
  * ============================================================ */
 
-export const Step3Schema = z.object({
-  name: z
-    .string()
-    .min(1, "이름을 입력해주세요.")
-    .max(20, "이름은 20자 이내로 입력해주세요."),
-  phone: PHONE,
-  consentThirdParty: z.literal("on", { message: "정보 제공 동의가 필요합니다." }),
-  consentMessaging: z.literal("on", { message: "통신 수신 동의가 필요합니다." }),
-});
+const RRN_FRONT = z
+  .string()
+  .regex(/^\d{6}$/, "주민번호 앞 6자리(YYMMDD)를 입력해주세요.");
+
+/** 1~4 만 허용: 1=1900s 남, 2=1900s 여, 3=2000s 남, 4=2000s 여.
+ *  5–8(외국인) / 9·0(1800s) 은 MVP 범위 밖. */
+const RRN_BACK1 = z
+  .string()
+  .regex(/^[1-4]$/, "주민번호 뒤 첫자리는 1~4 만 입력 가능해요.");
+
+/**
+ * RRN front6 + back1 → birthDate + gender.
+ *
+ * back1: 1=1900s M, 2=1900s F, 3=2000s M, 4=2000s F.
+ * front6: YYMMDD. 캘린더 유효성(UTC) 으로 02/30 같은 overflow reject.
+ * 잘못된 입력은 null — zod refine 과 server action 모두 이 한 함수로 검증.
+ */
+export function deriveRrn(
+  front6: string,
+  back1: string,
+): { birthDate: Date; gender: Gender } | null {
+  if (!/^\d{6}$/.test(front6) || !/^[1-4]$/.test(back1)) return null;
+
+  const yy = Number(front6.slice(0, 2));
+  const mm = Number(front6.slice(2, 4));
+  const dd = Number(front6.slice(4, 6));
+  const century = back1 === "1" || back1 === "2" ? 1900 : 2000;
+  const year = century + yy;
+
+  const d = new Date(Date.UTC(year, mm - 1, dd));
+  if (
+    d.getUTCFullYear() !== year ||
+    d.getUTCMonth() !== mm - 1 ||
+    d.getUTCDate() !== dd
+  ) {
+    return null;
+  }
+
+  const gender: Gender = back1 === "1" || back1 === "3" ? "male" : "female";
+  return { birthDate: d, gender };
+}
+
+export const Step3Schema = z
+  .object({
+    name: z
+      .string()
+      .min(1, "이름을 입력해주세요.")
+      .max(20, "이름은 20자 이내로 입력해주세요."),
+    rrnFront: RRN_FRONT,
+    rrnBack1: RRN_BACK1,
+    phone: PHONE,
+    consentThirdParty: z.literal("on", { message: "정보 제공 동의가 필요합니다." }),
+    consentMessaging: z.literal("on", { message: "통신 수신 동의가 필요합니다." }),
+  })
+  .refine((v) => deriveRrn(v.rrnFront, v.rrnBack1) !== null, {
+    message: "올바른 생년월일이 아닙니다.",
+    path: ["rrnFront"],
+  });
 
 export type Step3Input = z.infer<typeof Step3Schema>;
 
@@ -254,10 +307,21 @@ export const ACTIVE_STATUSES: readonly PlanRequestStatus[] = [
   "rematching",
 ];
 
+/**
+ * 저장된 step3 — Step3Input 의 입력 폼 필드 중 RRN 두 개는 derive 후 폐기되므로
+ * 저장 형태에서는 빠짐. 대신 birthDate (ISO date) 가 채워짐.
+ */
+export type Step3Stored = Omit<Step3Input, "rrnFront" | "rrnBack1"> & {
+  /** YYYY-MM-DD — RRN front6+back1 에서 derive 후 저장됨. */
+  birthDate?: string;
+};
+
 export type PlanRequest = {
   id: string;
+  /** 성별 — Step1 시점엔 비어있고, Step3 finalize 에서 주민번호로부터 set. */
+  gender?: Gender;
   step1: Step1Input;
-  step3?: Step3Input;
+  step3?: Step3Stored;
   candidatePartnerIds: string[];   // N명 후보
   selectedPartnerIds: string[];    // K명까지 선택
   status: PlanRequestStatus;

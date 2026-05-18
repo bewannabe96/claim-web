@@ -168,8 +168,8 @@ async function RequestRowItem({ request }: { request: PlanRequest }) {
           <RequestStatusBadge status={request.status} />
         </div>
         <p className="text-xs text-[#4b4b4b]">
-          {GENDER_LABEL[request.step1.gender]} · {request.step1.occupation} ·{" "}
-          {formatDateTime(request.createdAt)}
+          {request.gender ? GENDER_LABEL[request.gender] : "—"} ·{" "}
+          {request.step1.occupation} · {formatDateTime(request.createdAt)}
         </p>
       </div>
       {total > 0 && (

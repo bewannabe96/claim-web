@@ -24,10 +24,9 @@ import {
   ProgressSegment,
 } from "@/features/requests/ui/wizard-primitives";
 import { cn } from "@/lib/utils";
-import { type Gender } from "@/types";
 
 /* ============================================================
- * Form state — 모든 phase 가 공유. 이름·전화번호는 confirm 단계에서 따로 수집.
+ * Form state — 모든 phase 가 공유. 이름·전화번호·성별은 confirm 단계에서 따로 수집.
  *
  * coverage 입력은 flat 필드 (coverageIntent / focusedConcerns) 로 두어 form
  * interaction 이 단순하고, 제출 시점에 schema 의 CoverageRequest discriminated
@@ -35,9 +34,6 @@ import { type Gender } from "@/types";
  * ============================================================ */
 
 type FormState = {
-  // basic phase: 성별 + 직업
-  gender?: Gender;
-  occupation?: string;
   // coverage phase
   coverageIntent?: CoverageIntent;
   /** focused 일 때 선택된 질병/상황 id 들 (multi-select) */
@@ -47,7 +43,8 @@ type FormState = {
   // budget phase
   monthlyBudgetMin?: string;
   monthlyBudgetMax?: string;
-  // medical phase
+  // medical phase: 직업 + 병력 (직업은 매칭/제안서 작성에 필수 컨텍스트)
+  occupation?: string;
   medicalHistory: MedicalHistoryEntry[];
 };
 
@@ -67,7 +64,6 @@ const BUDGET_OPTIONS: ReadonlyArray<{
 ];
 
 const PHASE_KEYS = [
-  "basic",
   "coverage",
   "budget",
   "medical",
@@ -76,7 +72,6 @@ const PHASE_KEYS = [
 type PhaseKey = (typeof PHASE_KEYS)[number];
 
 const PHASES: Record<PhaseKey, { title: string }> = {
-  basic: { title: "기본 정보를 알려주세요" },
   coverage: { title: "무엇을 대비하고 싶으세요?" },
   budget: { title: "월 보험료는 어느 정도 생각하세요?" },
   medical: { title: "보다 최적화된 제안서를 받기 위해 알려주세요" },
@@ -116,7 +111,6 @@ export function Step1Wizard() {
     setPhase("matching");
 
     const fd = new FormData();
-    if (data.gender) fd.append("gender", data.gender);
     if (data.occupation) fd.append("occupation", data.occupation);
     if (data.monthlyBudgetMin)
       fd.append("monthlyBudgetMin", data.monthlyBudgetMin);
@@ -184,10 +178,6 @@ export function Step1Wizard() {
         </h2>
 
         <div className="mt-6">
-          {phaseKey === "basic" && (
-            <BasicFields data={data} setData={setData} />
-          )}
-
           {phaseKey === "coverage" && (
             <CoverageFields data={data} setData={setData} />
           )}
@@ -237,8 +227,6 @@ export function Step1Wizard() {
 
 function isPhaseValid(phase: PhaseKey, d: FormState): boolean {
   switch (phase) {
-    case "basic":
-      return !!d.gender && !!d.occupation && d.occupation.trim().length > 0;
     case "coverage": {
       // 의도 필수. focused 면 chip 최소 1개.
       if (!d.coverageIntent) return false;
@@ -258,8 +246,12 @@ function isPhaseValid(phase: PhaseKey, d: FormState): boolean {
       );
     }
     case "medical":
-      // 병력 row 마다 모든 필수 필드 채워졌는지. 빈 배열은 OK (없으면 비워둠).
-      return d.medicalHistory.every(isMedicalEntryComplete);
+      // 직업 필수 + 병력 row 마다 모든 필수 필드 채워졌는지. 빈 배열은 OK.
+      return (
+        !!d.occupation &&
+        d.occupation.trim().length > 0 &&
+        d.medicalHistory.every(isMedicalEntryComplete)
+      );
     case "notes":
       // 그외 요청사항 — 항상 선택. 비어있어도 통과.
       return true;
@@ -278,52 +270,6 @@ function isMedicalEntryComplete(e: MedicalHistoryEntry): boolean {
     Number.isFinite(e.outpatientVisits) &&
     e.outpatientVisits >= 0 &&
     typeof e.hadSurgery === "boolean"
-  );
-}
-
-/* ============================================================
- * Basic phase — 성별 + 직업
- * ============================================================ */
-
-function BasicFields({
-  data,
-  setData,
-}: {
-  data: FormState;
-  setData: React.Dispatch<React.SetStateAction<FormState>>;
-}) {
-  return (
-    <div className="flex flex-col gap-6">
-      <Field label="성별">
-        <div className="grid grid-cols-2 gap-3">
-          <BigCard
-            emoji="👨"
-            label="남성"
-            selected={data.gender === "male"}
-            onClick={() => setData((d) => ({ ...d, gender: "male" }))}
-          />
-          <BigCard
-            emoji="👩"
-            label="여성"
-            selected={data.gender === "female"}
-            onClick={() => setData((d) => ({ ...d, gender: "female" }))}
-          />
-        </div>
-      </Field>
-
-      <Field label="직업">
-        <Input
-          type="text"
-          maxLength={50}
-          placeholder="예: 반도체연구원, 학원선생님, 트럭운전사"
-          value={data.occupation ?? ""}
-          onChange={(e) =>
-            setData((d) => ({ ...d, occupation: e.target.value }))
-          }
-          className="h-14 px-4 text-base"
-        />
-      </Field>
-    </div>
   );
 }
 
@@ -517,45 +463,60 @@ function MedicalFields({
   }
 
   return (
-    <Field label="병력" optional>
-      <div className="flex flex-col gap-3">
-        {data.medicalHistory.length > 0 && (
-          <p className="text-xs text-[#4b4b4b]">
-            {data.medicalHistory.length}건 추가됨
-          </p>
-        )}
+    <div className="flex flex-col gap-6">
+      <Field label="직업">
+        <Input
+          type="text"
+          maxLength={50}
+          placeholder="예: 반도체연구원, 학원선생님, 트럭운전사"
+          value={data.occupation ?? ""}
+          onChange={(e) =>
+            setData((d) => ({ ...d, occupation: e.target.value }))
+          }
+          className="h-14 px-4 text-base"
+        />
+      </Field>
 
-        {data.medicalHistory.length === 0 && (
-          <p className="text-xs text-[#4b4b4b]">
-            치료받았거나 진단받은 이력이 있다면 추가해주세요
-          </p>
-        )}
-
-        {data.medicalHistory.map((entry, idx) => (
-          <MedicalEntryCard
-            key={idx}
-            entry={entry}
-            index={idx}
-            onChange={(patch) => updateMedicalEntry(idx, patch)}
-            onRemove={() => removeMedicalEntry(idx)}
-          />
-        ))}
-
-        <button
-          type="button"
-          onClick={addMedicalEntry}
-          disabled={data.medicalHistory.length >= 20}
-          className={cn(
-            "h-12 rounded-lg border-2 border-dashed text-sm font-medium transition-colors",
-            data.medicalHistory.length >= 20
-              ? "border-[#e2e2e2] text-[#afafaf] cursor-not-allowed"
-              : "border-[#e2e2e2] text-black hover:border-black hover:bg-[#fafafa]",
+      <Field label="병력" optional>
+        <div className="flex flex-col gap-3">
+          {data.medicalHistory.length > 0 && (
+            <p className="text-xs text-[#4b4b4b]">
+              {data.medicalHistory.length}건 추가됨
+            </p>
           )}
-        >
-          + 병력 추가
-        </button>
-      </div>
-    </Field>
+
+          {data.medicalHistory.length === 0 && (
+            <p className="text-xs text-[#4b4b4b]">
+              치료받았거나 진단받은 이력이 있다면 추가해주세요
+            </p>
+          )}
+
+          {data.medicalHistory.map((entry, idx) => (
+            <MedicalEntryCard
+              key={idx}
+              entry={entry}
+              index={idx}
+              onChange={(patch) => updateMedicalEntry(idx, patch)}
+              onRemove={() => removeMedicalEntry(idx)}
+            />
+          ))}
+
+          <button
+            type="button"
+            onClick={addMedicalEntry}
+            disabled={data.medicalHistory.length >= 20}
+            className={cn(
+              "h-12 rounded-lg border-2 border-dashed text-sm font-medium transition-colors",
+              data.medicalHistory.length >= 20
+                ? "border-[#e2e2e2] text-[#afafaf] cursor-not-allowed"
+                : "border-[#e2e2e2] text-black hover:border-black hover:bg-[#fafafa]",
+            )}
+          >
+            + 병력 추가
+          </button>
+        </div>
+      </Field>
+    </div>
   );
 }
 
@@ -858,33 +819,3 @@ function UnitInput({
   );
 }
 
-/**
- * BigCard — 성별 선택용 큰 타일.
- */
-function BigCard({
-  emoji,
-  label,
-  selected,
-  onClick,
-}: {
-  emoji: string;
-  label: string;
-  selected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex flex-col items-center justify-center gap-2 py-8 rounded-xl transition-colors",
-        selected
-          ? "bg-black text-white"
-          : "bg-[#efefef] text-black hover:bg-[#e2e2e2]",
-      )}
-    >
-      <span className="text-3xl">{emoji}</span>
-      <span className="text-sm font-medium">{label}</span>
-    </button>
-  );
-}

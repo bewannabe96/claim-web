@@ -64,7 +64,9 @@ export default async function AdminRequestDetailPage({
         <Card>
           <CardHeader title="기본 정보" />
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
-            <Field label="성별">{GENDER_LABEL[request.step1.gender]}</Field>
+            <Field label="성별">
+              {request.gender ? GENDER_LABEL[request.gender] : "—"}
+            </Field>
             <Field label="직업">{request.step1.occupation}</Field>
             <Field label="월 예상 보험료" wide>
               {request.step1.monthlyBudgetMin.toLocaleString("ko-KR")}원 ~{" "}

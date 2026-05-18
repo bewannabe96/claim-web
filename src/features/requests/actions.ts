@@ -15,6 +15,7 @@ import {
   Step1Schema,
   Step2Schema,
   Step3Schema,
+  deriveRrn,
   type FinalizeState,
   type MedicalHistoryEntry,
   type SendOtpState,
@@ -55,7 +56,6 @@ export async function submitStep1(
   }
 
   const parsed = Step1Schema.safeParse({
-    gender: formData.get("gender"),
     occupation: formData.get("occupation"),
     coverage,
     monthlyBudgetMin: formData.get("monthlyBudgetMin"),
@@ -79,7 +79,7 @@ export async function submitStep1(
     prisma.planRequest.create({
       data: {
         id,
-        gender: parsed.data.gender,
+        // 성별은 Step3 finalize 에서 주민번호로 set. 여기서는 비워둠.
         occupation: parsed.data.occupation,
         monthlyBudgetMin: parsed.data.monthlyBudgetMin,
         monthlyBudgetMax: parsed.data.monthlyBudgetMax,
@@ -264,9 +264,11 @@ export async function finalizeRequest(
   _prev: FinalizeState,
   formData: FormData,
 ): Promise<FinalizeState> {
-  // 1) 이름 + 전화번호 + 동의 검증
+  // 1) 이름 + 주민번호 + 전화번호 + 동의 검증
   const parsed = Step3Schema.safeParse({
     name: formData.get("name"),
+    rrnFront: formData.get("rrnFront"),
+    rrnBack1: formData.get("rrnBack1"),
     phone: formData.get("phone"),
     consentThirdParty: formData.get("consentThirdParty"),
     consentMessaging: formData.get("consentMessaging"),
@@ -303,6 +305,17 @@ export async function finalizeRequest(
     return { ok: false, errors: { _form: ["선택된 설계사가 없습니다."] } };
   }
 
+  // 3-a) 주민번호 → birthDate + gender derive. zod refine 이 valid 를 보장하지만
+  //      narrow 위해 재호출. gender 는 Step1 에서 받지 않으므로 cross-check 없이
+  //      여기서 transaction 의 update 단계에 set 한다.
+  const rrn = deriveRrn(parsed.data.rrnFront, parsed.data.rrnBack1);
+  if (!rrn) {
+    return {
+      ok: false,
+      errors: { rrnFront: ["올바른 생년월일이 아닙니다."] },
+    };
+  }
+
   // 4) 다시 한번 phone 중복 체크 (sendOtp 이후 다른 요청이 들어왔을 수 있음).
   //    Race-condition 최종 방어선은 DB 의 partial unique index.
   if (await hasActiveRequestForPhone(parsed.data.phone, requestId)) {
@@ -326,6 +339,8 @@ export async function finalizeRequest(
       data: {
         name: parsed.data.name,
         phone: parsed.data.phone,
+        birthDate: rrn.birthDate,
+        gender: rrn.gender,
         // Step3 검증 통과 시점에 두 consent 모두 literal "on" 으로 강제됨.
         consentThirdParty: true,
         consentMessaging: true,
