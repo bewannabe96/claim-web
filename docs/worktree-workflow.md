@@ -103,7 +103,6 @@ pnpm db:migrate:deploy    # worktree 격리 DB 에 적용
 | `pnpm db:logs` | 컨테이너 로그 follow. |
 | `pnpm db:stop` | 컨테이너 정지 (데이터 보존). |
 | `pnpm db:seed` | `app_settings` + `admin_users` upsert. `db:start` 가 호출. |
-| `pnpm db:seed:fixtures` | Partner 8명 등 매칭 흐름 테스트용. |
 
 **`pnpm db:migrate` (= `prisma migrate dev`) 는 의도적으로 없음** — 사람이 호출하지 말 것. develop merge 후 CI 가 단일 호출.
 
@@ -217,7 +216,6 @@ git branch -D <branch-name>
 | [scripts/db/{psql,logs,stop}.sh](../scripts/db/) | 일반 도구. |
 | [scripts/hooks/session-start-db.sh](../scripts/hooks/session-start-db.sh) | Claude Code SessionStart 자동 기동. |
 | [prisma/seed.ts](../prisma/seed.ts) | `app_settings` + `admin_users` upsert. |
-| [prisma/fixtures.ts](../prisma/fixtures.ts) | Partner 8명 등 매칭 테스트 더미. |
 | [.github/workflows/check-no-migrations.yml](../.github/workflows/check-no-migrations.yml) | PR 에 `prisma/migrations/` 변경 차단. |
 | [.github/workflows/auto-migration.yml](../.github/workflows/auto-migration.yml) | develop push → dev Supabase 에 자동 migration 생성 + commit. |
 | [.github/workflows/deploy-migrations.yml](../.github/workflows/deploy-migrations.yml) | master push (migrations/ 변경) → 운영 Supabase 에 `prisma migrate deploy`. |

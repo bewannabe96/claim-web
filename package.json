@@ -16,8 +16,7 @@
     "db:logs": "bash scripts/db/logs.sh",
     "db:push": "bash scripts/db/push.sh",
     "db:migrate:deploy": "bash scripts/db/migrate-deploy.sh",
-    "db:seed": "bash -c 'source scripts/db-env.sh && pnpm prisma db seed'",
-    "db:seed:fixtures": "bash -c 'source scripts/db-env.sh && tsx prisma/fixtures.ts'"
+    "db:seed": "bash -c 'source scripts/db-env.sh && pnpm prisma db seed'"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

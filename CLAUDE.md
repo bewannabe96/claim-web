@@ -68,7 +68,7 @@ pnpm db:push             # 일상: schema.prisma 변경 후 로컬 격리 DB 즉
 pnpm db:migrate:deploy   # git pull 로 받은 migration 을 로컬에 적용
 pnpm db:reset            # 볼륨 삭제 → 다음 start 에서 깨끗하게
 pnpm db:status           # 모든 worktree 의 컨테이너 한 화면
-pnpm db:psql / db:logs / db:stop / db:seed / db:seed:fixtures
+pnpm db:psql / db:logs / db:stop / db:seed
 ```
 
 **금지**: `pnpm prisma migrate dev` 직접 호출 / `prisma/migrations/` 수동 편집. develop CI 가 단일 writer (PR 단계에서 CI 가 차단). 데이터 마이그레이션 등 수동 SQL 필요 시는 PR `manual-migration` label.
