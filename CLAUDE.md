@@ -25,19 +25,20 @@
 ## 디렉토리 책임
 
 ```
-middleware.ts        # /admin/* 전용 — knock + optimistic auth + X-Robots-Tag.
+middleware.ts        # /admin/* + /partner/* — knock + optimistic auth + X-Robots-Tag(admin).
                      #   인증 boundary 아님 (DAL이 진짜). 루트에 위치.
 src/
 ├─ app/               # 라우팅 (App Router)
 │  ├─ (marketing)/    # 비인증 영역
-│  ├─ admin/          # 운영자 (Supabase + admin_users + knock 게이트)
-│  ├─ partner/        # 설계사 (token-based + 향후 supabase auth)
-│  └─ request/        # 가입자 (계정 없음)
+│  ├─ admin/          # 운영자 (Supabase auth + user/admin 화이트리스트 + knock)
+│  ├─ partner/        # 설계사 (Kakao OAuth + user/partner 화이트리스트, 또는 알림톡 토큰 진입)
+│  ├─ request/        # 가입자 (계정 없음 — 휴대폰 번호 식별자)
+│  └─ api/auth/callback/  # Supabase OAuth 콜백 (Kakao → session + authId claim)
 ├─ components/ui/     # shadcn 프리미티브 (수동 편집 X)
 ├─ features/          # 도메인 모듈 (schema/queries/actions/ui)
 │  ├─ admin/  partners/  proposals/  requests/
 ├─ server/            # 'server-only'. DAL, Supabase, prisma, S3
-│  ├─ dal.ts          #   모든 인증 검사 단일 진입점
+│  ├─ dal.ts          #   모든 인증 검사 단일 진입점 (User → role getter)
 │  ├─ supabase.ts     #   @supabase/ssr 서버 클라이언트
 │  └─ db/prisma.ts
 ├─ lib/               # 순수 유틸

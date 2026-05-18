@@ -30,8 +30,8 @@ export default async function AdminPartnerDetailPage({
       <div>
         <BackLink href="/admin/partners">설계사 풀</BackLink>
         <PageHeader
-          title={partner.name}
-          description={`${partner.id} · ${partner.email}`}
+          title={partner.user.name}
+          description={`${partner.id} · ${partner.user.email}`}
         />
       </div>
 
@@ -84,13 +84,14 @@ export default async function AdminPartnerDetailPage({
       <PartnerForm
         partnerId={partner.id}
         initial={{
-          name: partner.name,
+          name: partner.user.name,
+          email: partner.user.email,
+          phone: partner.user.phone ?? "",
           avatarUrl: partner.avatarUrl,
           bio: partner.bio,
           yearsOfExperience: partner.yearsOfExperience,
           trustMetric: partner.trustMetric,
-          phone: partner.phone,
-          email: partner.email,
+          licenseNumber: partner.licenseNumber,
           active: partner.active,
         }}
       />

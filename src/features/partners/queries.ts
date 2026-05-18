@@ -4,6 +4,10 @@ import { prisma } from "@/server/db/prisma";
 
 import type { Partner, PartnerCard } from "./schema";
 
+const USER_SELECT = {
+  user: { select: { id: true, email: true, name: true, phone: true } },
+} as const;
+
 /**
  * 매칭 후보 추출 — PRD §5.2.
  *
@@ -18,6 +22,7 @@ export async function findMatchCandidates(
 ): Promise<PartnerCard[]> {
   const eligible = await prisma.partner.findMany({
     where: { active: true },
+    include: USER_SELECT,
     orderBy: { exposureCount: "asc" },
   });
 
@@ -39,13 +44,19 @@ export async function findMatchCandidates(
 }
 
 export async function getPartnerById(id: string): Promise<Partner | null> {
-  return prisma.partner.findUnique({ where: { id } });
+  return prisma.partner.findUnique({
+    where: { id },
+    include: USER_SELECT,
+  });
 }
 
 export async function getPartnerCardById(
   id: string,
 ): Promise<PartnerCard | null> {
-  const partner = await prisma.partner.findUnique({ where: { id } });
+  const partner = await prisma.partner.findUnique({
+    where: { id },
+    include: USER_SELECT,
+  });
   return partner ? toCard(partner) : null;
 }
 
@@ -56,6 +67,7 @@ export async function getPartnerCardsByIds(
   if (ids.length === 0) return [];
   const partners = await prisma.partner.findMany({
     where: { id: { in: [...ids] } },
+    include: USER_SELECT,
   });
   const byId = new Map(partners.map((p) => [p.id, p]));
   return ids
@@ -66,13 +78,16 @@ export async function getPartnerCardsByIds(
 
 /** 어드민 — 전체 풀 (운영 필드 포함). 최신 등록 순. */
 export async function listAllPartners(): Promise<Partner[]> {
-  return prisma.partner.findMany({ orderBy: { createdAt: "desc" } });
+  return prisma.partner.findMany({
+    include: USER_SELECT,
+    orderBy: { createdAt: "desc" },
+  });
 }
 
 function toCard(p: Partner): PartnerCard {
   return {
     id: p.id,
-    name: p.name,
+    name: p.user.name,
     avatarUrl: p.avatarUrl,
     bio: p.bio,
     yearsOfExperience: p.yearsOfExperience,

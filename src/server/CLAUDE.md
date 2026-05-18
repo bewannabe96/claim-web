@@ -9,8 +9,10 @@
 ## 무엇이 들어가나
 
 - `dal.ts` — Data Access Layer. **모든 인증 검사의 단일 진입점.**
-  - `requireAdminSession()` — Supabase auth.getUser() + admin_users 화이트리스트 2단계 검증.
-  - `requirePartnerSession()` — TODO. 현재 demo 세션 반환.
+  - `getOptionalUser()` — Supabase `auth.getUser()` → `claim.user` (where authId) 조회. cache 로 same-request dedupe.
+  - `requireAdminSession()` — user + `claim.admin.active` 2단계 검증. role='admin' 도 함께 확인.
+  - `requirePartnerSession()` — user + `claim.partner.active` 2단계 검증. role='partner' 도 함께 확인.
+  - 미인증/권한 없음 → 각 영역 login 페이지로 redirect (admin: `/admin/login`, partner: `/partner/login`).
 - `supabase.ts` — `@supabase/ssr` 의 `createServerClient` wrap. cookie-based 세션 +
   publishable key 사용 (RLS 적용). Auth flow (signIn/signOut/getUser) 가 이걸 쓰고,
   routine DB 쿼리는 prisma 사용 (분리).
@@ -229,24 +231,38 @@ pnpm db:push
 수동 SQL (data migration / rename 등) 이 필요한 경우만 예외: PR 에 `manual-migration`
 label 추가 → CI 차단 우회 → 직접 `prisma/migrations/<...>/migration.sql` 작성.
 
-## Admin 인증 구조 (Supabase + 화이트리스트)
+## 인증 구조 (Supabase + User/role extension)
 
-도입 완료 (`server/supabase.ts` + `server/dal.ts` + 루트 `middleware.ts`):
+모든 인증은 단일 Supabase auth 풀. role 별로 extension 테이블 1:1 (PK 공유):
 
-1. **`supabase.ts`** — `@supabase/ssr` 의 `createServerClient` 로 cookie-based 세션.
-2. **`dal.ts:getOptionalAdminSession()`** — `auth.getUser()` (JWT 서버 검증) →
-   `admin_users` 화이트리스트 lookup. 둘 다 통과해야 `AdminSession` 반환.
-   `requireAdminSession()` 는 null 시 `/admin/login` 으로 redirect.
-3. **루트 `middleware.ts`** — `/admin/*` 전용 optimistic 차단 + knock 게이트 +
-   X-Robots-Tag. **인증 boundary 아님** (docs/architecture.md §7.2) — 세션 cookie
-   없는 명백한 비로그인 봇/유저를 즉시 307 로 튕기고, 실제 권한은 DAL 이 판정.
-   PPR 모드에서 layout `redirect()` 가 1초 meta refresh fallback 으로 처리되는
-   문제를 우회하는 목적도 겸함.
+```
+auth.users (Supabase 관리)
+   │ 1:1 via authId (UUID, claim 후 채워짐)
+   ▼
+claim.user        — 공통 정보 (id=nanoid, role discriminator)
+   │ 1:1 (PK 공유)
+   ├──▶ claim.partner — 설계사 (avatarUrl, bio, yearsOfExperience, trustMetric, licenseNumber, active, exposure 카운터)
+   └──▶ claim.admin   — 운영자 (active, 향후 permissions)
+```
 
-## Partner 인증 도입 시
+`User.authId` 는 nullable — 사전 등록 시 null, 첫 로그인 시점에 login action/callback 이
+email 로 user 찾아 claim. 이후엔 DAL 이 `where: { authId }` 로 바로 lookup.
 
-1. `dal.ts:getOptionalPartnerSession()` 의 demo 반환 → `supabase.auth.getUser()` +
-   `partner` 테이블 (uuid 매핑) 조회로 교체. 시그니처 동일 → 호출부 무수정.
-2. `middleware.ts` matcher 에 `/partner/:path*` 추가 + 동일한 optimistic 분기.
-3. Partner.id 를 nanoid → `auth.users.id` (UUID) 마이그레이션 (prisma/schema.prisma
-   에 명시된 계획).
+구성 파일:
+
+1. **`supabase.ts`** — `@supabase/ssr` 의 `createServerClient` 로 cookie-based 세션. read 는 headers,
+   write 는 mutable context (action/route handler/middleware) 에서만.
+2. **`dal.ts`** — `getOptionalUser()` 진입점 + role 별 `getOptional*Session()` / `require*Session()`.
+   `requireAdminSession()`, `requirePartnerSession()` 둘 다 user + extension active 통과 시에만
+   세션 반환 (defense in depth).
+3. **루트 `middleware.ts`** — `/admin/*` + `/partner/*` optimistic 차단.
+   **인증 boundary 아님** (docs/architecture.md §7.2) — 세션 cookie 없는 명백한 비로그인 유저를
+   즉시 307 로 튕기고, 실제 권한은 DAL 이 판정. PPR 모드의 1초 meta refresh fallback 회피 목적도 겸함.
+   admin 은 knock + X-Robots-Tag 추가. partner 는 `/partner/login` + `/partner/assignments/*`
+   (알림톡 토큰 진입) carve-out.
+
+로그인 흐름:
+
+- **Admin** (`/admin/login`) — 이메일/비번 → `signInWithPassword` → user lookup (role + admin.active) → authId claim → `/admin`.
+- **Partner** (`/partner/login`) — Kakao OAuth → `signInWithOAuth` → Kakao 인증 → `/api/auth/callback` 가
+  code→session 교환 + user lookup (role + partner.active) + authId claim → `/partner`.

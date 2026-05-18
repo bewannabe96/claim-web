@@ -109,7 +109,7 @@ export function PartnerForm({
               className="h-11"
             />
           </Field>
-          <Field label="이메일 (로그인)" error={errors?.email?.[0]}>
+          <Field label="이메일 (카카오톡 로그인 매칭)" error={errors?.email?.[0]}>
             <Input
               name="email"
               type="email"
@@ -119,6 +119,19 @@ export function PartnerForm({
             />
           </Field>
         </div>
+      </Section>
+
+      <Section title="자격">
+        <Field label="설계사 자격번호" error={errors?.licenseNumber?.[0]}>
+          <Input
+            name="licenseNumber"
+            type="text"
+            defaultValue={initial?.licenseNumber ?? ""}
+            placeholder="예: GA12345678"
+            maxLength={40}
+            className="h-11"
+          />
+        </Field>
       </Section>
 
       <Section title="상태">
