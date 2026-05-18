@@ -1,8 +1,6 @@
-import { Prisma } from "@prisma/client";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { newId } from "@/lib/id";
 import { prisma } from "@/server/db/prisma";
 import { getSupabaseServerClient } from "@/server/supabase";
 
@@ -13,12 +11,15 @@ import { getSupabaseServerClient } from "@/server/supabase";
  *
  *   1. **signup** (`?signup=<invitation_token>`): 어드민이 발급한 가입 초청으로 진입.
  *      - code → session 교환
- *      - invitation 게이트: 미소비 + 미만료 + **phoneVerifiedAt IS NOT NULL** (signup 페이지에서
- *        PortOne 본인인증을 사전에 통과한 상태). 이 콜백은 phone 자체를 다시 보지 않음 —
- *        Kakao OAuth 는 phone 을 제공하지 않으며, phone vs invitation.phone 매칭은 인증
- *        액션 (signup 페이지) 이 책임.
- *      - 트랜잭션: user + partner INSERT + invitation 소비 (consumedAt + consumedUserId)
- *      - 성공: /partner, 실패: /partner/signup/<token>?error=…
+ *      - invitation 게이트: 미소비 + 미만료
+ *      - linkedAuthId 처리:
+ *          * NULL → race-safe claim (`updateMany WHERE linkedAuthId IS NULL`)
+ *          * === authUser.id → 통과 (재진입)
+ *          * !== authUser.id → reject + supabase signOut + `?error=link_conflict`
+ *      - 콜백은 user/partner 트랜잭션을 **하지 않음** — 본인인증 통과 시점에
+ *        verifyPartnerSignupOtp action 이 단일 트랜잭션으로 user + partner +
+ *        invitation 소비를 수행. 콜백의 책임은 invitation lock + verify 페이지로 forward.
+ *      - 성공: /partner/signup/<token>/verify, 실패: /partner/signup/<token>?error=…
  *
  *   2. **login** (signup 미존재): 기존 가입자 로그인.
  *      - code → session 교환
@@ -62,8 +63,12 @@ export async function GET(req: NextRequest) {
 }
 
 /* ============================================================
- * Signup — invitation 소비 + user/partner 트랜잭션 생성
- * ============================================================ */
+ * Signup — invitation 에 Kakao 계정 lock + verify 페이지로 forward
+ * ============================================================
+ *
+ * 가입 트랜잭션은 본인인증 통과 후 verifyPartnerSignupOtp action 이 소유 —
+ * 여기서는 어떤 user/partner row 도 만들지 않음 (partial state 회귀 방지).
+ */
 
 async function handleSignup(
   req: NextRequest,
@@ -74,15 +79,19 @@ async function handleSignup(
   const supabase = await getSupabaseServerClient();
   const errorBase = `${origin}/partner/signup/${invitationToken}`;
 
-  const email = authUser.email;
-  if (!email) {
+  if (!authUser.email) {
     await supabase.auth.signOut();
     return NextResponse.redirect(`${errorBase}?error=no_email`);
   }
 
-  // invitation 본문 조회 — user/partner INSERT 데이터 출처.
   const invitation = await prisma.partnerInvitation.findUnique({
     where: { token: invitationToken },
+    select: {
+      id: true,
+      consumedAt: true,
+      expiresAt: true,
+      linkedAuthId: true,
+    },
   });
   if (
     !invitation ||
@@ -90,85 +99,35 @@ async function handleSignup(
     invitation.expiresAt.getTime() < Date.now()
   ) {
     await supabase.auth.signOut();
-    // 토큰이 무효하면 signup 페이지가 자체적으로 "유효하지 않은 가입 링크" 분기.
+    // 토큰 무효 → signup 페이지가 "유효하지 않은 가입 링크" 분기.
     return NextResponse.redirect(errorBase);
   }
 
-  // 본인인증 미통과 시 Kakao 가입 진행 불가 — signup 페이지에서 PortOne 인증 먼저.
-  // 페이지 UI 에선 미인증 시 Kakao 버튼 비활성이라 정상 흐름엔 도달 안 함. 직접 URL
-  // 조작으로 들어온 경우 차단.
-  if (!invitation.phoneVerifiedAt) {
-    await supabase.auth.signOut();
-    return NextResponse.redirect(`${errorBase}?error=phone_unverified`);
-  }
-
-  const userId = newId();
-
-  try {
-    await prisma.$transaction(async (tx) => {
-      // tx 안에서 invitation 재확인 (동시 소비 race 차단).
-      const reread = await tx.partnerInvitation.findUnique({
-        where: { id: invitation.id },
-        select: {
-          consumedAt: true,
-          expiresAt: true,
-          phoneVerifiedAt: true,
-        },
-      });
-      if (
-        !reread ||
-        reread.consumedAt ||
-        reread.expiresAt.getTime() < Date.now() ||
-        !reread.phoneVerifiedAt
-      ) {
-        throw new InvitationStaleError();
-      }
-
-      await tx.user.create({
-        data: {
-          id: userId,
-          authId: authUser.id,
-          email,
-          name: invitation.name,
-          phone: invitation.phone,
-        },
-      });
-      await tx.partner.create({
-        data: {
-          id: userId,
-          bio: invitation.bio,
-          yearsOfExperience: invitation.yearsOfExperience,
-          trustMetric: invitation.trustMetric,
-          licenseNumber: invitation.licenseNumber,
-          active: invitation.active,
-        },
-      });
-      await tx.partnerInvitation.update({
-        where: { id: invitation.id },
-        data: { consumedAt: new Date(), consumedUserId: userId },
-      });
+  if (invitation.linkedAuthId === null) {
+    // race-safe claim — 동시 콜백 중 하나만 lock 성공.
+    const claim = await prisma.partnerInvitation.updateMany({
+      where: { id: invitation.id, linkedAuthId: null },
+      data: { linkedAuthId: authUser.id },
     });
-  } catch (err) {
-    await supabase.auth.signOut();
-
-    if (err instanceof InvitationStaleError) {
-      return NextResponse.redirect(errorBase);
-    }
-    if (err instanceof Prisma.PrismaClientKnownRequestError) {
-      // P2002 = UNIQUE 충돌 — User.authId / User.email / User.phone / Partner.licenseNumber.
-      // authId 충돌 = 같은 카카오 계정이 다른 user 와 이미 연결됨.
-      if (err.code === "P2002") {
-        return NextResponse.redirect(`${errorBase}?error=already_registered`);
+    if (claim.count === 0) {
+      const reread = await prisma.partnerInvitation.findUnique({
+        where: { id: invitation.id },
+        select: { linkedAuthId: true },
+      });
+      if (reread?.linkedAuthId !== authUser.id) {
+        await supabase.auth.signOut();
+        return NextResponse.redirect(`${errorBase}?error=link_conflict`);
       }
     }
-    console.error("[signup] transaction failed", err);
-    return NextResponse.redirect(`${errorBase}?error=signup_failed`);
+  } else if (invitation.linkedAuthId !== authUser.id) {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(`${errorBase}?error=link_conflict`);
   }
+  // (linkedAuthId === authUser.id) 인 재진입은 무조건 통과 — Kakao 세션이 유효하면
+  // 본인인증을 한 번 만에 끝내지 못해도 같은 계정으로 다시 들어올 수 있어야 함.
 
-  return NextResponse.redirect(`${origin}/partner`);
+  return NextResponse.redirect(`${errorBase}/verify`);
 }
-
-class InvitationStaleError extends Error {}
 
 /* ============================================================
  * Login — 기존 가입자 (drift 안전) 진입

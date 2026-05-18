@@ -117,7 +117,8 @@ export async function getPartnerInvitationById(
  *   - 만료됨 (expiresAt < now)
  *
  * 호출자는 null 만으로 분기 — 어느 사유인지는 의도적으로 가리지 않음 (열거 방지).
- * `phoneVerifiedAt` 은 view 에 포함 — 페이지가 본인인증 단계 vs Kakao 가입 단계 분기.
+ * `linkedAuthId` 는 view 에 포함 — 페이지가 Kakao 가입 단계 (NULL) vs 본인인증
+ * 단계 (NOT NULL) 분기.
  */
 export async function getPartnerInvitationByToken(
   token: string,
@@ -130,7 +131,7 @@ export async function getPartnerInvitationByToken(
       phone: true,
       expiresAt: true,
       consumedAt: true,
-      phoneVerifiedAt: true,
+      linkedAuthId: true,
     },
   });
   if (!invitation) return null;

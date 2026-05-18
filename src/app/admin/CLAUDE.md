@@ -103,12 +103,12 @@ partner 는 어드민이 직접 INSERT 하지 않음. 다음 흐름:
 1. `/admin/partners/new` 에서 이름/휴대폰 + partner 정보 입력 → "초청 발급"
 2. `createPartnerInvitation` 액션이 partner_invitation row + token + expiresAt 생성, `/admin/partners/invitations/<id>` 로 자동 이동
 3. 발급된 가입 URL (`/partner/signup/<token>`) 복사 → 메신저로 설계사에게 전달
-4. 설계사가 **PortOne 본인인증 + 카카오 OAuth** 두 단계 완료 시점에 콜백이 user + partner 트랜잭션 INSERT + invitation 소비
+4. 설계사가 **카카오 OAuth → 본인인증** 두 단계 완료 시점에 verify 액션이 user + partner 트랜잭션 INSERT + invitation 소비. 콜백은 invitation 에 Kakao 계정만 lock (linkedAuthId) 하고 verify 페이지로 forward.
 5. 자세한 흐름은 [src/app/partner/CLAUDE.md](../partner/CLAUDE.md) 참조
 
 같은 페이지에서 가능한 운영 액션:
 - 초청 정보 수정 (이름/휴대폰/partner 필드)
-- 토큰 재발급 (만료 임박/통과 시 — token 회전 + expiresAt 갱신)
+- 토큰 재발급 (만료 임박 / Kakao lock 후 본인인증 미완 등 — token 회전 + expiresAt 갱신 + **linkedAuthId / phoneVerifiedAt NULL 리셋** 으로 Kakao 잠금 해제)
 - 초청 삭제 (미소비 invitation 만)
 
 ### 새 admin 계정 추가 (운영 환경)

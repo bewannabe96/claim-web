@@ -4,7 +4,7 @@
 
 1. **알림톡 일회용 토큰** — PRD §5.4. `/partner/assignments/[token]` 으로 직접 진입. **로그인 불필요** — 토큰 자체가 인증.
 2. **카카오톡 로그인** — `/partner/login` → Kakao OAuth → `/partner` 대시보드. 본인 받은 요청 / 진행 현황 확인용.
-3. **가입 초청** — `/partner/signup/[token]` 으로 진입 → Kakao OAuth → 콜백이 user + partner 정식 생성. 어드민이 발급한 일회용 invitation token 보유 시 1회 사용.
+3. **가입 초청** — `/partner/signup/[token]` 으로 진입 → Kakao OAuth (콜백이 invitation 에 Kakao 계정 lock) → `/partner/signup/[token]/verify` 본인인증 → 통과 시 단일 트랜잭션으로 user + partner INSERT + invitation 소비. 어드민이 발급한 일회용 invitation token 보유 시 1회 사용.
 
 ## 보안 모델 (3 레이어)
 
@@ -51,10 +51,11 @@ export async function updateMyProfile(...) {
 - `claim.user` — 모든 인증 사용자 공통. PK = nanoid, `authId` = auth.users.id (UUID, nullable). `phone` UNIQUE.
 - `claim.partner` — partner extension. PK = `user.id` 공유. `active` 토글로 매칭 풀 제외 / 로그인 차단.
 - `claim.partner_invitation` — 가입 초청 (임시). 어드민이 발급한 후 설계사가 정식 가입할 때까지 보관.
-  - `phoneVerifiedAt` — PortOne 본인인증 통과 시점. Kakao OAuth 단계 진입 전제 조건.
+  - `linkedAuthId` — Kakao OAuth 콜백이 lock 한 auth.users.id. **다른 카카오 계정의 콜백은 reject** (link_conflict). `reissuePartnerInvitationToken` 만이 NULL 로 리셋해 잠금 해제.
+  - `phoneVerifiedAt` — PortOne 본인인증 통과 audit. 가입 트랜잭션 직전 set (게이트 아닌 audit only). reissue 시 NULL.
   - `consumedAt + consumedUserId` — 가입 완료 시 채워지고 더 이상 사용 불가.
 
-**user/partner 직접 생성 금지** — partner 는 반드시 invitation 경유 + 본인인증 + Kakao OAuth 흐름으로만 생성됨. 어드민 어디에도 직접 INSERT 액션 없음 (`createPartner` 없음).
+**user/partner 직접 생성 금지** — partner 는 반드시 invitation 경유 + Kakao OAuth + 본인인증 흐름으로만 생성됨. 어드민 어디에도 직접 INSERT 액션 없음 (`createPartner` 없음). 콜백도 partial state 를 만들지 않음 — user/partner INSERT 는 본인인증 통과 시점에 단일 트랜잭션으로만 일어남.
 
 ## 파일 구조
 
@@ -66,8 +67,12 @@ partner/
 │  └─ actions.ts                       # signInWithKakao: 로그인용 Supabase OAuth URL 반환 + redirect
 ├─ signup/
 │  └─ [token]/
-│     ├─ page.tsx                      # 초청 token 유효성 검증 + 이름/마스킹폰 노출 + 카카오 가입 버튼
-│     └─ actions.ts                    # signUpWithKakao: 가입용 OAuth (redirectTo 에 ?signup=<token>)
+│     ├─ page.tsx                      # Step 1 — 초청 token 검증 + "카카오톡으로 시작" 버튼
+│     ├─ actions.ts                    # signUpWithKakao + requestPartnerSignupOtp + verifyPartnerSignupOtp (가입 트랜잭션 owner)
+│     ├─ _components/step-badge.tsx    # Step 1/Step 2 진행 표시 공유 컴포넌트
+│     └─ verify/
+│        ├─ page.tsx                   # Step 2 — Kakao session + linkedAuthId 매칭 검증 후 본인인증 폼 노출
+│        └─ _components/verify-form.tsx
 ├─ assignments/                        # 알림톡 토큰 진입 (로그인 불필요)
 │  ├─ [token]/page.tsx                 # 토큰 검증 → 폼 / 안내 분기
 │  └─ done/page.tsx                    # 제출 완료 안내
@@ -77,7 +82,7 @@ partner/
    └─ _actions/logout.ts               # signOutPartner
 ```
 
-OAuth 콜백은 `/api/auth/callback` 라우트 핸들러 — `?signup=<token>` 유무로 가입 / 로그인 분기.
+OAuth 콜백은 `/api/auth/callback` 라우트 핸들러 — `?signup=<token>` 유무로 가입 / 로그인 분기. signup 분기는 invitation lock 만 책임 (user/partner INSERT 안 함) — 가입 트랜잭션은 verify 액션이 소유.
 
 ## ENV
 
@@ -105,21 +110,27 @@ PortOne 본인인증 연동에 필요한 env (Phase B):
 - 즉시 INSERT 되는 것은 **partner_invitation 한 row** + token + expiresAt (`PARTNER_INVITATION_TTL_DAYS`)
 - user / partner row 는 만들지 않음 — 가입 완료 시점에 콜백 트랜잭션이 한꺼번에 INSERT
 
-이후 흐름 (2단계 인증):
+이후 흐름 (2단계, Kakao 먼저 → 본인인증):
 1. 어드민이 `/admin/partners/invitations/[id]` 에서 가입 URL 복사 → 메신저로 설계사에게 전달
-2. 설계사가 링크 진입 → 페이지가 invitation 유효성 + phoneVerifiedAt 확인 후 단계 분기:
-   - **Step 1 — 본인인증 (phoneVerifiedAt IS NULL)**: 이름 / 주민번호 앞6+1 / 휴대폰 입력 → PortOne 본인인증
-     → 통과 시 PortOne 응답의 phone 과 invitation.phone 매칭 → invitation.phoneVerifiedAt 갱신
-   - **Step 2 — Kakao 가입 (phoneVerifiedAt IS NOT NULL)**: "카카오톡으로 가입" 버튼 → Kakao OAuth
-3. 콜백 (`/api/auth/callback?signup=<token>`):
-   - invitation 미소비 + 미만료 + **phoneVerifiedAt 셋 모두** 통과 확인 (트랜잭션 안에서 재확인 → race-safe)
-   - Kakao 응답의 phone 은 사용하지 않음 (Kakao OAuth 가 phone 을 제공하지 않음 — 매칭은 Step 1 책임)
-   - 트랜잭션: `user` (authId/email=kakao, name/phone=invitation) + `partner` (invitation partner 필드들) + invitation 소비 (`consumedAt`, `consumedUserId`)
-4. `/partner` 로 redirect
+2. 설계사가 링크 진입 → `linkedAuthId` 로 페이지 분기:
+   - **Step 1 — 카카오 가입 (linkedAuthId IS NULL)**: "카카오톡으로 시작" → Kakao OAuth
+   - **Step 2 — 본인인증 (linkedAuthId IS NOT NULL)**: `/verify` 라우트로 자동 redirect
+3. 콜백 (`/api/auth/callback?signup=<token>`) — invitation lock 만:
+   - invitation 미소비 + 미만료 확인
+   - `linkedAuthId` 처리: NULL 이면 race-safe claim (`updateMany WHERE linkedAuthId IS NULL`), 일치하면 통과 (재진입), 불일치면 supabase signOut + `?error=link_conflict`
+   - `/partner/signup/<token>/verify` 로 redirect (user/partner INSERT 안 함)
+4. `/partner/signup/<token>/verify`:
+   - 페이지 가드: Kakao 세션 존재 + `invitation.linkedAuthId === authUser.id` 매칭
+   - PortOne 본인인증 폼 (현재 placeholder, dev 에서 6자리 OTP 통과)
+   - `verifyPartnerSignupOtp` 통과 시 단일 트랜잭션:
+     - tx 안 invitation 재확인 (소비 / 만료 / linkedAuthId 셋 모두 → race-safe)
+     - `user` (authId/email=Kakao, name/phone=invitation) + `partner` (invitation partner 필드) + invitation 소비 (`consumedAt`, `consumedUserId`, `phoneVerifiedAt` audit)
+   - Kakao 응답의 phone 은 사용 안 함 — phone 매칭은 PortOne 본인인증 책임
+5. `/partner` 로 redirect
 
 ### 초청 재발급 / 삭제
 
-- **재발급** (만료 임박/통과 시): `/admin/partners/invitations/[id]` 의 "토큰 재발급" 버튼. token 회전 + expiresAt 갱신. 구 token 즉시 무효.
+- **재발급** (만료 임박/Kakao lock 후 본인인증 미완 등): `/admin/partners/invitations/[id]` 의 "토큰 재발급" 버튼. token 회전 + expiresAt 갱신 + **`linkedAuthId` / `phoneVerifiedAt` NULL 리셋** (Kakao 잠금 해제). 구 token 즉시 무효.
 - **삭제**: 같은 페이지의 "초청 삭제" 버튼. 미소비 invitation 만 삭제 가능 (소비된 invitation 은 audit 용 보존).
 
 ### 즉시 차단 (가입 완료된 partner)
@@ -134,7 +145,7 @@ DAL 이 매 요청마다 확인. 매칭 후보 추출에서도 동시에 제외.
 `/partner/assignments/[token]` + `/partner/signup/[token]` 모두 로그인 게이트가 없으므로 token + status 검증이 전부.
 - 토큰은 `nanoid(32)` (192bit) 라 추측 불가.
 - assignments: `assignment.status='pending'` 이 아닌 경우 폼 미노출 (`submitted`/`expired`).
-- signup: invitation 의 `consumedAt IS NULL AND expiresAt > now()` 양쪽 만족해야 폼 노출. 본인인증 (PortOne) 단계 통과 (`phoneVerifiedAt IS NOT NULL`) 후에만 Kakao 가입 단계 진입. 콜백 트랜잭션에서 세 가지 (소비/만료/인증) 모두 재확인 (race-safe). 직접 URL 조작으로 `?signup=` 콜백 진입한 경우도 `phoneVerifiedAt` 게이트로 차단.
+- signup: invitation 의 `consumedAt IS NULL AND expiresAt > now()` 양쪽 만족해야 진입. **Step 1 Kakao OAuth 가 invitation.linkedAuthId 에 auth.users.id 를 lock** — 이후 본인인증 단계 (`/verify`) 는 Kakao 세션 + linkedAuthId 매칭 두 게이트가 모두 통과해야 접근. 다른 Kakao 계정의 콜백은 reject (link_conflict). 가입 트랜잭션 안에서 invitation 의 미소비 / 미만료 / linkedAuthId 매칭 모두 재확인 (race-safe). token 만 알아도 본인인증 엔드포인트에 무차별 접근 불가.
 - `submitProposal` action 이 s3Key prefix(`assignment.id`) + S3 HEAD 검증으로 path forgery 차단.
 
 토큰 흐름을 로그인 흐름으로 막지 말 것 — alimtalk / 가입 링크 발송 시 매번 로그인 요구는 UX 손해.
@@ -146,5 +157,8 @@ DAL 이 매 요청마다 확인. 매칭 후보 추출에서도 동시에 제외.
 - ❌ 토큰 기반 action (signUpWithKakao 등) 에 session 가드 추가 — 흐름 끊김. 토큰 + 콜백 검증이 인증.
 - ❌ middleware 의 carve-out 목록에 새 토큰 경로 누락 — 새 토큰 흐름 추가 시 `isPartnerPublicPath` 도 갱신.
 - ❌ 어드민에서 user/partner 직접 INSERT 액션 부활 — invitation 경유가 단일 진입점. `createPartnerInvitation` 만 존재.
-- ❌ Kakao OAuth 응답에서 phone 을 직접 매칭하려는 시도 — Kakao 는 phone 을 제공하지 않음. phone 매칭은 PortOne 본인인증 (signup 페이지 Step 1) 책임.
+- ❌ Kakao OAuth 응답에서 phone 을 직접 매칭하려는 시도 — Kakao 는 phone 을 제공하지 않음. phone 매칭은 PortOne 본인인증 (verify 단계) 책임.
 - ❌ User row 만 만들고 Partner row 누락 — partner extension row 자체가 권한. 누락 시 DAL 통과 안 됨.
+- ❌ verify action 에서 `invitation.linkedAuthId === authUser.id` 매칭 검사 누락 — 다른 사람 token + 본인 Kakao 세션으로 가입 횡령 가능.
+- ❌ 콜백에서 user/partner INSERT 부활 — partial state (user 있고 partner 없음) 회귀 + 두 트랜잭션 owner 의 책임 분리 깨짐. 콜백은 invitation lock 만.
+- ❌ reissue 액션에서 `linkedAuthId` / `phoneVerifiedAt` 리셋 누락 — 운영자가 Kakao lock 후 본인인증 안 끝낸 invitation 을 해제할 방법 없어짐.

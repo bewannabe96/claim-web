@@ -80,16 +80,18 @@ async function seedAdmin() {
  * **id 와 token 은 고정 문자열** — dev 가 매번 같은 URL 로 진입 가능:
  *   http://localhost:3000/partner/signup/{DEV_INVITATION_TOKEN}
  *
- * **본인인증 (phoneVerifiedAt)**: dev 편의를 위해 자동으로 pre-verified 처리 (즉시
- * Kakao 가입 단계 노출). PortOne 본인인증 흐름 자체를 테스트하려면
- * `LOCAL_DEV_PARTNER_SKIP_VERIFY=false` 로 설정 — phoneVerifiedAt 미설정 상태로
- * 시드되어 인증 단계 UI 가 먼저 노출됨.
- *
  * **phone** — `LOCAL_DEV_PARTNER_PHONE` 으로 override (실 본인인증 시 매칭 키).
  *
+ * **단계 진행**: invitation 은 `linkedAuthId=NULL, phoneVerifiedAt=NULL` 상태로
+ * 시드됨 → 진입 시 Step 1 "카카오톡으로 시작" 버튼 노출. Kakao OAuth 통과 후
+ * 콜백이 linkedAuthId 를 lock 하고 `/verify` 페이지로 forward → 본인인증
+ * placeholder (6자리 OTP) 통과 시 가입 완료. 단계를 강제 건너뛰는 dev 토글은
+ * 없음 — 각 단계가 진짜 보안 게이트 (Kakao 세션 + linkedAuthId 매칭) 라 우회하면
+ * verify 가드에 막힘.
+ *
  * **재시드 정책**: 이미 존재하면 skip. consume 후 재테스트하려면 admin UI 에서
- * 초청 + 파생된 partner 를 수동 삭제. (seed 가 consume 상태를 되돌리면 user/partner
- * UNIQUE 와 충돌할 수 있어 의도적으로 안 건드림.)
+ * 초청 + 파생된 partner 를 수동 삭제. Kakao lock 만 풀고 재진입하려면 admin UI
+ * 에서 reissue (token 회전 + linkedAuthId NULL).
  */
 async function seedDevPartnerInvitation() {
   const DEV_INVITATION_ID = "local_dev_inv001";
@@ -109,9 +111,6 @@ async function seedDevPartnerInvitation() {
 
   const phone = process.env.LOCAL_DEV_PARTNER_PHONE ?? "01000000000";
   const name = process.env.LOCAL_DEV_PARTNER_NAME ?? "Dev Partner";
-  // 기본 true — dev 가 본인인증 placeholder 단계를 건너뛰고 바로 Kakao 단계 확인.
-  // false 설정 시 phoneVerifiedAt 미설정 → 인증 단계 UI 확인용.
-  const skipVerify = process.env.LOCAL_DEV_PARTNER_SKIP_VERIFY !== "false";
 
   await prisma.partnerInvitation.create({
     data: {
@@ -126,14 +125,10 @@ async function seedDevPartnerInvitation() {
       token: DEV_INVITATION_TOKEN,
       // 1년 — dev 가 만료 리프레시 신경 안 쓰도록.
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      phoneVerifiedAt: skipVerify ? new Date() : null,
     },
   });
   console.log(
-    `[seed] partner_invitation ready — /partner/signup/${DEV_INVITATION_TOKEN}` +
-      (skipVerify
-        ? " (pre-verified — set LOCAL_DEV_PARTNER_SKIP_VERIFY=false to test 본인인증 step)"
-        : " (unverified — 본인인증 단계 UI 확인)"),
+    `[seed] partner_invitation ready — /partner/signup/${DEV_INVITATION_TOKEN}`,
   );
 }
 
