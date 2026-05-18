@@ -16,7 +16,7 @@
 
 - **Knock 게이트** (`ADMIN_KNOCK_PATH` env 설정 시): 유효한 `admin_knock` 쿠키 없으면 모든 `/admin/*` 응답 **404**. admin 존재 자체 부정. `/<KNOCK>` 진입 시 쿠키 발급 + 307 → /admin/login. obscurity 이지 보안 아님 — MFA / IP 화이트리스트 와 병행.
 - **Optimistic 비인증 차단**: Supabase 세션 cookie 없으면 즉시 307 → /admin/login. 이게 없으면 cacheComponents/PPR 모드에서 layout 의 `redirect()` 가 1초 meta refresh fallback 으로 처리되어 admin 셸 HTML 이 응답 body 에 노출되고 크롤러가 200 으로 색인할 수 있음.
-- **세션 cookie silent refresh**: `auth.getUser()` 호출 부수 효과로 토큰 만료 직전 갱신.
+- **세션 cookie silent refresh + stale cleanup**: `auth.getUser()` 호출 부수 효과로 토큰 만료 직전 갱신. refresh 실패 (`refresh_token_not_found` 등 `AuthError`) 면 `sb-*-auth-token*` cookie 를 응답에서 명시 만료 — `@supabase/auth-js` 는 `AuthSessionMissingError` 에서만 자동 청소하므로 refresh 실패는 stale cookie 가 그대로 남아 후속 요청에서 반복 throw 됨. 일시적 네트워크 오류엔 cookie 안 건드림.
 - **`X-Robots-Tag`**: 모든 admin 관련 응답에 `noindex, nofollow, noarchive, nosnippet, noimageindex`. partner 경로는 가입자와 동등 노출 정책이라 미부착.
 
 ### ② `admin/layout.tsx` (metadata only)

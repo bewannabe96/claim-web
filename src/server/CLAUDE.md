@@ -9,7 +9,7 @@
 ## 무엇이 들어가나
 
 - `dal.ts` — Data Access Layer. **모든 인증 검사의 단일 진입점.**
-  - `getOptionalUser()` — Supabase `auth.getUser()` → `claim.user` (where authId) 조회. cache 로 same-request dedupe.
+  - `getOptionalUser()` — Supabase `auth.getUser()` → `claim.user` (where authId) 조회. `auth.getUser()` 가 throw (refresh 실패 등) 하면 graceful null — `/admin/login` 이 stale cookie 만으로 error.tsx 로 빠지지 않도록. cache 로 same-request dedupe.
   - `requireAdminSession()` — user + `claim.admin.active` 2단계 검증. role='admin' 도 함께 확인.
   - `requirePartnerSession()` — user + `claim.partner.active` 2단계 검증. role='partner' 도 함께 확인.
   - 미인증/권한 없음 → 각 영역 login 페이지로 redirect (admin: `/admin/login`, partner: `/partner/login`).
@@ -258,6 +258,8 @@ email 로 user 찾아 claim. 이후엔 DAL 이 `where: { authId }` 로 바로 lo
 3. **루트 `middleware.ts`** — `/admin/*` + `/partner/*` optimistic 차단.
    **인증 boundary 아님** (docs/architecture.md §7.2) — 세션 cookie 없는 명백한 비로그인 유저를
    즉시 307 로 튕기고, 실제 권한은 DAL 이 판정. PPR 모드의 1초 meta refresh fallback 회피 목적도 겸함.
+   `auth.getUser()` 가 `AuthError` (refresh 실패 등) throw 하면 stale `sb-*-auth-token*`
+   cookie 명시 청소 — 라이브러리는 `AuthSessionMissingError` 에서만 자동 청소.
    admin 은 knock + X-Robots-Tag 추가. partner 는 `/partner/login` + `/partner/assignments/*`
    (알림톡 토큰 진입) carve-out.
 
