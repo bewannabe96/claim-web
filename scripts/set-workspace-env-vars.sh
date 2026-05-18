@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/db-env.sh — source 전용. 직접 실행하지 말 것.
+# scripts/set-workspace-env-vars.sh — source 전용. 직접 실행하지 말 것.
 #
 # 호출자에 다음 환경변수 export:
 #   WORKTREE_NAME           = basename(현재 디렉토리)

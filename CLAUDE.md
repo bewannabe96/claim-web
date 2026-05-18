@@ -55,28 +55,23 @@ pnpm build     # 프로덕션 빌드 + 타입 체크
 pnpm lint      # ESLint
 ```
 
-## 로컬 DB — schema-first 워크플로우
+## 로컬 DB
 
-- **worktree 격리 Docker Postgres** — 일상 작업. `pnpm db:push` 로 schema.prisma → 로컬 즉시 sync (migration 안 만듦).
-- **develop dev DB** = 원격 Supabase dev project. develop merge 후 CI 가 누적 schema diff 로 migration 1 개 자동 생성/적용.
-- **운영 Supabase** — master merge → GitHub Actions `deploy-migrations.yml` 가 `prisma migrate deploy` 자동 적용 (Vercel build 와 분리 — observability + 직렬화).
-
-전체 흐름과 충돌 카탈로그: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
+worktree 마다 격리된 Docker Postgres. `schema.prisma` 변경은 `pnpm db:push` 로 로컬에 즉시 sync (migration 안 만듦). 전체 흐름: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
 
 ```bash
-pnpm db:start            # 첫 진입: Docker 기동 + migration deploy + seed (멱등)
-pnpm db:push             # 일상: schema.prisma 변경 후 로컬 격리 DB 즉시 sync
-pnpm db:migrate:deploy   # git pull 로 받은 migration 을 로컬에 적용
-pnpm db:reset            # 볼륨 삭제 → 다음 start 에서 깨끗하게
-pnpm db:status           # 모든 worktree 의 컨테이너 한 화면
-pnpm db:cleanup-orphans  # 사라진 worktree 의 고아 컨테이너 + 볼륨 일괄 삭제 (메인 리포에서 호출)
-pnpm db:psql / db:logs / db:stop / db:seed
+pnpm workspace:setup              # 첫 진입: Docker 기동 + migration deploy + seed (멱등)
+pnpm db:push                      # 일상: schema.prisma 변경 후 로컬 격리 DB 즉시 sync
+pnpm db:migrate:deploy            # 기존 migration 을 로컬에 적용
+pnpm db:reset                     # 볼륨 삭제 → 다음 workspace:setup 에서 깨끗하게
+pnpm db:seed                      # app_settings + admin 본인 + dev partner_invitation upsert (workspace:setup 이 자동 호출)
+pnpm cleanup:orphan-db-containers # 사라진 worktree 의 고아 컨테이너 + 볼륨 일괄 삭제 (메인 리포에서 호출)
 ```
 
-**금지**: `pnpm prisma migrate dev` 직접 호출 / `prisma/migrations/` 수동 편집. develop CI 가 단일 writer (PR 단계에서 CI 가 차단). 데이터 마이그레이션 등 수동 SQL 필요 시는 PR `manual-migration` label.
+**금지**: `pnpm prisma migrate dev` 직접 호출 / `prisma/migrations/` 수동 편집. PR CI (`check-no-migrations.yml`) 가 차단 — `prisma/migrations/` 는 사람이 안 건드림. 데이터 마이그레이션 등 수동 SQL 필요 시는 PR `manual-migration` label.
 
 **Claude Code 라이프사이클 hook (worktree 한정)**:
-- **SessionStart** → 컨테이너 없거나 정지면 백그라운드 풀 부트스트랩 (compose up + migration + seed). 로그 `.claude/db-bootstrap.log`. 첫 명령이 DB 를 친다면 `tail -f .claude/db-bootstrap.log` 로 진행 확인.
+- **SessionStart** → 컨테이너 없거나 정지면 백그라운드 풀 부트스트랩 (compose up + migration + seed). 로그 `.claude/workspace-bootstrap.log`. 첫 명령이 DB 를 친다면 `tail -f .claude/workspace-bootstrap.log` 로 진행 확인.
 - **SessionEnd** → `docker compose down -v` (컨테이너 + 볼륨 완전 삭제). 다음 SessionStart 가 자동 재구축.
 - 메인 리포 세션에서는 hook 동작 안 함 (worktree 만).
 

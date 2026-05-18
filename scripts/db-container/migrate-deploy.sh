@@ -3,6 +3,6 @@
 # 사용 시점: git pull 로 다른 worktree 에서 만든 migration 을 받았을 때.
 set -euo pipefail
 # shellcheck disable=SC1091
-source "$(dirname "$0")/../db-env.sh"
+source "$(dirname "$0")/../set-workspace-env-vars.sh"
 pnpm prisma migrate deploy
 pnpm prisma generate
