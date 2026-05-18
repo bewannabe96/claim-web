@@ -128,27 +128,58 @@ model PlanRequestCandidate {
 }
 
 // ============================================================
-// partner — 풀에 등록된 보험 설계사
+// user — 모든 인증 사용자의 공통 정보
 // ============================================================
-// 가입자 노출:  avatarUrl, name, bio, yearsOfExperience, trustMetric
-// 매칭 가중치: exposureCount (형평성), recentSubmissions (페널티)
-// 운영:        phone (알림톡), email (로그인), active
+// Supabase auth.users 와 1:1. id 는 도메인 nanoid (다른 테이블 FK 가 참조), authId
+// 는 auth.users.id (UUID) 와 매핑되는 별도 인증 key.
 //
-// 향후 Supabase Auth 통합 시 id 가 auth.users.id 와 동일 (uuid) 가 되도록 마이그
-// 레이션 — 지금은 standalone nanoid. (AdminUser 가 이미 이 패턴으로 도입됨 —
-// 같은 구조 따라가면 됨. 자세한 건 src/app/admin/CLAUDE.md.)
+// 사용자 생성 흐름:
+//   1. 운영자가 사전 등록 — User row 생성 (authId=null, role/role 별 extension row).
+//   2. 첫 로그인 (admin: 비번 / partner: kakao OAuth) 시 callback/action 이 email 로
+//      User row 를 찾아 authId 채움 (claim). 이후 로그인은 authId 로 직접 lookup.
+//
+// role 은 빠른 분기용 discriminator. 실제 권한 검증은 partner/admin extension row
+// 존재 여부로 (defense in depth) — DAL 이 둘 다 확인.
+
+model User {
+  id        String   @id                                  // nanoid(16) — 도메인 식별자
+  authId    String?  @unique @db.Uuid @map("auth_id")     // = auth.users.id (UUID). 사전 등록 시 null, 첫 로그인 후 claim.
+  email     String   @unique
+  name      String
+  phone     String?
+  role      String                                        // "general" | "partner" | "admin"
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  partner   Partner?
+  admin     Admin?
+
+  @@index([role])
+  @@map("user")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner — 설계사 추가 정보 (User 와 1:1, PK 공유)
+// ============================================================
+// 가입자 노출:  user.name, avatarUrl, bio, yearsOfExperience, trustMetric
+// 매칭 가중치: exposureCount (형평성), recentSubmissions (페널티)
+// 운영:        user.email (로그인), user.phone (알림톡), active
+//
+// id 는 User.id 와 동일 — 1:1 extension. match_assignment / plan_request_candidate
+// 의 partnerId 는 이 id (= User.id) 를 참조.
 
 model Partner {
-  id String @id
+  id                 String   @id                          // = User.id (공유 nanoid)
 
-  name               String
-  avatarUrl          String  @map("avatar_url")
+  avatarUrl          String   @map("avatar_url")
   bio                String
-  yearsOfExperience  Int     @map("years_of_experience")
-  trustMetric        String  @map("trust_metric")
-  phone              String  @unique
-  email              String  @unique
-  active             Boolean @default(true)
+  yearsOfExperience  Int      @map("years_of_experience")
+  trustMetric        String   @map("trust_metric")
+  /// 설계사 자격번호 — 운영자가 등록 시 기입. UNIQUE 제약으로 중복 등록 차단.
+  licenseNumber      String   @unique @map("license_number")
+  active             Boolean  @default(true)
 
   // 매칭 가중치
   exposureCount      Int       @default(0) @map("exposure_count")
@@ -159,6 +190,7 @@ model Partner {
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
+  user        User                   @relation(fields: [id], references: [id], onDelete: Cascade)
   candidates  PlanRequestCandidate[]
   assignments MatchAssignment[]
 
@@ -308,23 +340,21 @@ model AppSettings {
 }
 
 // ============================================================
-// admin_users — 운영자 권한 화이트리스트
+// admin — 운영자 추가 정보 (User 와 1:1, PK 공유)
 // ============================================================
-// auth.users.id (uuid) 와 동일한 id. 인증된 사용자가 이 테이블에 있으면 admin.
-// auth 스키마는 Supabase 가 관리하므로 FK 는 두지 않음 (cross-schema 회피).
-// 추가/삭제는 운영 SQL 또는 dashboard 로 수동 — signup 흐름 없음.
-//
-// PK 가 nanoid(16) 가 아닌 UUID 인 이유: Supabase auth.users.id 와 1:1 매핑되는
-// entity 라 동일 UUID 사용. Partner 도 향후 같은 방향으로 마이그레이션 예정.
+// User.role='admin' + 이 row 가 존재해야 권한 부여 (defense in depth).
+// 운영자 추가/제거는 운영 SQL 또는 admin 운영 UI 로 수동 — 자체 signup 흐름 없음.
+// RBAC permissions 는 추후 컬럼 추가로 도입 예정 (현재는 active 만 체크).
 
-model AdminUser {
-  id        String   @id @db.Uuid                          // = auth.users.id
-  email     String   @unique
-  name      String?
-  active    Boolean  @default(true)
+model Admin {
+  id          String   @id                                 // = User.id (공유 nanoid)
+  active      Boolean  @default(true)
+
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
-  @@map("admin_users")
+  user User @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@map("admin")
   @@schema("claim")
 }

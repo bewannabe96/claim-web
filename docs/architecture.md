@@ -335,25 +335,47 @@ Node.js 런타임 전용 (Edge 불가).
 
 공식 가이드: middleware 는 **optimistic redirect** (명백히 비로그인 사용자 튕기기) 용도. 실제 권한 검사는 **Server Component / Layout / Server Action 에서 DAL 호출** 로 수행.
 
-**중요 (Next 16 PPR 제약)**: `cacheComponents: true` + PPR 모드에서 layout 의 `redirect()` 가 HTTP 307 이 아니라 1초 `<meta http-equiv="refresh">` fallback 으로 처리되어, 그 1초 동안 admin 셸 HTML 이 응답에 노출되고 크롤러는 200 으로 인식해 색인할 수 있음 (실측 확인). 그래서 middleware 가 **optimistic 으로 Supabase 세션 cookie 부재 시 307** 을 쏘고, DAL 이 admin_users 화이트리스트로 진짜 검증을 함. 두 레이어 모두 필수.
+**중요 (Next 16 PPR 제약)**: `cacheComponents: true` + PPR 모드에서 layout 의 `redirect()` 가 HTTP 307 이 아니라 1초 `<meta http-equiv="refresh">` fallback 으로 처리되어, 그 1초 동안 셸 HTML 이 응답에 노출되고 크롤러는 200 으로 인식해 색인할 수 있음 (실측 확인). 그래서 middleware 가 **optimistic 으로 Supabase 세션 cookie 부재 시 307** 을 쏘고, DAL 이 user + role extension 화이트리스트로 진짜 검증을 함. 두 레이어 모두 필수.
 
-### 7.3 채택 — Supabase Auth + admin_users 화이트리스트
+### 7.3 채택 — Supabase Auth + User/role extension 화이트리스트
 
-신규 프로젝트 권장은 Better Auth 지만, 이 프로젝트는 이미 Supabase Postgres 사용 중 + RLS 통합 이점 + Auth/Storage 일원화로 **Supabase Auth** 채택.
+신규 프로젝트 권장은 Better Auth 지만, 이 프로젝트는 이미 Supabase Postgres 사용 중 + RLS 통합 이점 + Auth/Storage 일원화로 **Supabase Auth** 채택. 모든 role (일반/파트너/운영자) 은 단일 Supabase auth 풀을 공유하고, 우리 도메인 테이블 (`claim.user` + `claim.partner` / `claim.admin`) 이 role 화이트리스트.
 
-**구조 (2단계 인증/권한):**
+**사용자 모델 (1:1 extension):**
+
+```
+auth.users (Supabase 관리)
+   │ 1:1 via user.authId (UUID, nullable — 첫 로그인 시 claim)
+   ▼
+claim.user (id=nanoid, email/name/phone, role 'general'|'partner'|'admin')
+   │ 1:1 (PK 공유)
+   ├──▶ claim.partner (avatarUrl, bio, yearsOfExperience, trustMetric, licenseNumber, active)
+   └──▶ claim.admin   (active, 추후 permissions)
+```
+
+`User.authId` 가 nullable 인 이유 — 운영자가 사전 등록 (User + extension row 생성, authId=null) 후, 해당 사용자의 첫 로그인 (admin 비번 / partner Kakao) 시점에 login action / OAuth callback 이 email 로 user 찾아 `authId = auth.users.id` 채움. 이후 로그인은 DAL 이 `where: { authId }` 로 바로 lookup. authId mismatch (이미 다른 auth.users 와 매핑된 user 의 email 로 다른 Supabase 계정 로그인) 는 거부 — 운영자가 수동 정정.
+
+**구조 (3단계 인증/권한):**
 
 1. **인증 (authn)** — Supabase `auth.getUser()` (JWT 서버 검증). `server/supabase.ts` 의 `getSupabaseServerClient()` 가 단일 진입점.
-2. **권한 (authz)** — `claim.admin_users` 테이블 화이트리스트 lookup. PK = `auth.users.id` (UUID). active=false 토글로 즉시 차단 가능.
-3. **DAL** (`server/dal.ts`) — `requireAdminSession()` 가 둘 다 통과한 경우에만 세션 반환. 그 외엔 `/admin/login` 으로 redirect. 모든 admin 페이지 layout + 모든 admin server action 진입부에서 호출.
+2. **사용자 lookup** — `dal.ts:getOptionalUser()` 가 `claim.user where authId = auth.users.id` 로 도메인 user 조회. cache 로 same-request dedupe.
+3. **권한 (authz)** — role 별 `getOptional*Session()` 가 `user.role` 확인 + 해당 extension row (`claim.admin` / `claim.partner`) 의 `active=true` 확인. 둘 다 통과해야 세션 발급. `require*Session()` 는 null 시 각 영역 login 페이지로 redirect (admin: `/admin/login`, partner: `/partner/login`). 모든 보호 페이지 layout + 모든 mutation server action 진입부에서 호출.
 
-**경로 은닉 (defense in depth, optional)** — `ADMIN_KNOCK_PATH` env 가 설정되면 middleware 가:
+**로그인 흐름:**
+
+- **Admin** (`/admin/login`) — 이메일/비밀번호. `signInAdmin` action 이 `signInWithPassword` → user lookup → role/admin.active 검증 → authId claim → `/admin` 으로 redirect.
+- **Partner** (`/partner/login`) — Kakao OAuth. `signInWithKakao` action 이 `signInWithOAuth` URL 반환 → Kakao 인증 → `/api/auth/callback` 라우트가 code→session 교환 + user lookup + role/partner.active 검증 + authId claim → `/partner` 로 redirect.
+- 등록 안 된 이메일은 두 흐름 모두 동일 에러 메시지 ("로그인에 실패했습니다." / "등록된 설계사 계정이 아닙니다.") 로 응답해 enumeration 방어.
+
+**경로 은닉 (admin 만, defense in depth, optional)** — `ADMIN_KNOCK_PATH` env 가 설정되면 middleware 가:
 - `/<KNOCK>` 진입 시 `admin_knock` 쿠키 (30일) 발급 후 307 → /admin/login
 - `/admin/*` 요청에 유효한 쿠키 없으면 **404** (admin 존재 자체 부정)
 
-obscurity 이지 보안 아님. MFA / IP 화이트리스트 와 병행 권장. 자세한 건 [src/app/admin/CLAUDE.md](../src/app/admin/CLAUDE.md).
+obscurity 이지 보안 아님. MFA / IP 화이트리스트 와 병행 권장. 자세한 건 [src/app/admin/CLAUDE.md](../src/app/admin/CLAUDE.md). partner 영역은 가입자/마케팅과 동등 노출 정책이라 knock/X-Robots-Tag 모두 적용 안 함.
 
-**검색 엔진 색인 차단** — middleware 가 `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex` HTTP 헤더를 모든 `/admin/*` 응답 + 404 응답 + knock 응답에 자동 부착. `src/app/admin/layout.tsx` 의 `metadata.robots` 가 `<meta name="robots">` 로 이중 방어. robots.txt 에 `Disallow: /admin` 은 의도적으로 추가하지 않음 — 경로 존재를 노출하는 역효과.
+**알림톡 토큰 진입 (partner 만)** — `/partner/assignments/[token]` 은 PRD §5.4 일회용 토큰 인증. middleware carve-out + 페이지에서 token → assignment lookup 으로 처리. 로그인과 무관하게 작동 — 토큰 자체가 인증이고, partner 도메인의 1차 흐름.
+
+**검색 엔진 색인 차단 (admin 만)** — middleware 가 `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex` HTTP 헤더를 모든 `/admin/*` 응답 + 404 응답 + knock 응답에 자동 부착. `src/app/admin/layout.tsx` 의 `metadata.robots` 가 `<meta name="robots">` 로 이중 방어. robots.txt 에 `Disallow: /admin` 은 의도적으로 추가하지 않음 — 경로 존재를 노출하는 역효과.
 
 ---
 

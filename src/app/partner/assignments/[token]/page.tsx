@@ -72,7 +72,7 @@ export default async function PartnerAssignmentPage({
   return (
     <ProposalForm
       token={token}
-      partnerName={partner.name}
+      partnerName={partner.user.name}
       remainingMs={deadlineMs !== null ? deadlineMs - now : null}
       request={request}
     />

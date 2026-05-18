@@ -113,7 +113,7 @@ pnpm db:migrate:deploy    # worktree 격리 DB 에 적용
 | `pnpm db:psql [-c "..."]` | 컨테이너 안 psql. |
 | `pnpm db:logs` | 컨테이너 로그 follow. |
 | `pnpm db:stop` | 컨테이너 정지 (데이터 보존). |
-| `pnpm db:seed` | `app_settings` + `admin_users` upsert. `db:start` 가 호출. |
+| `pnpm db:seed` | `app_settings` + (env 있으면) `user`+`admin` upsert. `db:start` 가 호출. |
 
 **`pnpm db:migrate` (= `prisma migrate dev`) 는 의도적으로 없음** — 사람이 호출하지 말 것. develop merge 후 CI 가 단일 호출.
 
@@ -217,8 +217,8 @@ ERROR: Docker daemon not running. Start Docker Desktop / 'colima start' first.
 ```
 Docker Desktop 또는 `colima start` 후 재시도. SessionStart hook 은 daemon 없으면 silent skip.
 
-### `admin_users` 화이트리스트 통과 안 됨 (/admin 진입 404)
-`.env` 에 `LOCAL_DEV_ADMIN_USER_ID` 가 비었거나 잘못된 UUID. Supabase Dashboard 에서 본인 UUID 확인 후 `pnpm db:seed` 재실행.
+### Admin 화이트리스트 통과 안 됨 (/admin 진입 → /admin/login)
+`.env` 에 `LOCAL_DEV_ADMIN_USER_ID` 가 비었거나 잘못된 UUID. Supabase Dashboard 에서 본인 UUID 확인 후 `pnpm db:seed` 재실행. seed 가 `claim.user` + `claim.admin` 두 row 모두 upsert 함 (둘 다 있어야 DAL 통과).
 
 ### Drift detected (이전 흐름의 잔재)
 schema-first 흐름에서는 거의 발생 안 함. 옛 worktree 에 남은 잔재라면 `pnpm db:reset && pnpm db:start`. 격리 DB 라 무손실.
@@ -253,7 +253,7 @@ pnpm db:cleanup-orphans
 | [scripts/db/cleanup-orphans.sh](../scripts/db/cleanup-orphans.sh) | 사라진 worktree 의 컨테이너 + 볼륨 일괄 삭제. |
 | [scripts/hooks/session-start-db.sh](../scripts/hooks/session-start-db.sh) | Claude Code SessionStart — 컨테이너 없으면 백그라운드 풀 부트스트랩. |
 | [scripts/hooks/session-end-db.sh](../scripts/hooks/session-end-db.sh) | Claude Code SessionEnd — worktree 한정 down -v. |
-| [prisma/seed.ts](../prisma/seed.ts) | `app_settings` + `admin_users` upsert. |
+| [prisma/seed.ts](../prisma/seed.ts) | `app_settings` + (env 있으면) `user`+`admin` upsert. |
 | [.github/workflows/check-no-migrations.yml](../.github/workflows/check-no-migrations.yml) | PR 에 `prisma/migrations/` 변경 차단. |
 | [.github/workflows/auto-migration.yml](../.github/workflows/auto-migration.yml) | develop push → dev Supabase 에 자동 migration 생성 + commit. |
 | [.github/workflows/deploy-migrations.yml](../.github/workflows/deploy-migrations.yml) | master push (migrations/ 변경) → 운영 Supabase 에 `prisma migrate deploy`. |

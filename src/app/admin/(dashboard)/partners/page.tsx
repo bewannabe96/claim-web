@@ -49,14 +49,14 @@ export default async function AdminPartnersPage() {
                   className="flex items-center gap-3 group"
                 >
                   <span className="flex items-center justify-center w-9 h-9 rounded-full bg-black text-white text-sm font-bold shrink-0">
-                    {a.name.charAt(0)}
+                    {a.user.name.charAt(0)}
                   </span>
                   <span className="flex flex-col gap-0.5 min-w-0">
                     <span className="text-sm font-medium text-black group-hover:underline truncate">
-                      {a.name}
+                      {a.user.name}
                     </span>
                     <span className="text-xs text-[#4b4b4b] truncate">
-                      {a.email}
+                      {a.user.email}
                     </span>
                   </span>
                 </Link>
