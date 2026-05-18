@@ -32,6 +32,7 @@ export async function saveSettings(
     selectLimit: formData.get("selectLimit"),
     submissionDeadlineHours: formData.get("submissionDeadlineHours"),
     penaltyWindow: formData.get("penaltyWindow"),
+    resultRetentionDays: formData.get("resultRetentionDays"),
   });
 
   if (!parsed.success) {
@@ -51,6 +52,8 @@ export async function saveSettings(
 
   revalidatePath("/admin/settings");
   revalidatePath("/admin");
+  // 결과 페이지가 보관 기간 (만료 검사 + 푸터 문구) 에 의존 — 변경 시 갱신.
+  revalidatePath("/result", "layout");
   return { ok: true };
 }
 

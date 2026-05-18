@@ -10,9 +10,12 @@ import {
 import { getRequestByResultToken } from "@/features/requests/queries";
 import { getSettings } from "@/server/settings";
 
+import { ExpiredState } from "./_components/expired-state";
 import { RematchingState } from "./_components/rematching-state";
 import { ResultView } from "./_components/result-view";
 import { adaptProposal } from "./_lib/adapt-proposal";
+
+const MS_PER_DAY = 86_400_000;
 
 /**
  * 결과 열람 — 알림톡 일회용 토큰으로 진입.
@@ -41,20 +44,36 @@ export default async function ResultPage({
   const req = await getRequestByResultToken(token);
   if (!req) notFound();
 
+  const settings = await getSettings();
+
+  // dispatchedAt + retentionDays 경과 시 만료. finalize 가 항상 dispatchedAt 을
+  // 채우므로 undefined 인 경우는 이론상 없으나, 보수적으로 만료 처리 스킵.
+  const isExpired =
+    req.dispatchedAt !== undefined &&
+    Date.now() - new Date(req.dispatchedAt).getTime() >
+      settings.resultRetentionDays * MS_PER_DAY;
+
+  if (isExpired) {
+    return (
+      <main className="flex flex-col flex-1 bg-white">
+        <div className="px-6 pt-10">
+          <BrandMark />
+        </div>
+        <ExpiredState />
+      </main>
+    );
+  }
+
   // 실 데이터 — submitted proposal + 작성 설계사 카드.
   const cards = await listProposalCardsForRequest(req.id);
 
   // 각 proposal 의 분석 리포트 — proposal.id 1:1. 분석 미완료면 null (placeholder UI).
-  // 시나리오 우선순위 설정은 admin → app_settings.
-  const [settings, reportEntries] = await Promise.all([
-    getSettings(),
-    Promise.all(
-      cards.map(async (card) => {
-        const report = await loadReportForCard(card);
-        return [card.proposal.id, report] as const;
-      }),
-    ),
-  ]);
+  const reportEntries = await Promise.all(
+    cards.map(async (card) => {
+      const report = await loadReportForCard(card);
+      return [card.proposal.id, report] as const;
+    }),
+  );
   const reportsById: Record<string, AnalysisReportV5> = Object.fromEntries(
     reportEntries.filter(
       (e): e is readonly [string, AnalysisReportV5] => e[1] !== null,
@@ -107,6 +126,7 @@ export default async function ResultPage({
           proposals={proposals}
           reportsById={reportsById}
           scenarioPriority={settings.scenarioPriority}
+          resultRetentionDays={settings.resultRetentionDays}
         />
       )}
     </main>

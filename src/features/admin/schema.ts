@@ -27,6 +27,11 @@ export const SettingsInputSchema = z.object({
     .int()
     .min(1)
     .max(100),
+  resultRetentionDays: z.coerce
+    .number({ message: "숫자를 입력해주세요." })
+    .int()
+    .min(1, "최소 1일 이상이어야 합니다.")
+    .max(30, "최대 30일까지 설정 가능합니다."),
 });
 
 export type SettingsInput = z.infer<typeof SettingsInputSchema>;

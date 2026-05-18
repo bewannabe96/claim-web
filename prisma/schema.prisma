@@ -290,6 +290,9 @@ model AppSettings {
   /// 미제출률 페널티 산정 윈도우 (최근 N건)
   penaltyWindow          Int @default(10) @map("penalty_window")
 
+  /// 결과 페이지 보관 기간 (일). dispatchedAt + N일 경과 시 결과 토큰 만료.
+  resultRetentionDays    Int @default(7)  @map("result_retention_days")
+
   /// 결과 페이지 시나리오 우선순위. category_payouts.category 값의 ordered array.
   /// 앞에서부터 top3 후보. 보장 없는 카테고리는 자동 스킵 후 다음으로 대체.
   /// 리스트에 없는 카테고리는 모달 "기타" 영역에 가나다순으로 노출.
