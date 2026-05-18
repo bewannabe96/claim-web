@@ -38,9 +38,9 @@ export async function signInAdmin(
 
   const user = await prisma.user.findUnique({
     where: { email: parsed.data.email },
-    select: { id: true, authId: true, role: true, admin: { select: { active: true } } },
+    select: { id: true, authId: true, admin: { select: { active: true } } },
   });
-  if (!user || user.role !== "admin" || !user.admin?.active) {
+  if (!user || !user.admin?.active) {
     await supabase.auth.signOut();
     return { error: "로그인에 실패했습니다." };
   }

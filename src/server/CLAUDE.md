@@ -10,8 +10,9 @@
 
 - `dal.ts` — Data Access Layer. **모든 인증 검사의 단일 진입점.**
   - `getOptionalUser()` — Supabase `auth.getUser()` → `claim.user` (where authId) 조회. cache 로 same-request dedupe.
-  - `requireAdminSession()` — user + `claim.admin.active` 2단계 검증. role='admin' 도 함께 확인.
-  - `requirePartnerSession()` — user + `claim.partner.active` 2단계 검증. role='partner' 도 함께 확인.
+  - `requireAdminSession()` — user + `claim.admin.active` 2단계 검증 (admin extension row 존재 + active).
+  - `requirePartnerSession()` — user + `claim.partner.active` 2단계 검증 (partner extension row 존재 + active).
+  - 한 사용자가 admin/partner 동시 권한 가능 — 각 require\*Session 은 해당 extension 만 확인.
   - 미인증/권한 없음 → 각 영역 login 페이지로 redirect (admin: `/admin/login`, partner: `/partner/login`).
 - `supabase.ts` — `@supabase/ssr` 의 `createServerClient` wrap. cookie-based 세션 +
   publishable key 사용 (RLS 적용). Auth flow (signIn/signOut/getUser) 가 이걸 쓰고,
@@ -231,38 +232,46 @@ pnpm db:push
 수동 SQL (data migration / rename 등) 이 필요한 경우만 예외: PR 에 `manual-migration`
 label 추가 → CI 차단 우회 → 직접 `prisma/migrations/<...>/migration.sql` 작성.
 
-## 인증 구조 (Supabase + User/role extension)
+## 인증 구조 (Supabase + 역할 extension)
 
-모든 인증은 단일 Supabase auth 풀. role 별로 extension 테이블 1:1 (PK 공유):
+모든 인증은 단일 Supabase auth 풀. 역할별로 extension 테이블 1:1 (PK 공유) — 한
+사용자가 여러 extension (admin + partner) 을 동시에 가질 수 있음:
 
 ```
 auth.users (Supabase 관리)
    │ 1:1 via authId (UUID, claim 후 채워짐)
    ▼
-claim.user        — 공통 정보 (id=nanoid, role discriminator)
-   │ 1:1 (PK 공유)
-   ├──▶ claim.partner — 설계사 (avatarUrl, bio, yearsOfExperience, trustMetric, licenseNumber, active, exposure 카운터)
+claim.user        — 공통 정보 (id=nanoid, email/name/phone[UNIQUE])
+   │ 1:1 (PK 공유) — 둘 다 가질 수도 있음
+   ├──▶ claim.partner — 설계사 (bio, yearsOfExperience, trustMetric, licenseNumber, active, exposure 카운터)
    └──▶ claim.admin   — 운영자 (active, 향후 permissions)
+
+claim.partner_invitation (임시) — partner 가입 진행 중 임시 보관. 가입 완료 시 user+partner 트랜잭션 INSERT + consumed.
 ```
 
-`User.authId` 는 nullable — 사전 등록 시 null, 첫 로그인 시점에 login action/callback 이
-email 로 user 찾아 claim. 이후엔 DAL 이 `where: { authId }` 로 바로 lookup.
+`User.authId` 는 nullable — admin 은 운영자가 사전 등록 (authId=null) 후 첫 비번 로그인 시 claim.
+partner 는 `partner_invitation → Kakao 가입 콜백` 단일 진입점에서 user/partner row 와 authId 가
+동시에 INSERT 되므로 nullable 인 채로 남는 케이스가 거의 없음. 이후 로그인은 DAL 이
+`where: { authId }` 로 바로 lookup.
 
 구성 파일:
 
 1. **`supabase.ts`** — `@supabase/ssr` 의 `createServerClient` 로 cookie-based 세션. read 는 headers,
    write 는 mutable context (action/route handler/middleware) 에서만.
-2. **`dal.ts`** — `getOptionalUser()` 진입점 + role 별 `getOptional*Session()` / `require*Session()`.
-   `requireAdminSession()`, `requirePartnerSession()` 둘 다 user + extension active 통과 시에만
-   세션 반환 (defense in depth).
+2. **`dal.ts`** — `getOptionalUser()` 진입점 + 역할별 `getOptional*Session()` / `require*Session()`.
+   `requireAdminSession()`, `requirePartnerSession()` 둘 다 user + 해당 extension active
+   통과 시에만 세션 반환. extension 존재 자체가 권한 — 둘 다 가진 사용자는 양쪽 모두 통과.
 3. **루트 `middleware.ts`** — `/admin/*` + `/partner/*` optimistic 차단.
    **인증 boundary 아님** (docs/architecture.md §7.2) — 세션 cookie 없는 명백한 비로그인 유저를
    즉시 307 로 튕기고, 실제 권한은 DAL 이 판정. PPR 모드의 1초 meta refresh fallback 회피 목적도 겸함.
    admin 은 knock + X-Robots-Tag 추가. partner 는 `/partner/login` + `/partner/assignments/*`
-   (알림톡 토큰 진입) carve-out.
+   (알림톡 토큰 진입) + `/partner/signup/*` (가입 초청 token) carve-out.
 
 로그인 흐름:
 
-- **Admin** (`/admin/login`) — 이메일/비번 → `signInWithPassword` → user lookup (role + admin.active) → authId claim → `/admin`.
-- **Partner** (`/partner/login`) — Kakao OAuth → `signInWithOAuth` → Kakao 인증 → `/api/auth/callback` 가
-  code→session 교환 + user lookup (role + partner.active) + authId claim → `/partner`.
+- **Admin** (`/admin/login`) — 이메일/비번 → `signInWithPassword` → user lookup (admin.active) → authId claim → `/admin`.
+- **Partner — 로그인** (`/partner/login`) — 이미 가입된 partner. Kakao OAuth → `signInWithOAuth` → Kakao 인증 → `/api/auth/callback` 가
+  code→session 교환 + user lookup (partner.active) → `/partner`.
+- **Partner — 가입** (`/partner/signup/<invitation_token>`) — 어드민이 발급한 일회용 초청. Kakao OAuth →
+  `/api/auth/callback?signup=<token>` 가 invitation 재확인 + Kakao phone vs invitation.phone 매칭 +
+  user/partner 트랜잭션 INSERT + invitation 소비 → `/partner`. 자세한 건 docs/architecture.md §7.4.

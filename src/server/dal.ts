@@ -16,8 +16,9 @@ import { getSupabaseServerClient } from "@/server/supabase";
  *   - Partner (claim.partner) — partner 추가 정보. id=User.id 공유.
  *   - Admin (claim.admin) — admin 추가 정보. id=User.id 공유.
  *
- * 권한 검증 = 인증(Supabase getUser) + role 확인 + extension row 존재 2단계.
- * "Supabase 로그인 == admin/partner" 가 아님 — User.role + extension active 모두 통과해야.
+ * 역할 판단 = Partner / Admin extension row 존재(+active). 한 사용자가 둘 다 가질 수
+ * 있음 — 각 require*Session() 은 해당 extension 만 확인. "Supabase 로그인 == 권한"
+ * 이 아니라 매 요청마다 extension active 까지 확인해야 통과.
  *
  * 첫 로그인 시 User.authId 가 null → callback/action 이 email 로 lookup 후 authId 채움
  * (claim). 이후 로그인은 authId 로 직접 조회 (빠른 path).
@@ -29,7 +30,6 @@ export type SessionUser = {
   email: string;
   name: string;
   phone: string | null;
-  role: "general" | "partner" | "admin";
 };
 
 export type PartnerSession = { kind: "partner"; user: SessionUser; partnerId: string };
@@ -57,7 +57,6 @@ export const getOptionalUser = cache(async (): Promise<SessionUser | null> => {
       email: true,
       name: true,
       phone: true,
-      role: true,
     },
   });
   if (!user || !user.authId) return null;
@@ -68,13 +67,12 @@ export const getOptionalUser = cache(async (): Promise<SessionUser | null> => {
     email: user.email,
     name: user.name,
     phone: user.phone,
-    role: user.role as SessionUser["role"],
   };
 });
 
 export async function getOptionalAdminSession(): Promise<AdminSession | null> {
   const user = await getOptionalUser();
-  if (!user || user.role !== "admin") return null;
+  if (!user) return null;
 
   const admin = await prisma.admin.findUnique({
     where: { id: user.id },
@@ -93,7 +91,7 @@ export async function requireAdminSession(): Promise<AdminSession> {
 
 export async function getOptionalPartnerSession(): Promise<PartnerSession | null> {
   const user = await getOptionalUser();
-  if (!user || user.role !== "partner") return null;
+  if (!user) return null;
 
   const partner = await prisma.partner.findUnique({
     where: { id: user.id },
