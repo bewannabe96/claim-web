@@ -68,12 +68,16 @@ pnpm db:push             # 일상: schema.prisma 변경 후 로컬 격리 DB 즉
 pnpm db:migrate:deploy   # git pull 로 받은 migration 을 로컬에 적용
 pnpm db:reset            # 볼륨 삭제 → 다음 start 에서 깨끗하게
 pnpm db:status           # 모든 worktree 의 컨테이너 한 화면
+pnpm db:cleanup-orphans  # 사라진 worktree 의 고아 컨테이너 + 볼륨 일괄 삭제 (메인 리포에서 호출)
 pnpm db:psql / db:logs / db:stop / db:seed
 ```
 
 **금지**: `pnpm prisma migrate dev` 직접 호출 / `prisma/migrations/` 수동 편집. develop CI 가 단일 writer (PR 단계에서 CI 가 차단). 데이터 마이그레이션 등 수동 SQL 필요 시는 PR `manual-migration` label.
 
-SessionStart hook 이 컨테이너만 silent 기동 — migration/seed 는 명시 호출.
+**Claude Code 라이프사이클 hook (worktree 한정)**:
+- **SessionStart** → 컨테이너 없거나 정지면 백그라운드 풀 부트스트랩 (compose up + migration + seed). 로그 `.claude/db-bootstrap.log`. 첫 명령이 DB 를 친다면 `tail -f .claude/db-bootstrap.log` 로 진행 확인.
+- **SessionEnd** → `docker compose down -v` (컨테이너 + 볼륨 완전 삭제). 다음 SessionStart 가 자동 재구축.
+- 메인 리포 세션에서는 hook 동작 안 함 (worktree 만).
 
 ## 새 기능 추가 워크플로우
 

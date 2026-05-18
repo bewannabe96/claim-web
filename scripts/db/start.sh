@@ -35,6 +35,12 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+# node_modules 없으면 install 먼저 — 이후 prisma 호출에 필요. 멱등.
+if [ ! -d node_modules ] || [ ! -x node_modules/.bin/prisma ]; then
+  echo "[db] Installing dependencies..."
+  pnpm install
+fi
+
 docker compose up -d postgres
 
 # healthcheck 대기 (최대 ~60s)
