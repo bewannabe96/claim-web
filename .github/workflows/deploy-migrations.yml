@@ -1,0 +1,46 @@
+name: Apply migrations to production
+
+# master 에 schema 변경이 머지되면 (= prisma/migrations/ 변경 포함) 운영 DB 에
+# 정식 적용. Vercel build 와 분리 — observability + 직렬화 + manual approval (선택).
+#
+# Required secrets (Repository settings → Secrets and variables → Actions):
+#   - PROD_DATABASE_URL : 운영 Supabase Transaction pooler URL (?pgbouncer=true&schema=claim)
+#   - PROD_DIRECT_URL   : 운영 Supabase Session pooler URL     (?schema=claim)
+#
+# 선택 사항 (manual approval 원할 시):
+#   - Repository settings → Environments → "production" 환경 생성
+#   - "Required reviewers" 에 본인 추가 → 매 적용 전 승인 버튼 노출
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'prisma/migrations/**'
+  workflow_dispatch:  # 수동 재실행 (rollback / 재시도용)
+
+concurrency:
+  group: prisma-prod-migrations
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production   # GitHub environment — 위 "선택 사항" 사용 시 manual approval 게이트
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL:   ${{ secrets.PROD_DIRECT_URL }}
+        run: pnpm prisma migrate deploy

@@ -54,6 +54,27 @@ pnpm build     # 프로덕션 빌드 + 타입 체크
 pnpm lint      # ESLint
 ```
 
+## 로컬 DB — schema-first 워크플로우
+
+- **worktree 격리 Docker Postgres** — 일상 작업. `pnpm db:push` 로 schema.prisma → 로컬 즉시 sync (migration 안 만듦).
+- **develop dev DB** = 원격 Supabase dev project. develop merge 후 CI 가 누적 schema diff 로 migration 1 개 자동 생성/적용.
+- **운영 Supabase** — master merge → GitHub Actions `deploy-migrations.yml` 가 `prisma migrate deploy` 자동 적용 (Vercel build 와 분리 — observability + 직렬화).
+
+전체 흐름과 충돌 카탈로그: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
+
+```bash
+pnpm db:start            # 첫 진입: Docker 기동 + migration deploy + seed (멱등)
+pnpm db:push             # 일상: schema.prisma 변경 후 로컬 격리 DB 즉시 sync
+pnpm db:migrate:deploy   # git pull 로 받은 migration 을 로컬에 적용
+pnpm db:reset            # 볼륨 삭제 → 다음 start 에서 깨끗하게
+pnpm db:status           # 모든 worktree 의 컨테이너 한 화면
+pnpm db:psql / db:logs / db:stop / db:seed / db:seed:fixtures
+```
+
+**금지**: `pnpm prisma migrate dev` 직접 호출 / `prisma/migrations/` 수동 편집. develop CI 가 단일 writer (PR 단계에서 CI 가 차단). 데이터 마이그레이션 등 수동 SQL 필요 시는 PR `manual-migration` label.
+
+SessionStart hook 이 컨테이너만 silent 기동 — migration/seed 는 명시 호출.
+
 ## 새 기능 추가 워크플로우
 
 1. **위치 결정** — 인증? `(app)/` : `(marketing)/`. 도메인 로직? `features/<도메인>/`.

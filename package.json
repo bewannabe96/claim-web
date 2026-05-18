@@ -7,7 +7,20 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:start": "bash scripts/db/start.sh",
+    "db:stop": "bash scripts/db/stop.sh",
+    "db:reset": "bash scripts/db/reset.sh",
+    "db:status": "bash scripts/db/status.sh",
+    "db:psql": "bash scripts/db/psql.sh",
+    "db:logs": "bash scripts/db/logs.sh",
+    "db:push": "bash scripts/db/push.sh",
+    "db:migrate:deploy": "bash scripts/db/migrate-deploy.sh",
+    "db:seed": "bash -c 'source scripts/db-env.sh && pnpm prisma db seed'",
+    "db:seed:fixtures": "bash -c 'source scripts/db-env.sh && tsx prisma/fixtures.ts'"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1047.0",
@@ -39,6 +52,7 @@
     "eslint-config-next": "16.2.4",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
+    "tsx": "^4.22.1",
     "typescript": "^5"
   }
 }
