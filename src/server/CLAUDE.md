@@ -19,7 +19,7 @@
   (`verifyUploadedObject`) + 본문 SHA-256 계산 (`fetchObjectSha256`, stream-based — 외부 분석 리포트와 join 할 hash).
 - `settings.ts` — single-row `app_settings` 로드/갱신. `SettingsPatch` 가 admin 폼에서 갱신
   가능한 필드 (candidateCount / selectLimit / submissionDeadlineHours / penaltyWindow /
-  scenarioPriority).
+  resultRetentionDays / scenarioPriority).
 
 ## S3 버킷 설정 (제안서 PDF)
 

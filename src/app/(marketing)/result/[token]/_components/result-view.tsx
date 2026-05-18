@@ -22,12 +22,15 @@ export function ResultView({
   proposals,
   reportsById,
   scenarioPriority,
+  resultRetentionDays,
 }: {
   proposals: ProposalData[];
   /** 제안서별 분석 리포트. 키는 proposal.id. 분석 미완료 proposal 은 entry 없음. */
   reportsById?: Record<string, AnalysisReportV5>;
   /** admin 이 설정한 시나리오 우선순위 (app_settings.scenarioPriority). */
   scenarioPriority?: readonly string[];
+  /** admin 이 설정한 결과 보관 기간 (일). 푸터 안내 문구에 노출. */
+  resultRetentionDays: number;
 }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [contacted, setContacted] = useState<Set<string>>(new Set());
@@ -100,6 +103,7 @@ export function ResultView({
         proposals={proposals}
         reports={reports}
         scenarioPriority={scenarioPriority ?? []}
+        resultRetentionDays={resultRetentionDays}
         contacted={contacted.has(active.id)}
         onContact={() => markContacted(active.id)}
       />
@@ -116,6 +120,7 @@ function ProposalBody({
   proposals,
   reports,
   scenarioPriority,
+  resultRetentionDays,
   contacted,
   onContact,
 }: {
@@ -123,6 +128,7 @@ function ProposalBody({
   proposals: ProposalData[];
   reports: AnalysisReportV5[];
   scenarioPriority: readonly string[];
+  resultRetentionDays: number;
   contacted: boolean;
   onContact: () => void;
 }) {
@@ -312,7 +318,7 @@ function ProposalBody({
           <br />
           AI 가 분석한 자료라 약간의 오차가 있을 수 있어요.
         </p>
-        <p>결과는 7일간 유지돼요</p>
+        <p>결과는 {resultRetentionDays}일간 유지돼요</p>
       </div>
     </article>
 

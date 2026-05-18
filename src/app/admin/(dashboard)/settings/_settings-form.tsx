@@ -7,6 +7,19 @@ import { Input } from "@/components/ui/input";
 import { saveSettings } from "@/features/admin/actions";
 import type { SettingsInput } from "@/features/admin/schema";
 
+/**
+ * Uncontrolled 폼 + key 로 입력만 강제 remount.
+ *
+ * Base UI Input 은 `defaultValue` 의 후속 변경에 warn — server action 성공 후
+ * revalidatePath 가 새 initial 을 prop 으로 흘리면 발생. controlled 로 가면
+ * React 19 `<form action>` 이 transition 안에서 client state 복원 흐름이
+ * 꼬임 (invalid 제출 시 사용자 입력이 사라짐).
+ *
+ * 해결: `useActionState` 는 부모 (이 컴포넌트) 에 두고 success/error 메시지
+ * 도 여기서 렌더 — 입력 필드만 key 로 묶어 remount. initial 이 바뀌면 (성공
+ * 저장 후 revalidate) 입력만 새 defaultValue 로 초기화되고, 성공 메시지는
+ * useActionState 상태 그대로 유지.
+ */
 export function SettingsForm({
   initial,
 }: {
@@ -16,8 +29,51 @@ export function SettingsForm({
   const errors = state && "errors" in state ? state.errors : undefined;
   const success = state && "ok" in state && state.ok;
 
+  const fieldsKey = [
+    initial.candidateCount,
+    initial.selectLimit,
+    initial.submissionDeadlineHours,
+    initial.penaltyWindow,
+    initial.resultRetentionDays,
+  ].join("|");
+
   return (
     <form action={formAction} className="flex flex-col gap-6">
+      <SettingFields key={fieldsKey} initial={initial} errors={errors} />
+
+      {errors?._form && (
+        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
+          {errors._form[0]}
+        </p>
+      )}
+      {success && (
+        <p className="text-sm text-black bg-[#efefef] px-3 py-2 rounded-lg">
+          저장되었습니다. 다음 매칭부터 새 값이 적용돼요.
+        </p>
+      )}
+
+      <div className="flex justify-end pt-2">
+        <Button
+          type="submit"
+          disabled={pending}
+          className="h-11 rounded-full px-8 text-sm font-medium"
+        >
+          {pending ? "저장 중..." : "변경 저장"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function SettingFields({
+  initial,
+  errors,
+}: {
+  initial: SettingsInput;
+  errors: Partial<Record<keyof SettingsInput | "_form", string[]>> | undefined;
+}) {
+  return (
+    <>
       <SettingField
         name="candidateCount"
         label="후보 수 (N)"
@@ -50,28 +106,15 @@ export function SettingsForm({
         unit="건"
         error={errors?.penaltyWindow?.[0]}
       />
-
-      {errors?._form && (
-        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
-          {errors._form[0]}
-        </p>
-      )}
-      {success && (
-        <p className="text-sm text-black bg-[#efefef] px-3 py-2 rounded-lg">
-          저장되었습니다. 다음 매칭부터 새 값이 적용돼요.
-        </p>
-      )}
-
-      <div className="flex justify-end pt-2">
-        <Button
-          type="submit"
-          disabled={pending}
-          className="h-11 rounded-full px-8 text-sm font-medium"
-        >
-          {pending ? "저장 중..." : "변경 저장"}
-        </Button>
-      </div>
-    </form>
+      <SettingField
+        name="resultRetentionDays"
+        label="결과 보관 기간"
+        helper="가입자 결과 페이지가 유지되는 일수. 경과 시 토큰 만료 처리."
+        defaultValue={initial.resultRetentionDays}
+        unit="일"
+        error={errors?.resultRetentionDays?.[0]}
+      />
+    </>
   );
 }
 
