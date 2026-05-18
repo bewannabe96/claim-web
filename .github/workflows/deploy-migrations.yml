@@ -8,7 +8,7 @@ name: Apply migrations to production
 #   - PROD_DIRECT_URL   : 운영 Supabase Session pooler URL     (?schema=claim)
 #
 # 선택 사항 (manual approval 원할 시):
-#   - Repository settings → Environments → "production" 환경 생성
+#   - Repository settings → Environments → "prod" 환경 생성
 #   - "Required reviewers" 에 본인 추가 → 매 적용 전 승인 버튼 노출
 
 on:
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production   # GitHub environment — 위 "선택 사항" 사용 시 manual approval 게이트
+    environment: prod         # GitHub environment — 위 "선택 사항" 사용 시 manual approval 게이트
     steps:
       - uses: actions/checkout@v4
 
