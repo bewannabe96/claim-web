@@ -54,13 +54,14 @@ db-env.sh ←─ source ─┬─ write-env-local.sh
 **무엇을**: worktree 의 로컬 DB 환경 전체를 한 번에 준비. 멱등 — 매번 호출해도 안전.
 
 **시퀀스**:
-1. `docker info` 체크 (daemon 없으면 명확한 ERROR 후 exit 1).
-2. `docker compose up -d postgres` (이미 떠 있으면 no-op).
-3. `pg_isready` healthcheck 대기 (최대 ~60 초).
-4. `write-env-local.sh` 호출 → `.env.local` 갱신.
-5. `pnpm prisma migrate deploy` → `prisma/migrations/` 의 모든 migration 적용.
-6. `pnpm prisma generate` → Prisma Client 재생성.
-7. `pnpm prisma db seed` → `app_settings('app')` + `admin_users(본인)` upsert.
+1. worktree 에 `.env` 없으면 메인 리포의 `.env` 자동 복사 (git common-dir 로 메인 리포 위치 추론). 메인 리포에도 없으면 WARN 후 계속.
+2. `docker info` 체크 (daemon 없으면 명확한 ERROR 후 exit 1).
+3. `docker compose up -d postgres` (이미 떠 있으면 no-op).
+4. `pg_isready` healthcheck 대기 (최대 ~60 초).
+5. `write-env-local.sh` 호출 → `.env.local` 갱신.
+6. `pnpm prisma migrate deploy` → `prisma/migrations/` 의 모든 migration 적용.
+7. `pnpm prisma generate` → Prisma Client 재생성.
+8. `pnpm prisma db seed` → `app_settings('app')` + `admin_users(본인)` upsert.
 
 **언제 호출**:
 - 새 worktree 진입 직후 (최초 1회 필수 — hook 은 컨테이너만 띄우고 migration/seed 안 함).

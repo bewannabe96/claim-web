@@ -10,6 +10,22 @@ echo "[db] Worktree: $WORKTREE_NAME"
 echo "[db] Project:  $COMPOSE_PROJECT_NAME"
 echo "[db] Port:     $POSTGRES_HOST_PORT"
 
+# worktree 에 .env 가 없으면 메인 리포의 .env 를 한 번 복사.
+# 메인 리포 자체에서 실행 시엔 자기 자신 복사 회피.
+if [ ! -f .env ]; then
+  COMMON_DIR="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  if [ -n "$COMMON_DIR" ]; then
+    MAIN_REPO="$(cd "$COMMON_DIR/.." && pwd)"
+    if [ "$MAIN_REPO" != "$(pwd)" ] && [ -f "$MAIN_REPO/.env" ]; then
+      cp "$MAIN_REPO/.env" .env
+      echo "[db] Copied .env from main repo: $MAIN_REPO/.env"
+    else
+      echo "[db] WARN: no .env found. Copy .env.example to .env and fill values."
+      echo "[db]       (Set up .env in main repo once; future worktrees will inherit it.)"
+    fi
+  fi
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo "[db] ERROR: docker CLI not found. Install Docker Desktop or colima." >&2
   exit 1

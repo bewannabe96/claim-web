@@ -47,18 +47,27 @@
 git worktree add .claude/worktrees/<new-name> -b <branch-name> develop
 cd .claude/worktrees/<new-name>
 pnpm install
-cp .env.example .env  # 채울 값은 아래 참고
 pnpm db:start         # Docker 기동 + 기존 migration 적용 + seed
+                      #   메인 리포에 .env 가 있으면 자동 복사 (없으면 안내)
 ```
 
-### .env 에 채울 값 (한 번만, worktree 공통)
+### `.env` 셋업 (메인 리포에 한 번만, worktree 들이 자동 상속)
 
+메인 리포 (`.claude/worktrees/` 의 부모) 에서 `.env` 를 한 번 만들어두면 `pnpm db:start` 가 새 worktree 마다 자동 복사. 이후 worktree 작업은 `.env` 신경 안 써도 됨.
+
+```bash
+cd <main-repo-root>
+cp .env.example .env
+# 아래 값 채우기
+```
+
+채울 값:
 - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` — 원격 dev Supabase project
 - `LOCAL_DEV_ADMIN_USER_ID`, `LOCAL_DEV_ADMIN_EMAIL` — 본인 admin UUID/email (Dashboard → Authentication → Users)
 - `AWS_*`, `S3_BUCKET_PROPOSALS`, `SQS_ANALYSIS_QUEUE_URL` — 제안서/분석 쓸 때만
 - `ADMIN_KNOCK_PATH` — admin URL obfuscation (선택)
 
-**`DATABASE_URL`, `DIRECT_URL` 은 비워둘 것** — `pnpm db:start` 가 `.env.local` 에 자동 생성.
+**`DATABASE_URL`, `DIRECT_URL` 은 비워둘 것** — `pnpm db:start` 가 `.env.local` 에 자동 생성 (worktree 별 포트로 override).
 
 ### schema 변경 작업
 
