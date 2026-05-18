@@ -19,7 +19,13 @@ import { getSupabaseServerClient } from "@/server/supabase";
 export async function signInWithKakao() {
   const supabase = await getSupabaseServerClient();
   const h = await headers();
-  const origin = h.get("origin") ?? `https://${h.get("host") ?? ""}`;
+  // reverse proxy (Vercel / ngrok) 환경에서 host 헤더가 internal 로 잡히는 경우 대비.
+  // 우선순위: Origin > x-forwarded-* > host (proto 는 dev http 대응).
+  const forwardedHost = h.get("x-forwarded-host");
+  const forwardedProto = h.get("x-forwarded-proto");
+  const host = forwardedHost ?? h.get("host") ?? "";
+  const proto = forwardedProto ?? (host.startsWith("localhost") ? "http" : "https");
+  const origin = h.get("origin") ?? `${proto}://${host}`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "kakao",
