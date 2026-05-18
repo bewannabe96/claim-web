@@ -21,6 +21,10 @@ on:
     branches: [develop]
     paths:
       - 'prisma/schema.prisma'
+      # 수동 작성 migration (manual-migration label PR) 가 머지된 경우에도
+      # dev DB 에 적용돼야 함. 자기 자신이 만든 commit 은 메시지에 [skip ci] 가
+      # 있어 재트리거 안 됨 (아래 Commit & push 스텝 참고).
+      - 'prisma/migrations/**'
 
 concurrency:
   # 여러 develop push 가 거의 동시에 들어와도 직렬화 (race 방지)
