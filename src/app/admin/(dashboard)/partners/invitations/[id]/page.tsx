@@ -84,7 +84,7 @@ export default async function AdminPartnerInvitationDetailPage({
             <CopyLink url={signupUrl} />
             <p className="text-xs text-[#4b4b4b]">
               이 링크를 카카오톡으로 설계사에게 전달해주세요. 설계사가 링크
-              진입 후 카카오 로그인을 완료하면 정식 가입됩니다.
+              진입 후 카카오 로그인 + 본인인증을 완료하면 정식 가입됩니다.
             </p>
             <dl className="grid grid-cols-2 gap-4 mt-2 pt-4 border-t border-[#efefef]">
               <Meta label="발급일" value={formatDateTime(invitation.createdAt)} />

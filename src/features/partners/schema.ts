@@ -69,11 +69,13 @@ export type PartnerInvitation = PrismaPartnerInvitation;
  * 가입 초청 token 유효성 검사 시점에 가입 페이지가 사용하는 슬림 뷰.
  * 보안상 token 자체는 반환에서 제외 (이미 URL 로 받은 값).
  *
- * `phoneVerifiedAt` 으로 페이지가 본인인증 단계 vs Kakao 가입 단계 분기.
+ * `linkedAuthId` 로 페이지가 Kakao 가입 단계 (NULL) vs 본인인증 단계 (NOT NULL)
+ * 분기. 본인인증 audit (`phoneVerifiedAt`) 은 view 에 포함하지 않음 — 가입 직전
+ * 트랜잭션 안에서만 의미가 있고 페이지 분기에는 사용되지 않음.
  */
 export type PartnerInvitationView = Pick<
   PrismaPartnerInvitation,
-  "id" | "name" | "phone" | "expiresAt" | "consumedAt" | "phoneVerifiedAt"
+  "id" | "name" | "phone" | "expiresAt" | "consumedAt" | "linkedAuthId"
 >;
 
 /**

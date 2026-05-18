@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -10,15 +9,19 @@ import { cn } from "@/lib/utils";
 import {
   requestPartnerSignupOtp,
   verifyPartnerSignupOtp,
-} from "../actions";
+} from "../../actions";
 
 /**
- * Step 1 본인인증 폼 — 이름/주민번호/휴대폰 입력 + OTP 발송/검증.
+ * Step 2 본인인증 폼 — 이름/주민번호/휴대폰 입력 + OTP 발송/검증 + 가입 완료.
+ *
+ * 진입 게이트: verify 페이지가 Kakao 세션 + invitation.linkedAuthId 매칭을 검증.
+ * 액션 자체도 동일 검증을 자체 수행 (server action 은 layout 게이트 미적용).
  *
  * 이름·휴대폰: invitation prefill, readonly (수정 불가).
  * 주민번호: 사용자 입력 (앞 6 / 뒤 1). 6자리 채우면 자동 focus → 뒤 1자리.
  * 인증번호 발송: 주민번호 형식 통과 후 활성. 누르면 OTP 입력 칸 노출.
- * 확인: OTP 6자리 입력 후 활성. 통과 시 router.refresh() → 페이지가 Step 2 분기.
+ * 확인: OTP 6자리 입력 후 활성. 통과 시 server action 이 단일 트랜잭션으로 user +
+ * partner INSERT + invitation 소비 후 `/partner` 로 redirect — client 별도 navigation 불필요.
  *
  * PortOne 연동 전 placeholder — 서버 액션은 production 환경에서 fail-closed.
  */
@@ -31,7 +34,6 @@ export function VerifyForm({
   name: string;
   phone: string;
 }) {
-  const router = useRouter();
   const [rrnFront, setRrnFront] = useState("");
   const [rrnBack, setRrnBack] = useState("");
   const [code, setCode] = useState("");
@@ -69,12 +71,12 @@ export function VerifyForm({
   const onVerify = () => {
     setError(null);
     startVerifying(async () => {
+      // 성공 시 server action 이 `/partner` 로 redirect 를 throw 하므로 이 라인 도달 안 함.
+      // 실패 분기만 result 로 반환됨.
       const result = await verifyPartnerSignupOtp(token, code);
       if (!result.ok) {
         setError(result.error);
-        return;
       }
-      router.refresh();
     });
   };
 

@@ -208,8 +208,9 @@ model Partner {
 // ============================================================
 // 운영자가 신규 설계사 등록 시 user/partner row 를 즉시 만들지 않고 이 테이블에만
 // INSERT. 설계사가 발급된 일회용 가입 링크 (`/partner/signup/[token]`) 로 진입 →
-// Kakao OAuth → callback 이 phone 매칭 검증 후 user + partner 트랜잭션 생성 +
-// invitation 소비 (consumedAt + consumedUserId).
+// Kakao OAuth (콜백이 linkedAuthId lock) → /verify 페이지의 본인인증 통과 →
+// 단일 트랜잭션으로 user + partner INSERT + invitation 소비 (consumedAt +
+// consumedUserId + phoneVerifiedAt audit).
 //
 // 한 invitation = 한 row. 재발급은 token + expiresAt 회전 (row 신규 INSERT 아님).
 // 소비된 invitation 은 audit 용으로 남기되 token 으론 더 이상 진입 불가
@@ -236,10 +237,16 @@ model PartnerInvitation {
   token     String   @unique
   expiresAt DateTime @db.Timestamptz(6) @map("expires_at")
 
-  /// 본인인증 (PortOne) 통과 시점. NULL = 미인증 (signup 페이지에서 본인인증 요구).
-  /// Kakao OAuth 콜백은 invitation 미소비 + 미만료 + phoneVerifiedAt 셋 모두
-  /// 통과해야 user/partner 생성. 인증 시점에 PortOne 응답의 phone vs invitation.phone
-  /// 매칭 검증 (콜백이 아니라 인증 액션 책임).
+  /// Kakao OAuth 콜백이 lock 한 auth.users.id (UUID). 첫 콜백 시 set 되고,
+  /// 본인인증 통과 시 user.authId 가 됨. 다른 Kakao 계정의 콜백은 reject.
+  /// reissuePartnerInvitationToken 호출 시 NULL 로 리셋되어 잠금 해제.
+  /// UNIQUE 아님 — audit 보존 invitation 들과 충돌 회피, race 보호는
+  /// `updateMany WHERE linkedAuthId IS NULL` 패턴이 책임.
+  linkedAuthId String? @db.Uuid @map("linked_auth_id")
+
+  /// 본인인증 (PortOne) 통과 audit 기록 — 가입 트랜잭션 (verifyPartnerSignupOtp)
+  /// 직전 set 후 invitation 소비. 변경 후 흐름에선 가입 게이트가 아니라 audit only.
+  /// reissue 시 NULL 로 리셋.
   phoneVerifiedAt DateTime? @db.Timestamptz(6) @map("phone_verified_at")
 
   /// 소비 흔적 (가입 완료 시점). NULL = 미소비 (재발급/삭제 가능).
@@ -255,6 +262,7 @@ model PartnerInvitation {
   @@index([consumedAt, createdAt(sort: Desc)])
   @@index([phone])
   @@index([licenseNumber])
+  @@index([linkedAuthId])
   @@map("partner_invitation")
   @@schema("claim")
 }
