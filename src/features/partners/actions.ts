@@ -208,10 +208,12 @@ export async function updatePartnerInvitation(
 /**
  * 가입 초청 token 재발급 — 어드민 전용.
  *
- * token 회전 + expiresAt 갱신 + Kakao lock (`linkedAuthId`) / 본인인증 audit
- * (`phoneVerifiedAt`) 모두 NULL 리셋. 다른 사람이 Kakao 만 lock 한 채 본인인증을
- * 끝내지 않은 invitation 을 운영자가 reissue 로 해제할 수 있게 함.
- * consumedAt IS NULL 조건으로 race-safe. 구 token 은 즉시 무효.
+ * 주 용도: token 회전 + expiresAt 갱신 (구 token 즉시 무효). consumedAt IS NULL
+ * 조건으로 race-safe — 이미 가입 완료된 invitation 은 못 건드림.
+ *
+ * 부수적으로 `linkedAuthId` / `phoneVerifiedAt` 도 NULL 로 리셋 — 새 흐름에선 어차피
+ * 다음 진입의 OAuth 가 덮어쓰므로 잠금 해제 목적은 아님 (cleanliness). 본인인증
+ * audit 의 의미를 새 token 발급 시점에 초기화하는 의도.
  */
 export async function reissuePartnerInvitationToken(
   invitationId: string,

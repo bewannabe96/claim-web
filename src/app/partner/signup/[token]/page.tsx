@@ -1,15 +1,10 @@
-import { redirect } from "next/navigation";
-
 import { getPartnerInvitationByToken } from "@/features/partners/queries";
 
 import { signUpWithKakao } from "./actions";
-import { StepBadge } from "./_components/step-badge";
 
 const SIGNUP_ERRORS: Record<string, string> = {
   oauth_failed: "카카오 로그인에 실패했습니다. 다시 시도해주세요.",
   no_email: "카카오 계정의 이메일 제공 동의가 필요합니다.",
-  link_conflict:
-    "이 가입 링크는 다른 카카오 계정과 연결되어 있어요. 운영자에게 새 가입 링크를 요청해주세요.",
   already_registered:
     "이 카카오 계정은 이미 다른 사용자와 연결되어 있습니다. 운영자에게 문의하세요.",
   signup_failed: "가입 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
@@ -20,12 +15,14 @@ const SIGNUP_ERRORS: Record<string, string> = {
  *
  * 2 단계 (순서: Kakao 먼저 → 본인인증 나중):
  *
- *   1. **카카오 가입** (linkedAuthId IS NULL) — "카카오톡으로 시작" → Kakao OAuth.
- *      콜백이 invitation.linkedAuthId 에 Kakao auth.users.id 를 lock 후 /verify 로 forward.
+ *   1. **카카오 가입** — "카카오톡으로 시작" → Kakao OAuth. 매 진입마다 새로 인증.
+ *      콜백이 invitation.linkedAuthId 에 Kakao auth.users.id 를 **무조건 덮어쓰고**
+ *      (이전 lock 무시) `/verify` 로 forward. 다른 카카오 계정으로 재시도하면 가장
+ *      최근 OAuth 계정으로 진행됨 — 진짜 인증은 본인인증 (PortOne) 이 책임.
  *
- *   2. **본인인증** (linkedAuthId IS NOT NULL) — `/verify` 라우트로 자동 redirect.
- *      verify 페이지가 Kakao session + linkedAuthId 매칭을 이중 검증한 뒤 PortOne
- *      본인인증 폼 노출. 통과 시 단일 트랜잭션으로 user + partner + invitation 소비.
+ *   2. **본인인증** — `/verify` 라우트. Kakao 세션 + 현재 linkedAuthId 매칭 검증 후
+ *      PortOne 본인인증 폼 노출. 통과 시 단일 트랜잭션으로 user + partner + invitation
+ *      소비. PortOne 의 phone 매칭이 횡령 방지 게이트.
  */
 export default async function PartnerSignupPage({
   params,
@@ -53,11 +50,8 @@ export default async function PartnerSignupPage({
     );
   }
 
-  // 이미 Kakao 계정이 lock 된 invitation → 본인인증 단계로 자동 이동.
-  // 본인인증을 안 끝낸 사용자가 같은 URL 로 재진입해도 진행 상태 보존.
-  if (invitation.linkedAuthId) {
-    redirect(`/partner/signup/${token}/verify`);
-  }
+  // /verify 로 자동 redirect 하지 않음 — 매 진입마다 새 Kakao OAuth 강제.
+  // 본인인증 미완료 상태로 이탈했다가 재진입한 경우에도 항상 Step 1 부터.
 
   const errorMessage = error ? (SIGNUP_ERRORS[error] ?? null) : null;
 
@@ -69,13 +63,6 @@ export default async function PartnerSignupPage({
       <p className="mt-3 text-sm text-[#4b4b4b]">
         {invitation.name} 님, 카카오톡 가입 후 본인인증으로 가입을 완료해주세요.
       </p>
-
-      {/* 진행 상태 — 2단계 (Kakao → 본인인증) */}
-      <ol className="mt-6 flex items-center gap-2 text-xs">
-        <StepBadge step={1} label="카카오 가입" active done={false} />
-        <span className="text-[#afafaf]">→</span>
-        <StepBadge step={2} label="본인인증" active={false} done={false} />
-      </ol>
 
       {errorMessage ? (
         <p

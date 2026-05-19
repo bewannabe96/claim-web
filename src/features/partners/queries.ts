@@ -117,8 +117,9 @@ export async function getPartnerInvitationById(
  *   - 만료됨 (expiresAt < now)
  *
  * 호출자는 null 만으로 분기 — 어느 사유인지는 의도적으로 가리지 않음 (열거 방지).
- * `linkedAuthId` 는 view 에 포함 — 페이지가 Kakao 가입 단계 (NULL) vs 본인인증
- * 단계 (NOT NULL) 분기.
+ * `linkedAuthId` 는 view 에 포함 — verify 페이지의 "현재 Kakao 세션 vs 최신 lock 매칭"
+ * 검증에 사용. signup 페이지는 항상 Step 1 부터 시작하므로 linkedAuthId 로 분기 안 함
+ * (매 진입마다 새 OAuth 가 lock 을 덮어쓰는 모델).
  */
 export async function getPartnerInvitationByToken(
   token: string,
