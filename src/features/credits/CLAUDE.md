@@ -1,5 +1,7 @@
 # features/credits/ — 파트너 크레딧 도메인
 
+이 문서는 도메인 내부에서 작업할 때 지켜야 할 컨벤션·anti-pattern 중심. 시스템 전체 그림 (데이터 모델 / 알고리즘 / 충전 흐름 / 라우트 / 후속 작업) 은 [docs/credits.md](../../../docs/credits.md).
+
 ## 파일 구성
 
 ```

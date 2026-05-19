@@ -1,0 +1,314 @@
+# 파트너 크레딧 시스템
+
+> 설계사가 보유하는 크레딧 (1 credit = 1 KRW) 의 잔액 조회·충전·사용·환불 기반 인프라.
+> 이 문서는 시스템 전체 구조와 핵심 결정 사항을 정리한 단일 진실 공급원입니다.
+> 코드 컨벤션·anti-pattern 은 [src/features/credits/CLAUDE.md](../src/features/credits/CLAUDE.md), 라우트 표는 [docs/pages.md](pages.md).
+
+---
+
+## 0. 결정 사항
+
+| 항목 | 결정 |
+|---|---|
+| 단위 | 1 credit = 1 KRW. 항상 `Int` (원). Decimal / Float / BigInt 금지. |
+| 진실의 소스 | `PartnerCreditLedger` (append-only). `PartnerCreditBalance` 는 derived 캐시. |
+| 동시성 | `balance.version` 컬럼의 낙관적 잠금 + 2회 재시도 → 실패 시 호출자 정책. |
+| 멱등성 | `ledger.idempotencyKey` UNIQUE + 사전 lookup + P2002 catch (3중 방어). |
+| 음수 잔액 차단 | 앱 레이어 (`applyLedger`) 단일 enforcement. DB CHECK 미사용. |
+| 환불 | 어드민 수동 — 결제건 (paymentId) 종속 ledger 역항목. PG cancel API 미연동. |
+| PG 연동 | 현재 `StubPaymentProvider` 만. 실 PortOne / Toss 는 후속 PR. |
+
+---
+
+## 1. 데이터 모델
+
+[prisma/schema.prisma](../prisma/schema.prisma) 의 두 모델, 모두 `claim` 스키마.
+
+### 1.1 `PartnerCreditBalance` (Partner 와 1:1)
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `partnerId` | `String @id` | `Partner.id` (= `User.id`) 공유. PK 이자 FK. |
+| `balance` | `Int @default(0)` | 현재 잔액 (KRW). |
+| `version` | `Int @default(0)` | Optimistic lock counter. updateMany WHERE version=expected 패턴. |
+| `createdAt` / `updatedAt` | `Timestamptz(6)` | 표준 timestamp. |
+
+- `onDelete: Cascade` — 잔액은 derived. Partner 삭제 시 무의미.
+- 1:1 보장: `partnerId` 가 PK 이자 FK.
+
+### 1.2 `PartnerCreditLedger` (append-only 원장)
+
+| 컬럼 | 타입 | 설명 |
+|---|---|---|
+| `id` | `String @id` | nanoid(16). |
+| `partnerId` | `String` | FK Partner (`onDelete: Restrict` — audit 보존). |
+| `amount` | `Int` | 부호 있는 KRW. topup/refund 양수, spend 음수, adjustment 양·음 모두. |
+| `balanceAfter` | `Int` | 이 row 적용 직후 balance 스냅샷. |
+| `type` | `String` | `"topup"` \| `"spend"` \| `"adjustment"` \| `"refund"`. zod 검증, DB enum 아님. |
+| `reason` | `String?` | 운영 메모 (adjustment 사유, spend feature 라벨 등). |
+| `referenceType` | `String?` | 자유 포인터 type (예: `"payment"`, `"assignment"`). |
+| `referenceId` | `String?` | 대응 entity id. FK 강제 안 함. |
+| `idempotencyKey` | `String? @unique` | 외부 요청 단위 멱등키. NULL 허용 (다수 NULL row 공존). |
+| `createdById` | `String?` | 액터의 `User.id`. 시스템 자동 (웹훅·spend) 은 null. FK 미설정. |
+| `createdAt` | `Timestamptz(6)` | INSERT 시각. |
+
+**인덱스**
+- `@@index([partnerId, createdAt(sort: Desc)])` — 거래 내역 최신순 페이지네이션.
+- `@@index([referenceType, referenceId])` — 원본 entity → ledger 역추적 (paymentId 로 topup 확인, assignmentId 로 spend 확인).
+
+**Append-only 원칙**
+- row UPDATE / DELETE 금지 (운영 SQL 포함).
+- 환불은 별도 row (`type='refund'`, 음수 amount, `referenceId=paymentId`) 로 표현.
+
+### 1.3 잔액 row 생애주기 — eager-create 불변식
+
+**불변식**: `Partner.exists ⇔ PartnerCreditBalance.exists`
+
+세 단계 보장:
+1. **가입 트랜잭션**: [src/app/partner/signup/[token]/actions.ts:329](../src/app/partner/signup/[token]/actions.ts:329) `verifyPartnerSignupOtp` 의 단일 트랜잭션 안에서 `tx.user.create` → `tx.partner.create` → `tx.partnerCreditBalance.create` → invitation 소비 순으로 INSERT. all-or-nothing 원자성.
+2. **시더 백필**: [prisma/seed.ts](../prisma/seed.ts) `seedPartnerCreditBalances()` 가 기존 partner 들에 멱등 upsert. `pnpm db:seed` 매 호출 안전.
+3. **Lazy fallback**: [src/features/credits/queries.ts](../src/features/credits/queries.ts) `getCreditBalance` 와 `lib/apply-ledger.ts` 가 row 없으면 자체 upsert. 시더 누락 환경 방어.
+
+---
+
+## 2. `applyLedger` — 단일 chokepoint
+
+[src/features/credits/lib/apply-ledger.ts](../src/features/credits/lib/apply-ledger.ts).
+
+**모든 잔액 변동은 반드시 이 함수 경유.** 직접 `prisma.partnerCreditBalance.update` / `prisma.partnerCreditLedger.create` 호출 금지.
+
+### 2.1 시그니처
+
+```ts
+type ApplyLedgerInput = {
+  partnerId: string;
+  amount: number;                          // signed
+  type: "topup" | "spend" | "adjustment" | "refund";
+  reason: string | null;
+  referenceType: string | null;
+  referenceId: string | null;
+  idempotencyKey: string | null;
+  createdById: string | null;
+};
+type ApplyLedgerResult =
+  | { ok: true; ledgerId: string; balanceAfter: number; alreadyApplied: boolean }
+  | { ok: false; error: "insufficient_balance" | "conflict" };
+```
+
+### 2.2 알고리즘
+
+```
+1) 멱등 사전 조회
+   idempotencyKey 가 주어졌고 같은 키 ledger row 존재 → alreadyApplied:true 즉시 반환
+
+2) 시도 루프 (최대 2회):
+   a) balance row 조회
+      없으면 upsert(create default) → 다음 시도로 (lazy fallback)
+   b) newBalance = current.balance + amount
+   c) newBalance < 0 → insufficient_balance 즉시 반환 (트랜잭션 진입 X)
+   d) prisma.$transaction:
+      - ledger INSERT (balanceAfter = newBalance)
+      - balance updateMany WHERE partnerId AND version=current.version
+                          SET balance=newBalance, version += 1
+      - count !== 1 → throw VersionConflictError → 전체 rollback (ledger 도 사라짐)
+   e) P2002 catch (idempotencyKey UNIQUE 충돌 — 동시 caller 가 같은 키로 INSERT 함)
+      → 승자 row 조회 → alreadyApplied:true
+
+3) 2회 연속 version 충돌 → conflict 반환 (호출자가 재시도 정책 결정)
+```
+
+### 2.3 보장 매트릭스
+
+| 속성 | 메커니즘 |
+|---|---|
+| 멱등성 | UNIQUE 인덱스 + 사전 lookup + P2002 catch (3중) |
+| 원자성 | 단일 `$transaction` (ledger INSERT + balance UPDATE) |
+| 동시성 | `version` 낙관적 잠금 + 1회 재시도 |
+| 음수 잔액 차단 | 트랜잭션 진입 전 `newBalance < 0` 가드 |
+| 액터 추적 | `createdById` (FK 없음, user 삭제 시에도 audit 보존) |
+
+### 2.4 동시성 트레이드오프
+
+- 2회 시도는 **chokepoint 자체 한계**. 호출자가 conflict 를 surface 받으면 사용자에게 "잠시 후 다시 시도" 안내.
+- N=10 동시 갱신 같은 고-contention 시나리오는 caller-level 재시도 필요 ([scripts/test-credit-concurrency.ts](../scripts/test-credit-concurrency.ts) 참조).
+- 운영 중 conflict 가 빈번해지면 queue 모델로 격상 고려 (현 규모에선 과설계).
+
+---
+
+## 3. 4 가지 ledger type
+
+| 타입 | 의미 | reference | createdById | 멱등키 | 입력 액션 |
+|---|---|---|---|---|---|
+| `topup` | PG 결제 충전 | `("payment", paymentId)` | `null` (시스템) | `paymentId` | `confirmTopup` (웹훅) |
+| `spend` | 시스템 자동 차감 | `(domain, entityId)` | `null` (시스템) | 호출자 책임 | `spendCredit` (내부) |
+| `adjustment` | 일방적 보정 | `(null, null)` | `admin.user.id` | `null` | `adjustCredit` (어드민) |
+| `refund` | 특정 결제건 환불 | `("payment", paymentId)` | `admin.user.id` | `null` | `refundTopup` (어드민) |
+
+### 3.1 조정 vs 환불 — 의미 분리
+
+- **조정 (`adjustment`)**: 일방적 보정. 이벤트 보상 / 운영 실수 정정 / 시스템 오류 보상. `referenceId=null`, 부호 자유.
+- **환불 (`refund`)**: 특정 결제건의 전액/부분 되돌리기. `referenceType="payment", referenceId=<paymentId>` 필수.
+
+환불의 추가 검증:
+1. 해당 partner 의 `type='topup', referenceId=paymentId` row 존재 (소유권·진정성).
+2. 같은 paymentId 의 누적 환불 (`refund` row amount 합의 절대값) + 이번 환불 ≤ 원본 충전 금액 → 부분 환불 다회 허용.
+3. `applyLedger` 의 음수 잔액 가드 — 이미 소비된 충전분은 환불 불가 (운영자가 별도 조정으로 대응).
+
+임의 차감 의도는 `adjustCredit` 으로 표현 (audit 명료성). `refundTopup` 을 referenceId 없이 호출 금지.
+
+### 3.2 멱등키 정책
+
+- `topup`: `idempotencyKey = paymentId` — PG 웹훅 재전송 시 두 번째는 자동 no-op.
+- `spend`: 호출자가 안정 키 제공 필수 (예: `assignment:${assignmentId}:exposure`). 같은 트리거 두 번 발화 시 같은 키여야 함.
+- `adjustment` / `refund`: `null` — 어드민 수기. 인간이 의도적으로 두 번 누르면 두 row 가 정상 (UNIQUE NULL distinct).
+
+---
+
+## 4. 충전 흐름
+
+### 4.1 전체 시퀀스
+
+```
+[파트너 브라우저]                  [Next 서버]                   [PG / Stub]                [Redis]
+       │                              │                              │                       │
+       │ POST /partner/credits/topup  │                              │                       │
+       │ (initiateTopup action)       │                              │                       │
+       ├─────────────────────────────►│                              │                       │
+       │                              │ requirePartnerSession        │                       │
+       │                              │ paymentId = newId()          │                       │
+       │                              │ provider.initiatePayment ────┼──► stash(paymentId,   │
+       │                              │                              │     {partnerId,        │
+       │                              │                              │      amount}) EX=3600 │
+       │                              │◄─ { redirectUrl, ... } ──────┤                       │
+       │◄─ { ok:true, redirectUrl }───┤                              │                       │
+       │                              │                              │                       │
+       │ window.location = redirectUrl│                              │                       │
+       ├──────────────────────────────┼─────────────────────────────►│ PG 위젯               │
+       │                              │                              │  (현재: stub URL)     │
+       │◄─── 결제 완료 후 redirect ───┼──────────────────────────────┤                       │
+       │ GET /api/webhooks/credits/   │                              │                       │
+       │     stub?paymentId=...       │                              │                       │
+       ├─────────────────────────────►│                              │                       │
+       │                              │ provider.verifyWebhook ──────┼──► read(paymentId) ──►│
+       │                              │◄─ {ok, partnerId, amount} ───┤                       │
+       │                              │ confirmTopup                 │                       │
+       │                              │  applyLedger {               │                       │
+       │                              │    type:"topup",             │                       │
+       │                              │    idempotencyKey=paymentId, │                       │
+       │                              │    referenceId=paymentId }   │                       │
+       │                              │ clearPendingTopup ───────────┼───────────────────────►│
+       │◄─── 303 /partner/credits ────┤                              │                       │
+```
+
+### 4.2 핵심 안전장치
+
+- **paymentId 발급 책임**: 우리 서버 (PG 가 아님). 우리가 만든 paymentId 가 ledger 의 idempotencyKey 가 되므로 통제권 보존.
+- **stash → webhook**: PG 콜백이 paymentId 만 들고 와도 `(partnerId, amount)` 를 신뢰 가능. Redis TTL 1시간.
+- **멱등성**: 같은 paymentId 로 webhook 재전송돼도 두 번째는 `alreadyApplied: true` no-op.
+- **stub 보안**: `StubPaymentProvider.verifyWebhook` 은 `NODE_ENV==="production"` 일 때 즉시 fail-closed → 실수로 prod 에 leak 돼도 무해.
+
+### 4.3 PaymentProvider 추상화
+
+[src/features/credits/payment/provider.ts](../src/features/credits/payment/provider.ts).
+
+```ts
+interface PaymentProvider {
+  readonly name: string;
+  initiatePayment(input): Promise<PaymentInitResult>;
+  verifyWebhook(rawBody, headers, searchParams): Promise<WebhookVerifyResult>;
+}
+```
+
+후속 PR 에서 `PortOnePaymentProvider` / `TossPaymentProvider` 추가 시:
+- HMAC-SHA256 + `timingSafeEqual` 검증은 [src/app/api/webhooks/eightytwo-judge-analysis/route.ts](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts) 의 패턴 재사용.
+- `getPaymentProvider()` ([src/features/credits/payment/index.ts](../src/features/credits/payment/index.ts)) 에 `process.env.CREDIT_PAYMENT_PROVIDER` 분기 추가.
+- ENV: `PORTONE_STORE_ID`, `PORTONE_CHANNEL_KEY`, `PORTONE_API_SECRET`, `PORTONE_WEBHOOK_SECRET` 등.
+
+---
+
+## 5. 코드 구조
+
+### 5.1 `src/features/credits/`
+
+```
+credits/
+├─ schema.ts                  # zod — CreditType + Adjustment/Refund/TopupInit/Spend 입력 + Mutation 상태
+├─ queries.ts                 # 'server-only' — getCreditBalance / listCreditLedger(cursor) / getRecentLedger / listRefundableTopups
+├─ actions.ts                 # 'use server' — adjustCredit / refundTopup / initiateTopup / confirmTopup / spendCredit
+├─ lib/apply-ledger.ts        # 'server-only' ⭐ 단일 chokepoint
+├─ payment/provider.ts        # 'server-only' — PaymentProvider 추상 + StubPaymentProvider + stash 헬퍼
+├─ payment/index.ts           # 'server-only' — getPaymentProvider() 팩토리
+├─ ui/credit-balance-card.tsx # Server — 잔액 카드 + CTA
+├─ ui/ledger-list.tsx         # Server — 거래 내역 (full / compact)
+├─ ui/adjustment-form.tsx     # Client — 어드민 조정 폼
+├─ ui/refund-form.tsx         # Client — 환불 폼 (결제 드롭다운)
+├─ ui/topup-amount-form.tsx   # Client — 파트너 충전 폼
+└─ CLAUDE.md                  # 도메인 규칙 + anti-pattern
+```
+
+### 5.2 라우트
+
+| 경로 | 역할 | 인증 |
+|---|---|---|
+| [`/partner`](../src/app/partner/(dashboard)/page.tsx) | 대시보드 — 잔액 카드 임베드 | `requirePartnerSession` (layout) |
+| [`/partner/credits`](../src/app/partner/(dashboard)/credits/page.tsx) | 잔액 + 거래 내역 (cursor pagination) | `requirePartnerSession` |
+| [`/partner/credits/topup`](../src/app/partner/(dashboard)/credits/topup/page.tsx) | 충전 금액 입력 → PG redirect | `requirePartnerSession` |
+| [`/admin/partners/[id]`](../src/app/admin/(dashboard)/partners/[id]/page.tsx) | 조정 폼 + 환불 폼 + 거래 내역 임베드 | `requireAdminSession` (layout) |
+| [`/api/webhooks/credits/[provider]`](../src/app/api/webhooks/credits/[provider]/route.ts) | PG 콜백 수신 | `PaymentProvider.verifyWebhook` |
+
+### 5.3 외부 자원
+
+| 자원 | 키 | TTL | 용도 |
+|---|---|---|---|
+| Redis | `topup:pending:{paymentId}` | 3600s | 충전 개시 시 `(partnerId, amount)` 보관. PG 콜백 검증에 사용. |
+
+---
+
+## 6. 검증
+
+### 6.1 자동
+
+- [scripts/test-credit-concurrency.ts](../scripts/test-credit-concurrency.ts) — 10 병렬 +1000 조정 시 balance 정확히 +10,000 / version +10 / ledger 10행 / balanceAfter 단조증가.
+- 같은 스크립트 `spend` 모드 — 잔액 초과 spend 시도 시 `insufficient_balance` + ledger 무변경.
+
+```bash
+# 사용법
+pnpm exec tsx scripts/test-credit-concurrency.ts <partnerId>          # 동시성
+pnpm exec tsx scripts/test-credit-concurrency.ts <partnerId> spend    # 잔액부족
+```
+
+### 6.2 수동
+
+1. 어드민 로그인 → `/admin/partners/<id>` 진입 → 잔액 `0원` 확인.
+2. "크레딧 수동 조정" 폼: `amount=10000`, `reason="테스트 충전"` 제출 → 잔액 `10,000원`, ledger 1행 (`type=adjustment`).
+3. 같은 파트너로 로그인 → `/partner` → "내역 보기" → `/partner/credits` 동일 내역 확인.
+4. `/partner/credits/topup` → `amount=5000` 제출 → stub URL redirect → 잔액 `15,000원`, ledger `type=topup, referenceId=<paymentId>`.
+5. 같은 stub URL 재호출 (curl) → `{ ok: true }` 응답 + 잔액 불변 + 서버 로그 `alreadyApplied`.
+6. 어드민 "결제 환불 처리" 폼에서 위 5000원 결제 선택 → `amount=2000` 제출 → 잔액 `13,000원`, ledger `type=refund, referenceId=<paymentId>`, 잔여 환불 가능 3000원으로 갱신.
+
+---
+
+## 7. 후속 작업 (이번 범위 외)
+
+- **실 PG 구현체** (PortOne / Toss) — `PaymentProvider` 구현 + HMAC 웹훅 검증 + 위젯 mount.
+- **자동 spend 트리거** — 예: `MatchAssignment` 노출 시점에 `spendCredit` 호출. 정책 (잔액 부족 시 assignment 발행 보류 등) 결정.
+- **`/admin/partners/[id]/credits`** 전체 거래 내역 페이지 (현재는 compact 5건만 임베드).
+- **충전 한도** (`1_000` ~ `10_000_000`) 을 [src/server/settings.ts](../src/server/settings.ts) `AppSettings` 로 승격.
+- **PG cancel API 환불** — 현재는 어드민 ledger 역항목만. PG 측 실 환불 호출 + 웹훅 idempotency.
+- **잔액 임계치 알림** — 잔액 부족 시 파트너에게 알림톡.
+- **동시 admin 환불 race 격상** — `applyLedger` 에 `validate(tx)` 콜백 도입해 트랜잭션 내 누적 환불 재검증.
+
+---
+
+## 8. 안티패턴
+
+[src/features/credits/CLAUDE.md](../src/features/credits/CLAUDE.md) 의 상세 목록 참조. 핵심 요약:
+
+- ❌ `prisma.partnerCreditBalance.update` / `prisma.partnerCreditLedger.create` 직접 호출 — `applyLedger` 경유 필수.
+- ❌ `Decimal` / `Float` / `BigInt` amount 컬럼.
+- ❌ ledger row UPDATE / DELETE — append-only.
+- ❌ DB CHECK 로 `balance >= 0` 강제 — 프로젝트 컨벤션상 미사용.
+- ❌ `refundTopup` 을 referenceId 없이 호출 / `adjustCredit` 에 referenceId 채워 호출 — 의미 혼탁.
+- ❌ webhook route 에서 `requirePartnerSession()` 호출 — 인증은 `verifyWebhook` 가 책임.
+- ❌ `spendCredit` 을 클라이언트나 미인가 액션에서 호출 — 세션 가드 없음, 호출처가 자체 인증 책임.
+- ❌ `'use cache'` 를 `queries.ts` 에 추가 — `require*Session()` 쿠키 read 로 자동 dynamic.
