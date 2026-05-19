@@ -20,8 +20,9 @@ const VERIFY_ERRORS: Record<string, string> = {
  *      세션 없거나 다른 계정이면 Step 1 (Kakao 가입) 로 silent redirect — 거기서
  *      새 Kakao OAuth 가 lock 을 덮어씀.
  *
- * 통과 시 PortOne placeholder 본인인증 폼 노출. 폼이 verifyPartnerSignupOtp 액션
- * 호출하면 가입 트랜잭션이 일어남 (user + partner INSERT + invitation 소비).
+ * 통과 시 휴대폰 OTP 본인인증 폼 노출 (알리고 SMS + Redis). 폼이
+ * verifyPartnerSignupOtp 액션 호출하면 가입 트랜잭션이 일어남
+ * (user + partner INSERT + invitation 소비).
  */
 export default async function PartnerSignupVerifyPage({
   params,
@@ -79,7 +80,8 @@ export default async function PartnerSignupVerifyPage({
         본인인증
       </h1>
       <p className="mt-3 text-sm text-[#4b4b4b]">
-        {invitation.name} 님, 본인인증을 완료하면 설계사 가입이 마무리됩니다.
+        {invitation.name} 님, 등록된 휴대폰 번호로 인증번호를 받아 가입을
+        마무리해주세요.
       </p>
 
       {errorMessage ? (

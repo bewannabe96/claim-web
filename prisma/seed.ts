@@ -84,9 +84,10 @@ async function seedAdmin() {
  *
  * **단계 진행**: invitation 은 `linkedAuthId=NULL, phoneVerifiedAt=NULL` 상태로
  * 시드됨 → 진입 시 항상 "카카오톡으로 시작" 버튼 노출. Kakao OAuth 통과 후 콜백이
- * linkedAuthId 를 갱신하고 `/verify` 로 forward → 본인인증 placeholder (6자리
- * OTP) 통과 시 가입 완료. 매 진입마다 새 OAuth 가 강제되므로 다른 카카오 계정으로
- * 재시도해도 그대로 진행 가능 — 횡령 방지는 PortOne 의 phone 매칭이 담당.
+ * linkedAuthId 를 갱신하고 `/verify` 로 forward → 휴대폰 OTP (알리고 SMS, dev 에서
+ * `ALIGO_TEST_MODE=Y` 면 코드 "000000" 고정) 통과 시 가입 완료. 매 진입마다 새 OAuth
+ * 가 강제되므로 다른 카카오 계정으로 재시도해도 그대로 진행 가능 — 횡령 방지는
+ * SMS 발송 대상이 invitation.phone 으로 고정된다는 점이 담당.
  *
  * **재시드 정책**: 이미 존재하면 skip (소비/미소비 무관). consume 후 재테스트하려면
  * admin UI 에서 초청 + 파생된 partner 를 수동 삭제. 만료 임박 / token 회전이
