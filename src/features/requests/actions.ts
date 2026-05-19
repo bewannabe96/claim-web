@@ -321,7 +321,7 @@ export async function sendOtp(
   }
 
   // 4) Redis 에 저장 — TTL=쿨다운=만료 모두 동일 의미.
-  await redis.set(key, code, "EX", OTP_TTL_SECONDS);
+  await redis.set(key, code, { ex: OTP_TTL_SECONDS });
   return { ok: true, retryAfterSeconds: OTP_TTL_SECONDS };
 }
 
