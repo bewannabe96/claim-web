@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { safeNextPath } from "@/lib/safe-next-path";
 import { prisma } from "@/server/db/prisma";
+import { resolveOrigin } from "@/server/origin";
 import { getSupabaseServerClient } from "@/server/supabase";
 
 /**
@@ -31,18 +32,25 @@ import { getSupabaseServerClient } from "@/server/supabase";
  *      - code → session 교환
  *      - email 로 User 화이트리스트 조회 (partner extension active 확인)
  *      - authId 비어 있으면 claim (드물게 운영자가 수동 user 만들었을 때만)
- *      - 성공: ?next 또는 /partner, 실패: /partner/login?error=…
+ *      - 성공: ?next 또는 /partner, 실패: /partner/login?error=…&next=…
  *
  * route handler 는 mutable cookie 컨텍스트라 supabase ssr setAll 가 정상 작동.
+ *
+ * **redirect URL origin**: `new URL(req.url).origin` 대신 `resolveOrigin()` 사용.
+ * Vercel / Cloudflare 같은 reverse proxy 뒤에선 `req.url` 의 host 가 internal
+ * 도메인으로 잡힐 수 있어, Supabase 공식 가이드도 `x-forwarded-host` 분기를
+ * 권고. resolveOrigin 이 그 로직을 이미 포함 (Origin > x-forwarded-* > host).
+ * signInWithKakao action 의 redirectTo 와 동일 helper 로 통일.
  */
 export async function GET(req: NextRequest) {
-  const { searchParams, origin } = new URL(req.url);
+  const { searchParams } = new URL(req.url);
   const code = searchParams.get("code");
   const signupToken = searchParams.get("signup");
   // defense in depth — 외부 도메인 / 다른 영역 / `//evil.com` 류 차단.
   // login action / page 가 이미 검증하지만, callback URL 은 외부에 노출되므로
   // 위조 redirectTo 로 진입 가능 → 여기서도 동일 validator 통과 강제.
   const next = safeNextPath(searchParams.get("next"));
+  const origin = await resolveOrigin();
 
   if (!code) {
     if (signupToken) {
@@ -65,10 +73,10 @@ export async function GET(req: NextRequest) {
   }
 
   if (signupToken) {
-    return handleSignup(req, data.user, signupToken);
+    return handleSignup(data.user, signupToken, origin);
   }
 
-  return handleLogin(req, data.user, next);
+  return handleLogin(data.user, next, origin);
 }
 
 /**
@@ -95,11 +103,10 @@ function loginErrorUrl(origin: string, error: string, next: string): string {
  */
 
 async function handleSignup(
-  req: NextRequest,
   authUser: SupabaseUser,
   invitationToken: string,
+  origin: string,
 ) {
-  const { origin } = new URL(req.url);
   const supabase = await getSupabaseServerClient();
   const errorBase = `${origin}/partner/signup/${invitationToken}`;
 
@@ -140,11 +147,10 @@ async function handleSignup(
  * ============================================================ */
 
 async function handleLogin(
-  req: NextRequest,
   authUser: SupabaseUser,
   next: string,
+  origin: string,
 ) {
-  const { origin } = new URL(req.url);
   const supabase = await getSupabaseServerClient();
 
   const email = authUser.email;
