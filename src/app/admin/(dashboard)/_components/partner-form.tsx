@@ -127,7 +127,7 @@ export function PartnerForm({
           >
             <span
               className={cn(
-                "absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.2)] transition-transform",
+                "absolute top-0.5 left-0 w-5 h-5 rounded-full bg-white shadow-[0_2px_4px_rgba(0,0,0,0.2)] transition-transform",
                 active ? "translate-x-[22px]" : "translate-x-0.5",
               )}
             />
