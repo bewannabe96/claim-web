@@ -1,11 +1,16 @@
 "use server";
 
+import { randomInt } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { findMatchCandidates } from "@/features/partners/queries";
 import { newId, newToken } from "@/lib/id";
+import { isAligoTestMode, sendOtpSms } from "@/server/aligo";
 import { prisma } from "@/server/db/prisma";
+import { getClientIp } from "@/server/get-client-ip";
+import { getRedis } from "@/server/redis";
 import { getSettings } from "@/server/settings";
 
 import { hasActiveRequestForPhone } from "./queries";
@@ -215,13 +220,31 @@ export async function submitStep2(
  * 동의 단계 — OTP 발송 + 최종 확정
  * ============================================================ */
 
-const DEMO_OTP = "000000";
+/** 인증번호 TTL = 재전송 쿨다운. 키가 살아있는 동안 재발송 차단. */
+const OTP_TTL_SECONDS = 180;
+/** IP 발송 시도 카운터 윈도우. fixed window (sliding 아님). */
+const RATE_LIMIT_WINDOW_SECONDS = 3600;
+const RATE_LIMIT_MAX_ATTEMPTS = 5;
+
+function otpKey(requestId: string, phone: string): string {
+  return `otp:code:${requestId}:${phone}`;
+}
+
+function rateLimitKey(ip: string): string {
+  return `otp:rl:${ip}`;
+}
 
 /**
- * 인증번호 전송 — MVP 에서는 실제 SMS 발송 없이 휴대폰 번호 형식만 검증.
- * 같은 번호로 진행 중인 다른 요청이 있으면 차단 (현재 요청은 제외).
+ * 인증번호 전송 — 6자리 코드 생성 → Redis 에 EX=180 으로 저장 → 알리고 SMS 발송.
  *
- * Supabase Auth phone provider 전환은 별도 step.
+ * 차단 로직 (우선순위 순):
+ *   1. 휴대폰 번호 zod 검증
+ *   2. 같은 번호로 진행 중인 다른 요청 차단 (DB)
+ *   3. IP 기반 레이트리밋 — 60분 윈도우 5회 초과 차단 (Redis INCR+EXPIRE NX)
+ *   4. 재전송 쿨다운 — 기존 코드 키 TTL 살아있으면 차단 (`PTTL > 0`)
+ *
+ * 코드는 호출자(`finalizeRequest`) 가 GET / DEL 로 확인.
+ * test mode 일 때는 코드 "000000" 고정 + 알리고 호출 생략 (dev 편의).
  */
 export async function sendOtp(
   requestId: string,
@@ -247,15 +270,67 @@ export async function sendOtp(
     };
   }
 
-  // TODO: 실제 SMS 게이트웨이 호출 + 5분 TTL 코드 저장
-  return { ok: true };
+  const redis = getRedis();
+  const ip = await getClientIp();
+
+  // 1) IP 레이트리밋. EXPIRE 의 NX 플래그로 첫 INCR 시에만 TTL 설정 → fixed 60분 윈도우.
+  const rlKey = rateLimitKey(ip);
+  const count = await redis.incr(rlKey);
+  if (count === 1) {
+    await redis.expire(rlKey, RATE_LIMIT_WINDOW_SECONDS);
+  }
+  if (count > RATE_LIMIT_MAX_ATTEMPTS) {
+    return {
+      ok: false,
+      errors: {
+        _form: ["발송 시도가 너무 많습니다. 1시간 후 다시 시도해주세요."],
+      },
+    };
+  }
+
+  // 2) 재전송 쿨다운 — 기존 코드 TTL 살아있으면 그 잔여 초 반환.
+  const key = otpKey(requestId, parsed.data.phone);
+  const pttl = await redis.pttl(key);
+  if (pttl > 0) {
+    const retryAfter = Math.ceil(pttl / 1000);
+    return {
+      ok: false,
+      errors: { _form: [`${retryAfter}초 후 재전송 가능합니다.`] },
+      retryAfterSeconds: retryAfter,
+    };
+  }
+
+  // 3) 코드 생성 + 알리고 발송 (test mode 면 코드 고정 + 알리고 호출 생략).
+  const testMode = isAligoTestMode();
+  const code = testMode
+    ? "000000"
+    : randomInt(0, 1_000_000).toString().padStart(6, "0");
+
+  if (!testMode) {
+    try {
+      await sendOtpSms(parsed.data.phone, code);
+    } catch (err) {
+      console.error("[sendOtp] aligo send failed", err);
+      return {
+        ok: false,
+        errors: {
+          _form: ["인증번호 전송에 실패했어요. 잠시 후 다시 시도해주세요."],
+        },
+      };
+    }
+  }
+
+  // 4) Redis 에 저장 — TTL=쿨다운=만료 모두 동일 의미.
+  await redis.set(key, code, "EX", OTP_TTL_SECONDS);
+  return { ok: true, retryAfterSeconds: OTP_TTL_SECONDS };
 }
 
 /**
  * 동의 단계 최종 제출 — 동의 + 휴대폰 번호 + OTP 코드 한꺼번에 검증/저장.
  *
  * 검증 통과 시 status='dispatched' 로 전환, 결과 토큰 발급, 선택된 설계사
- * 각각에 match_assignment 생성 (한 트랜잭션). MVP DEMO_OTP='000000'.
+ * 각각에 match_assignment 생성 (한 트랜잭션). 코드는 Redis 의 `otp:code:{id}:{phone}`
+ * 키에서 GET 으로 비교, 성공 시 DEL 로 즉시 무효화 (재사용 차단).
  *
  * TODO: 알림톡 발송 — 실 서비스 단계에서 외부 API 호출.
  */
@@ -277,14 +352,25 @@ export async function finalizeRequest(
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
 
-  // 2) OTP 코드 검증
+  // 2) OTP 코드 검증 — Redis 의 저장된 코드와 비교.
   const codeParsed = OtpSchema.safeParse({ code: formData.get("code") });
   if (!codeParsed.success) {
     return { ok: false, errors: codeParsed.error.flatten().fieldErrors };
   }
-  if (codeParsed.data.code !== DEMO_OTP) {
+  const redis = getRedis();
+  const key = otpKey(requestId, parsed.data.phone);
+  const stored = await redis.get(key);
+  if (stored === null) {
+    return {
+      ok: false,
+      errors: { code: ["인증번호가 만료되었습니다. 재전송해주세요."] },
+    };
+  }
+  if (stored !== codeParsed.data.code) {
     return { ok: false, errors: { code: ["인증번호가 올바르지 않습니다."] } };
   }
+  // 코드 일치 — 즉시 무효화. dispatched 트랜잭션 실패해도 같은 코드 재사용은 막음.
+  await redis.del(key);
 
   // 3) 요청 상태 + 선택된 후보 확인
   const req = await prisma.planRequest.findUnique({

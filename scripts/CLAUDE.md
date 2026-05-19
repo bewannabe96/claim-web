@@ -1,6 +1,6 @@
 # scripts/ — workspace 부트스트랩 + DB 관리 + Claude Code hook
 
-worktree 격리 Docker Postgres 운영 + workspace 자체 준비에 쓰이는 bash 스크립트 모음. 전체 워크플로우는 [docs/worktree-workflow.md](../docs/worktree-workflow.md) 참고.
+worktree 격리 Docker Postgres + Redis 운영 + workspace 자체 준비에 쓰이는 bash 스크립트 모음. 전체 워크플로우는 [docs/worktree-workflow.md](../docs/worktree-workflow.md) 참고.
 
 ## 호출 관계
 
@@ -29,7 +29,9 @@ set-workspace-env-vars.sh ←─ source ─┬─ write-env-local.sh
 - `WORKTREE_NAME` — `basename(pwd)`
 - `COMPOSE_PROJECT_NAME` — `claim_<safe-name>` (Docker 격리 키)
 - `POSTGRES_HOST_PORT` — `55000–55999` 범위 (sha256 첫 4 nibble mod 1000)
+- `REDIS_HOST_PORT` — `56000–56999` 범위 (같은 hash, 다른 base — worktree 내부에서 Postgres 와 포트 충돌 방지)
 - `DATABASE_URL` / `DIRECT_URL` — `postgresql://postgres:postgres@127.0.0.1:<port>/postgres?schema=claim` (로컬은 pooler 없으므로 양쪽 동일)
+- `REDIS_URL` — `redis://127.0.0.1:<port>`
 
 **가정**: 항상 worktree root 에서 호출됨. `pnpm` 스크립트가 cwd 를 강제하므로 자동 만족.
 
@@ -37,26 +39,26 @@ set-workspace-env-vars.sh ←─ source ─┬─ write-env-local.sh
 
 ## scripts/write-env-local.sh
 
-**무엇을**: `.env.local` 의 `DATABASE_URL` / `DIRECT_URL` 두 줄만 갱신. 다른 키 (사용자가 추가한 로컬 override 등) 는 보존.
+**무엇을**: `.env.local` 의 `DATABASE_URL` / `DIRECT_URL` / `REDIS_URL` 세 줄만 갱신. 다른 키 (사용자가 추가한 로컬 override 등) 는 보존.
 
 **언제**: `setup-workspace-env.sh` 가 호출. 컨테이너 기동 직후, migration 적용 전.
 
 **왜 .env.local**: Next.js 의 env 우선순위 (`.env.local` > `.env.development` > `.env`) 를 이용해 `.env` 의 원격 URL 을 가린다. Prisma CLI 는 `.env` 만 읽으므로 prisma 호출 시점엔 set-workspace-env-vars.sh 가 export 한 env 가 직접 사용됨.
 
-**보존 매커니즘**: `grep -vE '^(DATABASE_URL|DIRECT_URL)=|^# AUTO-GENERATED|^# Worktree:'` 로 우리 키 + 헤더만 제거 후 새 값 append.
+**보존 매커니즘**: `grep -vE '^(DATABASE_URL|DIRECT_URL|REDIS_URL)=|^# AUTO-GENERATED|^# Worktree:'` 로 우리 키 + 헤더만 제거 후 새 값 append.
 
 ---
 
 ## scripts/setup-workspace-env.sh — `pnpm workspace:setup`
 
-**무엇을**: worktree workspace 환경 전체를 한 번에 준비 (`.env` 복사 → 의존성 → Docker DB → schema/seed). 멱등 — 매번 호출해도 안전.
+**무엇을**: worktree workspace 환경 전체를 한 번에 준비 (`.env` 복사 → 의존성 → Docker DB + Redis → schema/seed). 멱등 — 매번 호출해도 안전.
 
 **시퀀스**:
 1. worktree 에 `.env` 없으면 메인 리포의 `.env` 자동 복사 (git common-dir 로 메인 리포 위치 추론). 메인 리포에도 없으면 WARN 후 계속.
 2. `docker info` 체크 (daemon 없으면 명확한 ERROR 후 exit 1).
 3. `node_modules` 또는 `node_modules/.bin/prisma` 없으면 `pnpm install` 자동 호출 (이후 prisma 단계에 필요). 이미 설치되어 있으면 skip.
-4. `docker compose up -d postgres` (이미 떠 있으면 no-op).
-5. `pg_isready` healthcheck 대기 (최대 ~60 초).
+4. `docker compose up -d postgres redis` (이미 떠 있으면 no-op).
+5. Postgres `pg_isready` healthcheck 대기 (최대 ~60 초) → Redis `redis-cli ping` healthcheck 대기 (최대 ~60 초).
 6. `write-env-local.sh` 호출 → `.env.local` 갱신.
 7. `pnpm prisma migrate deploy` → `prisma/migrations/` 의 모든 migration 적용.
 8. `pnpm prisma db push --skip-generate --accept-data-loss` → schema.prisma 와 reconcile. PR 에는 schema.prisma 만 들어가고 `prisma/migrations/` 는 사람이 안 건드리므로 schema.prisma 가 마이그레이션 폴더보다 앞설 수 있음 — 매 부트스트랩 시 schema 정렬. 차이 없으면 no-op.
@@ -104,7 +106,7 @@ set-workspace-env-vars.sh ←─ source ─┬─ write-env-local.sh
 
 ## scripts/db-container/cleanup-orphans.sh — `pnpm cleanup:orphan-db-containers`
 
-**무엇을**: `.claude/worktrees/` 에 더 이상 디렉토리가 없는 worktree 의 `claim_*_postgres` 컨테이너 + `claim_*_pgdata` 볼륨을 일괄 삭제. 확인 프롬프트 없음.
+**무엇을**: `.claude/worktrees/` 에 더 이상 디렉토리가 없는 worktree 의 `claim_*_{postgres,redis}` 컨테이너 + 짝지어진 볼륨 (`*_pgdata`, `*_redisdata`) 을 일괄 삭제. 확인 프롬프트 없음.
 
 **언제**:
 - `git worktree remove` 직후 (정상적으로 SessionEnd hook 이 down -v 했으면 잡을 게 없지만, 외부에서 worktree 디렉토리 강제 삭제 시 잔존 컨테이너 정리).

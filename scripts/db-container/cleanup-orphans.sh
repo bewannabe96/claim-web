@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # pnpm cleanup:orphan-db-containers — 메인 리포의 .claude/worktrees/ 에 없는 worktree 의
-# claim_*_postgres 컨테이너 + pgdata 볼륨을 일괄 삭제. 확인 없이 진행.
+# claim_*_{postgres,redis} 컨테이너 + 짝지어진 볼륨 (pgdata / redisdata) 일괄 삭제. 확인 없이 진행.
 #
 # 메인 리포 / worktree 어디서 호출하든 동작.
 # 안전 keep-list: .claude/worktrees/* 의 basename + 메인 리포 자체 basename.
@@ -39,9 +39,17 @@ fi
 removed=0
 while IFS= read -r container; do
   [ -z "$container" ] && continue
-  # claim_<safe>_postgres → <safe>.
+  # claim_<safe>_<service> → service ∈ {postgres, redis}.
+  service="${container##*_}"
   safe="${container#claim_}"
-  safe="${safe%_postgres}"
+  safe="${safe%_${service}}"
+
+  # service ↔ volume 매핑 — docker-compose.yml 의 volumes 섹션과 동기 유지.
+  case "$service" in
+    postgres) volume_suffix="pgdata" ;;
+    redis)    volume_suffix="redisdata" ;;
+    *)        continue ;;
+  esac
 
   found=0
   for k in "${keep[@]}"; do
@@ -50,11 +58,11 @@ while IFS= read -r container; do
 
   if [ "$found" -eq 0 ]; then
     project="claim_${safe}"
-    echo "[cleanup] Orphan: $container — removing container + ${project}_pgdata."
+    echo "[cleanup] Orphan: $container — removing container + ${project}_${volume_suffix}."
     docker rm -f "$container" >/dev/null 2>&1 || true
-    docker volume rm "${project}_pgdata" >/dev/null 2>&1 || true
+    docker volume rm "${project}_${volume_suffix}" >/dev/null 2>&1 || true
     removed=$((removed + 1))
   fi
-done < <(docker ps -a --filter "name=^claim_.*_postgres$" --format '{{.Names}}')
+done < <(docker ps -a --filter "name=^claim_.*_postgres$" --filter "name=^claim_.*_redis$" --format '{{.Names}}')
 
 echo "[cleanup] Removed $removed orphan(s)."
