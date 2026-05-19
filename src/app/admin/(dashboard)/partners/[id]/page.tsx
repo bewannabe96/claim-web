@@ -2,6 +2,11 @@ import { notFound } from "next/navigation";
 
 import { updatePartner } from "@/features/partners/actions";
 import { getPartnerById } from "@/features/partners/queries";
+import { listRefundableTopups } from "@/features/credits/queries";
+import { AdjustmentForm } from "@/features/credits/ui/adjustment-form";
+import { CreditBalanceCard } from "@/features/credits/ui/credit-balance-card";
+import { LedgerList } from "@/features/credits/ui/ledger-list";
+import { RefundForm } from "@/features/credits/ui/refund-form";
 import { cn } from "@/lib/utils";
 
 import { PartnerForm } from "../../_components/partner-form";
@@ -20,6 +25,8 @@ export default async function AdminPartnerDetailPage({
   const { id } = await params;
   const partner = await getPartnerById(id);
   if (!partner) notFound();
+
+  const refundableTopups = await listRefundableTopups(partner.id);
 
   const action = updatePartner.bind(null, partner.id);
 
@@ -81,6 +88,30 @@ export default async function AdminPartnerDetailPage({
             </div>
           </div>
         )}
+      </Card>
+
+      {/* 크레딧 */}
+      <Card>
+        <CardHeader title="크레딧" />
+        <CreditBalanceCard partnerId={partner.id} />
+      </Card>
+
+      <Card>
+        <CardHeader title="크레딧 수동 조정" />
+        <AdjustmentForm partnerId={partner.id} />
+      </Card>
+
+      <Card>
+        <CardHeader title="결제 환불 처리" />
+        <RefundForm
+          partnerId={partner.id}
+          refundableTopups={refundableTopups}
+        />
+      </Card>
+
+      <Card>
+        <CardHeader title="최근 거래 내역" />
+        <LedgerList partnerId={partner.id} mode="compact" />
       </Card>
 
       {/* 편집 폼 */}

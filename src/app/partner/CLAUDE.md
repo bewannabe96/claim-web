@@ -77,9 +77,14 @@ partner/
 │  └─ done/page.tsx                    # 제출 완료 안내
 └─ (dashboard)/                        # route group — 로그인 필요
    ├─ layout.tsx                       # requirePartnerSession + 로그아웃 헤더
-   ├─ page.tsx                         # /partner 대시보드 (현재 placeholder)
+   ├─ page.tsx                         # /partner 대시보드 (잔액 카드 임베드)
+   ├─ credits/
+   │  ├─ page.tsx                      # 잔액 + 거래 내역 (cursor pagination)
+   │  └─ topup/page.tsx                # 충전 금액 입력 → PG provider redirect
    └─ _actions/logout.ts               # signOutPartner
 ```
+
+크레딧 도메인 자체의 규칙 (chokepoint, 멱등성, 액터 매트릭스) 은 [src/features/credits/CLAUDE.md](../../features/credits/CLAUDE.md). 충전 PG 콜백은 `/api/webhooks/credits/[provider]` 라우트가 받음 — 세션 가드 없음, `PaymentProvider.verifyWebhook` 가 인증.
 
 OAuth 콜백은 `/api/auth/callback` 라우트 핸들러 — `?signup=<token>` 유무로 가입 / 로그인 분기. signup 분기는 invitation lock 만 책임 (user/partner INSERT 안 함) — 가입 트랜잭션은 verify 액션이 소유.
 

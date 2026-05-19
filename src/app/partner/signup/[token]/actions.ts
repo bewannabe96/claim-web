@@ -324,6 +324,11 @@ export async function verifyPartnerSignupOtp(
           active: invitation.active,
         },
       });
+      // 잔액 row eager-create — Partner.exists ⇔ PartnerCreditBalance.exists 불변식.
+      // 같은 tx 안에서 INSERT 해 all-or-nothing 보존.
+      await tx.partnerCreditBalance.create({
+        data: { partnerId: userId },
+      });
       await tx.partnerInvitation.update({
         where: { id: invitation.id },
         data: {

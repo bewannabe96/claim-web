@@ -46,6 +46,10 @@
 | `/partner/login` | 설계사 로그인 폼 | 누구나 | — | — | ⚪ placeholder |
 | `/partner/assignments/[token]` | 가입자 요청 컨텍스트 + 제안서 제출 폼 (한줄 요약 + PDF) | 설계사(token) | **W**: prop (insert), assign.status=submitted — 트랜잭션 · **R**: assign, pr (+ pr_mh, pr_cand), pt · **S3**: presigned PUT | §5.4 | ✅ |
 | `/partner/assignments/done` | 제출 완료 안내 | 누구나 | — | §5.4 | ✅ |
+| `/partner` | 설계사 대시보드 — 잔액 카드 + 충전/내역 CTA | 설계사 (Kakao) | **R**: partner_credit_balance | — | ✅ |
+| `/partner/credits` | 크레딧 잔액 + 거래 내역 (cursor pagination) | 설계사 (Kakao) | **R**: partner_credit_balance, partner_credit_ledger | — | ✅ |
+| `/partner/credits/topup` | 충전 금액 입력 → PG provider redirect (현재 stub) | 설계사 (Kakao) | **W**: Redis `topup:pending:{paymentId}` (provider 자체) | — | ✅ stub 만, 실 PG 후속 |
+| `/api/webhooks/credits/[provider]` | PG 충전 콜백 webhook | PG 인프라 (provider.verifyWebhook 인증) | **W**: partner_credit_ledger (type=topup) + balance — applyLedger 트랜잭션 | — | ✅ stub 만 |
 
 ---
 
@@ -61,7 +65,7 @@
 | `/admin/requests/[id]` | 요청 상세 — Step1/3 전체 + assignment 목록 (partner + proposal join) | 운영자 | **R**: pr, assign, prop, pt | §5.8 | ✅ |
 | `/admin/partners` | 설계사 풀 목록 | 운영자 | **R**: pt | §5.8 | ✅ |
 | `/admin/partners/new` | 신규 설계사 등록 폼 | 운영자 | **W**: pt | §5.8 | ✅ |
-| `/admin/partners/[id]` | 설계사 수정 폼 | 운영자 | **R/W**: pt | §5.8 | ✅ |
+| `/admin/partners/[id]` | 설계사 수정 폼 + 크레딧 수동 조정 (adjustCredit) + 최근 거래 내역 | 운영자 | **R/W**: pt, partner_credit_balance, partner_credit_ledger (applyLedger) | §5.8 | ✅ |
 | `/admin/settings` | 시스템 설정 (candidateCount, selectLimit, submissionDeadlineHours, penaltyWindow) | 운영자 | **R/W**: cfg | §5.8 / §8 | ✅ |
 
 ---

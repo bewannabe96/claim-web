@@ -36,7 +36,7 @@ src/
 │  └─ api/auth/callback/  # Supabase OAuth 콜백 (Kakao → login / signup 분기)
 ├─ components/ui/     # shadcn 프리미티브 (수동 편집 X)
 ├─ features/          # 도메인 모듈 (schema/queries/actions/ui)
-│  ├─ admin/  partners/  proposals/  requests/
+│  ├─ admin/  partners/  proposals/  requests/  credits/
 ├─ server/            # 'server-only'. DAL, Supabase, prisma, S3
 │  ├─ dal.ts          #   모든 인증 검사 단일 진입점 (User + 역할 extension)
 │  ├─ supabase.ts     #   @supabase/ssr 서버 클라이언트
@@ -57,14 +57,14 @@ pnpm lint      # ESLint
 
 ## 로컬 인프라
 
-worktree 마다 격리된 Docker Postgres + Redis. `schema.prisma` 변경은 `pnpm db:push` 로 로컬에 즉시 sync (migration 안 만듦). Redis 는 OTP 코드 (`features/requests` 본인인증) + IP 레이트리밋 카운터 보관처 — TTL 만으로 수명 관리. 전체 흐름: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
+worktree 마다 격리된 Docker Postgres + Redis. `schema.prisma` 변경은 `pnpm db:push` 로 로컬에 즉시 sync (migration 안 만듦). Redis 는 OTP 코드 (`features/requests` 본인인증) + IP 레이트리밋 카운터 + 크레딧 충전 pending stash (`features/credits`) 보관처 — TTL 만으로 수명 관리. 전체 흐름: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
 
 ```bash
 pnpm workspace:setup              # 첫 진입: Docker 기동 + migration deploy + seed (멱등)
 pnpm db:push                      # 일상: schema.prisma 변경 후 로컬 격리 DB 즉시 sync
 pnpm db:migrate:deploy            # 기존 migration 을 로컬에 적용
 pnpm db:reset                     # 볼륨 삭제 → 다음 workspace:setup 에서 깨끗하게
-pnpm db:seed                      # app_settings + admin 본인 + dev partner_invitation upsert (workspace:setup 이 자동 호출)
+pnpm db:seed                      # app_settings + admin 본인 + dev partner_invitation + partner_credit_balance 백필 (workspace:setup 이 자동 호출)
 pnpm cleanup:orphan-db-containers # 사라진 worktree 의 고아 컨테이너 + 볼륨 일괄 삭제 (메인 리포에서 호출)
 ```
 
