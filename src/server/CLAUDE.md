@@ -23,6 +23,16 @@
 - `settings.ts` — single-row `app_settings` 로드/갱신. `SettingsPatch` 가 admin 폼에서 갱신
   가능한 필드 (candidateCount / selectLimit / submissionDeadlineHours / penaltyWindow /
   resultRetentionDays / scenarioPriority).
+- `redis.ts` — ioredis 싱글톤 (`getRedis()`). OTP 코드 (`otp:code:{requestId}:{phone}`, EX 180) +
+  IP 발송 시도 카운터 (`otp:rl:{ip}`, EX 3600) 보관처. HMR-safe (globalThis 캐싱).
+- `aligo.ts` — 알리고 SMS 게이트웨이 (`sendOtpSms`). 본인인증 6자리 코드 발송.
+  `ALIGO_TEST_MODE=Y` 일 때 호출자가 알리고 호출 자체를 생략 + 코드 "000000" 고정 (`isAligoTestMode()`).
+  https://smartsms.aligo.in/admin/api/spec.html.
+- `branding.ts` — 서비스 표시 이름 (`getServiceName()`). SMS prefix 등 사용자 노출 문구의 단일 진입점.
+  env: `SERVICE_NAME`. 추후 이메일/알림톡 문구에서도 재사용.
+- `get-client-ip.ts` — `headers()` 기반 client IP 추출 (`x-forwarded-for` → `x-real-ip` → fallback).
+  IP 기반 레이트리밋의 best-effort 입력. 강한 보장은 reverse proxy (Vercel/Cloudflare) 단의
+  헤더로 격상 가능.
 
 ## S3 버킷 설정 (제안서 PDF)
 

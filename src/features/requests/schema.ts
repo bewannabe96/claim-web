@@ -254,14 +254,23 @@ export type Step3State =
  * OTP — 발송 + 검증 (확정과 결합)
  * ============================================================ */
 
-/** 인증번호 전송 요청 — 휴대폰 번호 형식만 검증 (실제 SMS 는 모킹). */
+/** 인증번호 전송 요청 — 휴대폰 번호 형식만 검증. */
 export const SendOtpSchema = z.object({
   phone: PHONE,
 });
 
+/**
+ * `retryAfterSeconds` — 성공 시 새로 발급된 코드의 잔여 TTL(=재전송 쿨다운),
+ * 실패가 쿨다운 때문일 때는 기존 코드의 잔여 TTL. UI 타이머 초기화에 사용.
+ * 다른 종류의 실패(레이트리밋·발송실패) 에서는 undefined.
+ */
 export type SendOtpState =
-  | { ok: true }
-  | { ok?: false; errors?: { phone?: string[]; _form?: string[] } }
+  | { ok: true; retryAfterSeconds: number }
+  | {
+      ok?: false;
+      errors?: { phone?: string[]; _form?: string[] };
+      retryAfterSeconds?: number;
+    }
   | undefined;
 
 export const OtpSchema = z.object({

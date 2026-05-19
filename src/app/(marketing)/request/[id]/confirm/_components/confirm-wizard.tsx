@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,14 @@ export function ConfirmWizard({
   const [otpSent, setOtpSent] = useState(false);
   const [sendOtpError, setSendOtpError] = useState<string | null>(null);
   const [sendingOtp, startSendOtpTransition] = useTransition();
+  // 재전송 쿨다운 — 서버가 알려준 잔여 초로 초기화, 1초씩 감소. 0 도달 시 재전송 가능.
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown((c) => (c <= 1 ? 0 : c - 1)), 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
 
   const finalizeWithId = finalizeRequest.bind(null, requestId);
   const [state, formAction, pending] = useActionState(
@@ -105,7 +113,7 @@ export function ConfirmWizard({
     data.consentMessaging;
 
   function handleSendOtp() {
-    if (!phoneValid || sendingOtp) return;
+    if (!phoneValid || sendingOtp || cooldown > 0) return;
     setSendOtpError(null);
 
     const fd = new FormData();
@@ -115,12 +123,17 @@ export function ConfirmWizard({
       const result = await sendOtp(requestId, undefined, fd);
       if (result?.ok) {
         setOtpSent(true);
+        setCooldown(result.retryAfterSeconds);
       } else {
         const msg =
           result?.errors?._form?.[0] ??
           result?.errors?.phone?.[0] ??
           "전송에 실패했어요. 잠시 후 다시 시도해주세요.";
         setSendOtpError(msg);
+        // 쿨다운 에러일 때 서버가 잔여 초를 알려주면 타이머 초기화 — 정확한 카운트다운.
+        if (result?.retryAfterSeconds && result.retryAfterSeconds > 0) {
+          setCooldown(result.retryAfterSeconds);
+        }
       }
     });
   }
@@ -129,6 +142,7 @@ export function ConfirmWizard({
     setData((d) => ({ ...d, phone: digits, otpCode: "" }));
     setOtpSent(false);
     setSendOtpError(null);
+    setCooldown(0);
   }
 
   return (
@@ -239,15 +253,21 @@ export function ConfirmWizard({
             <button
               type="button"
               onClick={handleSendOtp}
-              disabled={!phoneValid || sendingOtp}
+              disabled={!phoneValid || sendingOtp || cooldown > 0}
               className={cn(
                 "shrink-0 h-14 px-4 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
-                phoneValid && !sendingOtp
+                phoneValid && !sendingOtp && cooldown === 0
                   ? "bg-black text-white hover:bg-[#1a1a1a]"
                   : "bg-[#efefef] text-[#afafaf] cursor-not-allowed",
               )}
             >
-              {sendingOtp ? "전송 중..." : otpSent ? "재전송" : "인증번호 전송"}
+              {sendingOtp
+                ? "전송 중..."
+                : cooldown > 0
+                  ? `${cooldown}초 후 재전송`
+                  : otpSent
+                    ? "재전송"
+                    : "인증번호 전송"}
             </button>
           </div>
           {sendOtpError && (
@@ -273,14 +293,9 @@ export function ConfirmWizard({
               className="h-14 px-4 text-base tracking-[0.4em] text-center"
               autoFocus
             />
-            {state?.errors?.code?.[0] ? (
+            {state?.errors?.code?.[0] && (
               <p className="mt-2 text-xs text-red-600">
                 {state.errors.code[0]}
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-[#4b4b4b]">
-                MVP 데모 — 인증번호는{" "}
-                <span className="font-semibold text-black">000000</span> 으로 들어가요
               </p>
             )}
           </Field>

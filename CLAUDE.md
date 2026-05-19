@@ -55,9 +55,9 @@ pnpm build     # 프로덕션 빌드 + 타입 체크
 pnpm lint      # ESLint
 ```
 
-## 로컬 DB
+## 로컬 인프라
 
-worktree 마다 격리된 Docker Postgres. `schema.prisma` 변경은 `pnpm db:push` 로 로컬에 즉시 sync (migration 안 만듦). 전체 흐름: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
+worktree 마다 격리된 Docker Postgres + Redis. `schema.prisma` 변경은 `pnpm db:push` 로 로컬에 즉시 sync (migration 안 만듦). Redis 는 OTP 코드 (`features/requests` 본인인증) + IP 레이트리밋 카운터 보관처 — TTL 만으로 수명 관리. 전체 흐름: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
 
 ```bash
 pnpm workspace:setup              # 첫 진입: Docker 기동 + migration deploy + seed (멱등)

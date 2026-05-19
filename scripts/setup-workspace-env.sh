@@ -8,7 +8,8 @@ source "$(dirname "$0")/set-workspace-env-vars.sh"
 
 echo "[db] Worktree: $WORKTREE_NAME"
 echo "[db] Project:  $COMPOSE_PROJECT_NAME"
-echo "[db] Port:     $POSTGRES_HOST_PORT"
+echo "[db] Postgres: $POSTGRES_HOST_PORT"
+echo "[db] Redis:    $REDIS_HOST_PORT"
 
 # worktree 에 .env 가 없으면 메인 리포의 .env 를 한 번 복사.
 # 메인 리포 자체에서 실행 시엔 자기 자신 복사 회피.
@@ -41,12 +42,22 @@ if [ ! -d node_modules ] || [ ! -x node_modules/.bin/prisma ]; then
   pnpm install
 fi
 
-docker compose up -d postgres
+docker compose up -d postgres redis
 
 # healthcheck 대기 (최대 ~60s)
 echo -n "[db] Waiting for postgres"
 for _ in $(seq 1 30); do
   if docker compose exec -T postgres pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+    echo " ready."
+    break
+  fi
+  echo -n "."
+  sleep 2
+done
+
+echo -n "[db] Waiting for redis"
+for _ in $(seq 1 30); do
+  if docker compose exec -T redis redis-cli ping >/dev/null 2>&1; then
     echo " ready."
     break
   fi
