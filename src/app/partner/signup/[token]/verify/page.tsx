@@ -51,12 +51,12 @@ export default async function PartnerSignupVerifyPage({
   }
 
   const supabase = await getSupabaseServerClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
+  const { data: claimsData, error: claimsError } =
+    await supabase.auth.getClaims();
+  const authUserId = claimsError ? null : (claimsData?.claims.sub ?? null);
 
   // 세션 없으면 카카오 가입 단계로 redirect (그 페이지가 Step 1 시작 버튼 노출).
-  if (!authUser) {
+  if (!authUserId) {
     redirect(`/partner/signup/${token}`);
   }
 
@@ -66,7 +66,7 @@ export default async function PartnerSignupVerifyPage({
   }
 
   // 다른 카카오 계정이 lock 한 invitation 에 다른 사람이 진입 → signOut + 안내.
-  if (invitation.linkedAuthId !== authUser.id) {
+  if (invitation.linkedAuthId !== authUserId) {
     await supabase.auth.signOut();
     redirect(`/partner/signup/${token}?error=link_conflict`);
   }

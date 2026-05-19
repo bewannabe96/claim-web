@@ -44,13 +44,15 @@ export type AdminSession = { kind: "admin"; user: SessionUser; adminId: string }
  */
 export const getOptionalUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = getSupabaseServerClient();
+  // getClaims: asymmetric JWT signing keys 활성 시 로컬 서명 검증 (네트워크 hit 0),
+  // 미활성 시 내부적으로 getUser fallback. throw 안 하고 { data, error } 로 반환하지만
+  // fallback 의 네트워크 오류는 throw 가능 → try/catch 와 error 둘 다 graceful null.
+  // stale cookie 청소는 middleware 가 mutable context 에서 담당.
   let authUserId: string | null = null;
   try {
-    const { data } = await supabase.auth.getUser();
-    authUserId = data.user?.id ?? null;
+    const { data, error } = await supabase.auth.getClaims();
+    if (!error) authUserId = data?.claims.sub ?? null;
   } catch {
-    // refresh 실패 (refresh_token_not_found 등) / 네트워크 오류 → graceful null.
-    // stale cookie 청소는 middleware 가 mutable context 에서 담당.
     return null;
   }
   if (!authUserId) return null;
