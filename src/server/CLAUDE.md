@@ -23,8 +23,12 @@
 - `settings.ts` — single-row `app_settings` 로드/갱신. `SettingsPatch` 가 admin 폼에서 갱신
   가능한 필드 (candidateCount / selectLimit / submissionDeadlineHours / penaltyWindow /
   resultRetentionDays / scenarioPriority).
-- `redis.ts` — ioredis 싱글톤 (`getRedis()`). OTP 코드 (`otp:code:{requestId}:{phone}`, EX 180) +
-  IP 발송 시도 카운터 (`otp:rl:{ip}`, EX 3600) 보관처. HMR-safe (globalThis 캐싱).
+- `redis.ts` — `RedisClient` 인터페이스 + 어댑터 (`getRedis()`). OTP 코드
+  (`otp:code:{requestId}:{phone}`, EX 180) + IP 발송 시도 카운터 (`otp:rl:{ip}`, EX 3600) 보관처.
+  HMR-safe (globalThis 캐싱). 백엔드 자동 선택:
+  - `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` → Upstash REST (HTTP, prod / serverless 권장).
+  - 그 외 → `REDIS_URL` 로 ioredis (TCP, 로컬 Docker Redis).
+  호출부는 `RedisClient` 만 의존 — 새 백엔드 추가는 어댑터 함수 한 개 추가 + env 분기.
 - `aligo.ts` — 알리고 SMS 게이트웨이 (`sendOtpSms`). 본인인증 6자리 코드 발송.
   `ALIGO_TEST_MODE=Y` 일 때 호출자가 알리고 호출 자체를 생략 + 코드 "000000" 고정 (`isAligoTestMode()`).
   https://smartsms.aligo.in/admin/api/spec.html.
