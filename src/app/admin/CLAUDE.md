@@ -71,7 +71,7 @@ admin/
    │  ├─ page.tsx                # 가입 대기 (invitation) + 등록 완료 (partner) 2-섹션 리스트
    │  ├─ new/page.tsx            # 신규 초청 발급 (createPartnerInvitation 액션)
    │  ├─ invitations/[id]/...    # 초청 상세 — 가입 URL 복사 + 재발급/삭제/정보수정
-   │  └─ [id]/page.tsx           # 등록 완료된 partner 편집 (updatePartner)
+   │  └─ [id]/page.tsx           # 등록 완료된 partner 편집 (updatePartner) + 크레딧 수동 조정 (adjustCredit, [features/credits](../../features/credits/CLAUDE.md))
    ├─ settings/...               # 시스템 설정
    ├─ _actions/logout.ts         # signOutAdmin server action
    └─ _components/                # 어드민 공용 UI

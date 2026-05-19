@@ -23,8 +23,12 @@
 - `settings.ts` — single-row `app_settings` 로드/갱신. `SettingsPatch` 가 admin 폼에서 갱신
   가능한 필드 (candidateCount / selectLimit / submissionDeadlineHours / penaltyWindow /
   resultRetentionDays / scenarioPriority).
-- `redis.ts` — `RedisClient` 인터페이스 + 어댑터 (`getRedis()`). OTP 코드
-  (`otp:code:{requestId}:{phone}`, EX 180) + IP 발송 시도 카운터 (`otp:rl:{ip}`, EX 3600) 보관처.
+- `redis.ts` — `RedisClient` 인터페이스 + 어댑터 (`getRedis()`). 키 네임스페이스:
+  - `otp:code:{requestId}:{phone}` (EX 180) — 본인인증 6자리 OTP.
+  - `otp:rl:{ip}` (EX 3600) — IP 별 OTP 발송 시도 카운터.
+  - `topup:pending:{paymentId}` (EX 3600) — 크레딧 충전 개시 후 PG 콜백이
+    paymentId 만 들고 와도 (partnerId, amount) 를 신뢰할 수 있게 보관 ([src/features/credits/payment/provider.ts](../features/credits/payment/provider.ts)).
+
   HMR-safe (globalThis 캐싱). 백엔드 자동 선택:
   - `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` → Upstash REST (HTTP, prod / serverless 권장).
   - 그 외 → `REDIS_URL` 로 ioredis (TCP, 로컬 Docker Redis).

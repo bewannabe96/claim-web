@@ -31,6 +31,26 @@ async function main() {
 
   await seedAdmin();
   await seedDevPartnerInvitation();
+  await seedPartnerCreditBalances();
+}
+
+/**
+ * 레거시 Partner 백필 — 가입 트랜잭션 (verifyPartnerSignupOtp) 이 PartnerCreditBalance
+ * row 를 eager-create 하기 시작했지만, 그 이전에 가입한 dev partner 들은 row 가 없을 수
+ * 있어 멱등 upsert 로 보완. update 가 빈 객체라 매번 호출돼도 부수 효과 없음.
+ */
+async function seedPartnerCreditBalances() {
+  const partners = await prisma.partner.findMany({ select: { id: true } });
+  for (const p of partners) {
+    await prisma.partnerCreditBalance.upsert({
+      where: { partnerId: p.id },
+      update: {},
+      create: { partnerId: p.id },
+    });
+  }
+  if (partners.length > 0) {
+    console.log(`[seed] partner_credit_balance ensured for ${partners.length} partner(s)`);
+  }
 }
 
 async function seedAdmin() {

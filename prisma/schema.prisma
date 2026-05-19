@@ -193,13 +193,100 @@ model Partner {
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
-  user        User                   @relation(fields: [id], references: [id], onDelete: Cascade)
-  candidates  PlanRequestCandidate[]
-  assignments MatchAssignment[]
+  user          User                   @relation(fields: [id], references: [id], onDelete: Cascade)
+  candidates    PlanRequestCandidate[]
+  assignments   MatchAssignment[]
+  creditBalance PartnerCreditBalance?
+  creditLedger  PartnerCreditLedger[]
 
   // 매칭 후보 추출 — active=true 중 exposure_count 적은 순으로 정렬.
   @@index([active, exposureCount])
   @@map("partner")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner_credit_balance — 설계사 크레딧 잔액 (Partner 와 1:1)
+// ============================================================
+// 1 credit = 1 KRW. 항상 Int (소수 없음, Decimal/Float/BigInt 금지).
+//
+// 잔액 갱신은 모든 케이스에서 partner_credit_ledger INSERT 와 같은 트랜잭션 안에서
+// 일어남. 동시 갱신은 `version` 컬럼의 optimistic lock 으로 직렬화 — 자세한 알고리즘은
+// features/credits/lib/apply-ledger.ts 가 단일 chokepoint.
+//
+// 음수 잔액은 DB CHECK 미사용 정책에 따라 앱 레이어 (apply-ledger) 가 사전 검사.
+//
+// 1:1 보장: partnerId 는 PK 이자 FK. 빈 row 는 partner 가입 트랜잭션 시점
+// (verifyPartnerSignupOtp) 에 함께 INSERT — Partner.exists ⇔ PartnerCreditBalance.exists
+// 불변식을 유지. 레거시 파트너 대비 시더 + getCreditBalance lazy upsert fallback.
+
+model PartnerCreditBalance {
+  partnerId String   @id @map("partner_id")              // = Partner.id (= User.id)
+  balance   Int      @default(0)
+  /// Optimistic lock counter. updateMany WHERE version=expected 패턴.
+  version   Int      @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@map("partner_credit_balance")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner_credit_ledger — 크레딧 변동 append-only 원장
+// ============================================================
+// 모든 잔액 변동은 이 테이블에 한 row INSERT. row 삭제/수정 금지 (운영 SQL 도 금함).
+// 환불은 별도 row (type='adjustment' 또는 'refund', 음수 amount) 로 표현 — PG cancel
+// API 미연동.
+//
+// referenceType + referenceId 는 자유 포인터:
+//   - type='topup'      → ("payment", paymentId)
+//   - type='spend'      → ("assignment"/"plan_request"/..., entity id)
+//   - type='adjustment' → null
+// FK 강제 안 함 (다양한 출처 + 원본 entity cascade 삭제 시에도 audit 보존).
+//
+// idempotencyKey: 같은 외부 요청 (PG 웹훅 재전송 / spend 재실행) 의 중복 적용 차단.
+// NULL 허용 (admin 수기 adjustment 등 멱등 키가 없는 경로) — PostgreSQL 기본: UNIQUE
+// 인덱스에서 NULL 은 distinct 취급, 다수 NULL row 공존 가능.
+//
+// createdById: 액터의 user.id. admin adjustment → admin user.id, 웹훅·시스템 spend →
+// null. FK 미설정 — user 삭제 시 audit 가 사라지면 안 됨.
+
+model PartnerCreditLedger {
+  id        String  @id                                  // nanoid(16)
+  partnerId String  @map("partner_id")
+
+  /// 부호 있는 KRW. topup/refund 양수, spend 음수, adjustment 양·음 모두 가능.
+  amount       Int
+  /// 이 row 적용 직후 balance 스냅샷. apply-ledger 가 balance 갱신과 같은 tx 에서 set.
+  balanceAfter Int @map("balance_after")
+
+  /// "topup" | "spend" | "adjustment" | "refund" — zod 로 검증. DB enum 아님.
+  type   String
+  /// 운영 메모 (admin adjustment 사유, spend feature 라벨 등). 길이는 zod 가 강제.
+  reason String?
+
+  referenceType String? @map("reference_type")
+  referenceId   String? @map("reference_id")
+
+  /// 외부 요청 단위 멱등키 — UNIQUE 인덱스로 race-safe. NULL 다수 허용.
+  idempotencyKey String? @unique @map("idempotency_key")
+
+  /// 액터 user.id. 시스템 자동 (웹훅·spend) 은 null. FK 미설정 (audit 보존).
+  createdById String?  @map("created_by_id")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  /// 파트너 거래 내역 — 최신 순 페이지네이션 최적화.
+  @@index([partnerId, createdAt(sort: Desc)])
+  /// 원본 entity → ledger 역추적 (payment_id 로 topup 확인, assignment_id 로 spend 확인).
+  @@index([referenceType, referenceId])
+  @@map("partner_credit_ledger")
   @@schema("claim")
 }
 
