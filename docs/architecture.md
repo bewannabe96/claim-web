@@ -377,38 +377,35 @@ User 에는 role discriminator 컬럼이 없음 — 역할은 partner / admin ex
 
 partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일회용 가입 초청 token** 으로만 가입. 어드민에 partner 직접 INSERT 액션 없음 (`createPartner` 없음 — `createPartnerInvitation` 만).
 
-**흐름 (2단계, Kakao 먼저 → 본인인증):**
+**흐름 (2단계, Kakao 먼저 → 본인인증) — 매 진입마다 새 OAuth:**
 
 1. 어드민 `/admin/partners/new` 입력 → `createPartnerInvitation` 이 `claim.partner_invitation` row INSERT (name/phone/bio/.../active + token + expiresAt = now + `PARTNER_INVITATION_TTL_DAYS`). `linkedAuthId` 와 `phoneVerifiedAt` 은 NULL. user/partner row 없음.
 2. 어드민이 `/admin/partners/invitations/<id>` 에서 가입 URL (`/partner/signup/<token>`) 복사 → 메신저로 설계사에게 전달.
-3. 설계사가 링크 진입 → invitation 유효성 (미소비 + 미만료) 확인 → `linkedAuthId` 기준으로 페이지 단계 분기:
-   - **Step 1 — 카카오 가입 (`linkedAuthId IS NULL`)**: "카카오톡으로 시작" 버튼 → `signUpWithKakao` action 이 Supabase `signInWithOAuth` 의 `redirectTo` 에 `?signup=<token>` 실어 Kakao 로 이동.
-   - **Step 2 — 본인인증 (`linkedAuthId IS NOT NULL`)**: 자동으로 `/partner/signup/<token>/verify` 로 redirect.
-4. Kakao 인증 후 `/api/auth/callback?signup=<token>` 진입 — **invitation lock 만 책임**:
+3. 설계사가 링크 진입 → invitation 유효성 (미소비 + 미만료) 확인. **페이지는 `linkedAuthId` 보지 않고 항상 Step 1 ("카카오톡으로 시작") 노출** — 다른 카카오 계정으로 재시도해도 동일하게 시작.
+4. `signUpWithKakao` action: 현재 Supabase 세션 `signOut()` (이전 진입의 잔여 세션 청소) → `signInWithOAuth` 에 `redirectTo=…?signup=<token>` + `queryParams.prompt=login` (Kakao SSO 우회 → 계정 선택 강제).
+5. Kakao 인증 후 `/api/auth/callback?signup=<token>` 진입 — **invitation lock 갱신만 책임**:
    - `exchangeCodeForSession` → session cookie
-   - invitation 재조회 + 미소비/미만료 확인. 불통 시 `signOut` + signup 페이지로 redirect.
-   - `linkedAuthId` 처리:
-     - NULL → race-safe claim (`updateMany WHERE id = ? AND linkedAuthId IS NULL`). 동시 콜백 중 한쪽만 lock 성공, 나머지는 재조회 후 일치/불일치 분기.
-     - `=== authUser.id` → 통과 (재진입). Kakao 세션이 살아있으면 본인인증 미완 상태에서 같은 URL 재방문 가능.
-     - 다른 값 → `signOut` + `?error=link_conflict`. 잠금 해제는 어드민 reissue 만 가능.
-   - **user/partner INSERT 안 함.** 콜백은 invitation 에 Kakao 계정만 lock 하고 `/partner/signup/<token>/verify` 로 forward.
-5. `/partner/signup/<token>/verify` 진입 — 페이지 가드: Kakao 세션 존재 + `invitation.linkedAuthId === authUser.id` 매칭. 통과 시 PortOne 본인인증 폼 노출 (현재 placeholder; dev 에서 6자리 OTP 통과).
-6. `verifyPartnerSignupOtp` action 이 **가입 트랜잭션의 owner** — placeholder 자릿수 검증 + Kakao 세션 + `linkedAuthId` 매칭 + tx 안 재확인 (소비 / 만료 / `linkedAuthId` 셋 모두 → race-safe) 후 단일 트랜잭션으로:
+   - 단일 `updateMany WHERE token = ? AND consumedAt IS NULL AND expiresAt > now()` 로 invitation 유효성 + lock 갱신을 한 쿼리에. updated.count === 0 이면 `signOut` + signup 페이지로 redirect (token 무효).
+   - `linkedAuthId` 는 매번 현재 `authUser.id` 로 **무조건 덮어씀** (이전 lock 무시). `phoneVerifiedAt` 도 NULL 리셋 — 새 계정 진입이면 본인인증 다시 받도록.
+   - **user/partner INSERT 안 함.** 콜백 책임은 lock 갱신 + `/partner/signup/<token>/verify` 로 forward.
+6. `/partner/signup/<token>/verify` 진입 — 페이지 가드: Kakao 세션 존재 + `invitation.linkedAuthId === authUser.id` 매칭. mismatch (다른 탭이 같은 링크로 새 OAuth 해 lock 옮긴 경우 등) 면 `signOut` + Step 1 으로 silent redirect (별도 에러 안내 X). 통과 시 PortOne 본인인증 폼 노출 (현재 placeholder; dev 에서 6자리 OTP 통과).
+7. `verifyPartnerSignupOtp` action 이 **가입 트랜잭션의 owner** — placeholder 자릿수 검증 + Kakao 세션 + `linkedAuthId` 매칭 + tx 안 재확인 (소비 / 만료 / `linkedAuthId` 셋 모두 → race-safe) 후 단일 트랜잭션으로:
    - `user` (authId=kakao, email=kakao, name/phone=invitation)
    - `partner` (invitation 의 partner 필드들)
    - invitation 소비 (`consumedAt`, `consumedUserId`, `phoneVerifiedAt` audit)
    - 성공 → `/partner` redirect.
 
-**재발급/삭제** — `/admin/partners/invitations/<id>` 에서 `reissuePartnerInvitationToken` (token 회전 + expiresAt 갱신 + **`linkedAuthId` / `phoneVerifiedAt` NULL 리셋** → Kakao 잠금 해제) / `deletePartnerInvitation` (미소비만). 소비된 invitation 은 audit 용 보존.
+**재발급/삭제** — `/admin/partners/invitations/<id>` 에서 `reissuePartnerInvitationToken` (token 회전 + expiresAt 갱신; 부수적으로 `linkedAuthId` / `phoneVerifiedAt` NULL 리셋 — 어차피 다음 진입이 덮어쓰므로 cleanliness 목적) / `deletePartnerInvitation` (미소비만). 소비된 invitation 은 audit 용 보존.
 
 **race-safety** —
-- 콜백의 lock claim: `updateMany WHERE id = ? AND linkedAuthId IS NULL`. 동시 클릭/이중 OAuth 시 한쪽만 set 성공.
-- verify 액션 가입 트랜잭션 안 재조회: `consumedAt IS NULL AND linkedAuthId = authUser.id AND expiresAt > now()`. 동시 verify 호출 시 한쪽만 user/partner INSERT 도달.
-- `user.phone` / `user.authId` / `partner.licenseNumber` UNIQUE 가 추가 방어. 충돌 시 `?error=already_registered` 로 안내.
+- 콜백의 lock 갱신: `updateMany WHERE token = ? AND consumedAt IS NULL AND expiresAt > now()`. 가입 트랜잭션이 먼저 `consumedAt` 채우면 이후 콜백은 no-op (이미 consumed 인 invitation 의 lock 을 못 옮김).
+- verify 액션 가입 트랜잭션 안 재조회: `consumedAt IS NULL AND linkedAuthId = authUser.id AND expiresAt > now()`. 동시 verify 호출 시 한쪽만 user/partner INSERT 도달. 다른 탭에서 새 OAuth 해 lock 이 옮겨갔다면 stale tab 의 verify 는 여기서 reject.
+- `user.phone` / `user.authId` / `partner.licenseNumber` UNIQUE 가 추가 방어. 충돌 시 verify action 이 사용자에게 안내 메시지 반환.
 
-**보안 의도 — 왜 Kakao 먼저인가:**
-- 옛 흐름 (본인인증 먼저) 은 token URL 만 알면 누구나 PortOne OTP 요청 엔드포인트에 도달 가능. 봇/스캔 무차별 요청 위험.
-- 새 흐름은 Kakao 로그인 → invitation.linkedAuthId 가 그 계정에 lock 됨. 본인인증 페이지/액션은 **Kakao 세션 + linkedAuthId 매칭** 이중 게이트 통과해야 진입. 다른 Kakao 계정 카지팅도 reject.
+**보안 의도 — Kakao 계정은 보안 게이트가 아님:**
+- Token URL = 1차 게이트 (192bit nanoid, 추측 불가). PortOne 본인인증 (name + invitation.phone 매칭) = 진짜 게이트.
+- Kakao 계정은 "가입 후 어떤 계정으로 로그인할지" 결정하는 수단일 뿐. `linkedAuthId` 는 매 진입마다 덮어쓰므로 다른 카카오 계정으로 같은 invitation 재시도 가능.
+- verify 페이지/액션의 `linkedAuthId === authUser.id` 매칭은 횡령 방지가 아니라 "최신 OAuth 한 브라우저 컨텍스트가 verify 한다" 는 일관성 검증 — 다른 탭이 lock 을 옮겼다면 stale 세션을 reject.
 - 가입 트랜잭션 시점이 본인인증 통과 시점과 동일 → user 만 있고 partner 없는 partial state 가 절대 발생 안 함.
 
 **외부 의존**:
