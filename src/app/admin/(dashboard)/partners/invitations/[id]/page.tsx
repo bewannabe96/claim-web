@@ -1,10 +1,10 @@
-import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { updatePartnerInvitation } from "@/features/partners/actions";
 import { getPartnerInvitationById } from "@/features/partners/queries";
 import { nowMs } from "@/lib/wall-clock";
+import { resolveOrigin } from "@/server/origin";
 
 import { PartnerForm } from "../../../_components/partner-form";
 import {
@@ -25,11 +25,8 @@ export default async function AdminPartnerInvitationDetailPage({
   const invitation = await getPartnerInvitationById(id);
   if (!invitation) notFound();
 
-  // 가입 절대 URL 구성 — 요청 헤더의 host/proto 기준.
-  const h = await headers();
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  const host = h.get("host") ?? "localhost:3000";
-  const signupUrl = `${proto}://${host}/partner/signup/${invitation.token}`;
+  // 가입 절대 URL 구성 — Kakao OAuth redirectTo 와 동일한 헤더 기반 base URL 추론.
+  const signupUrl = `${await resolveOrigin()}/partner/signup/${invitation.token}`;
 
   const now = nowMs();
   const expired = invitation.expiresAt.getTime() < now;

@@ -19,6 +19,9 @@
 
 - **Optimistic 비인증 차단**: `/partner/*` 에서 Supabase 세션 cookie 없으면 즉시 307 → /partner/login.
   PPR 모드의 1초 meta refresh fallback 회피 목적 (자세한 건 docs/architecture.md §7.2).
+- **`?next` 보존**: redirect 시 원래 경로(`pathname + search`) 를 쿼리에 실어 보냄 →
+  로그인 페이지 → action → callback URL 까지 forward → 로그인 성공 후 원 위치 복귀.
+  화이트리스트 (`safeNextPath`, `/partner/*` 만) 는 페이지/액션/콜백 3 단계 검증.
 - **Carve-out**: `/partner/login`, `/partner/assignments/*` (알림톡 토큰), `/partner/signup/*` (가입 초청 token) 는 auth 체크 스킵.
 - **X-Robots-Tag 미부착** — partner 영역은 가입자/마케팅과 동등 노출 정책.
 
@@ -86,7 +89,7 @@ partner/
 
 크레딧 도메인 자체의 규칙 (chokepoint, 멱등성, 액터 매트릭스) 은 [src/features/credits/CLAUDE.md](../../features/credits/CLAUDE.md). 충전 PG 콜백은 `/api/webhooks/credits/[provider]` 라우트가 받음 — 세션 가드 없음, `PaymentProvider.verifyWebhook` 가 인증.
 
-OAuth 콜백은 `/api/auth/callback` 라우트 핸들러 — `?signup=<token>` 유무로 가입 / 로그인 분기. signup 분기는 invitation lock 만 책임 (user/partner INSERT 안 함) — 가입 트랜잭션은 verify 액션이 소유.
+OAuth 콜백은 `/api/auth/callback` 라우트 핸들러 — `?signup=<token>` 유무로 가입 / 로그인 분기. signup 분기는 invitation lock 만 책임 (user/partner INSERT 안 함) — 가입 트랜잭션은 verify 액션이 소유. 로그인 분기는 `?next` 를 받아 화이트리스트 검증 후 해당 경로로 redirect (에러 응답에도 `?next` 보존해 재시도 후 복귀).
 
 ## ENV
 

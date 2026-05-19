@@ -4,13 +4,13 @@ import { randomInt } from "node:crypto";
 
 import { Prisma } from "@prisma/client";
 import type { Route } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { newId } from "@/lib/id";
 import { isAligoTestMode, sendOtpSms } from "@/server/aligo";
 import { prisma } from "@/server/db/prisma";
 import { getClientIp } from "@/server/get-client-ip";
+import { resolveOrigin } from "@/server/origin";
 import { getRedis } from "@/server/redis";
 import { getSupabaseServerClient } from "@/server/supabase";
 
@@ -40,16 +40,9 @@ export async function signUpWithKakao(formData: FormData) {
   // 컨텍스트라 setAll 가 실제로 cookie 를 지움. 세션이 없을 땐 no-op.
   await supabase.auth.signOut();
 
-  const h = await headers();
-  // reverse proxy (Vercel / ngrok) 환경에서 host 헤더가 internal 로 잡히면
-  // redirectTo 가 잘못 생성돼 Supabase 가 Site URL ("/") 로 fallback. login
-  // action 과 동일하게 x-forwarded-* 우선 사용. 변경 시 양쪽 동기화.
-  const forwardedHost = h.get("x-forwarded-host");
-  const forwardedProto = h.get("x-forwarded-proto");
-  const host = forwardedHost ?? h.get("host") ?? "";
-  const proto =
-    forwardedProto ?? (host.startsWith("localhost") ? "http" : "https");
-  const origin = h.get("origin") ?? `${proto}://${host}`;
+  // 헤더 기반 base URL 추론 — 결정 로직 단일화 진입점은 `server/origin.ts`
+  // (login action 과 공유). Supabase Redirect URLs 화이트리스트 등록 필수.
+  const origin = await resolveOrigin();
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "kakao",

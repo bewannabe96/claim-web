@@ -41,6 +41,11 @@
 - `get-client-ip.ts` — `headers()` 기반 client IP 추출 (`x-forwarded-for` → `x-real-ip` → fallback).
   IP 기반 레이트리밋의 best-effort 입력. 강한 보장은 reverse proxy (Vercel/Cloudflare) 단의
   헤더로 격상 가능.
+- `origin.ts` — 사용자 노출 base URL (`resolveOrigin()`) 단일 진입점. Kakao OAuth `redirectTo`,
+  어드민 가입 안내 URL 등 외부 노출 절대 URL 생성에 모두 사용. 우선순위: `Origin` 헤더 →
+  `x-forwarded-*` → `host`. 사용자가 접근하는 모든 호스트 (prod / staging / LAN IP / ngrok) 가
+  **Supabase Dashboard 의 Redirect URLs 화이트리스트**에 등록돼 있어야 함. 누락 시 Supabase 가
+  redirectTo 무시하고 Site URL (보통 localhost) 로 fallback.
 
 ## S3 버킷 설정 (제안서 PDF)
 
