@@ -14,10 +14,11 @@ import { getSupabaseServerClient } from "@/server/supabase";
  *      - invitation 게이트: 미소비 + 미만료
  *      - linkedAuthId 처리: **무조건 덮어씀** — 매 진입마다 새 Kakao OAuth 가
  *        가장 최근 계정으로 lock 갱신. 이전 진입에서 다른 계정이 lock 했어도 무시.
- *        횡령 방지는 본인인증 (PortOne) 의 phone 매칭이 책임 — Kakao 계정 자체는
- *        가입 후 어떤 계정으로 로그인할지를 결정하는 수단일 뿐. 진입마다 새 OAuth 가
- *        강제되므로 (signUpWithKakao 가 signOut + prompt=login), 동일 계정 재진입도
- *        동일하게 overwrite 됨 (no-op).
+ *        횡령 방지는 휴대폰 OTP (알리고 SMS) 가 책임 — 발송 대상이 invitation.phone
+ *        으로 고정되어 invitation 소유자만 코드 수신 가능. Kakao 계정 자체는 가입 후
+ *        어떤 계정으로 로그인할지를 결정하는 수단일 뿐. 진입마다 새 OAuth 가 강제되
+ *        므로 (signUpWithKakao 가 signOut + prompt=login), 동일 계정 재진입도 동일
+ *        하게 overwrite 됨 (no-op).
  *      - phoneVerifiedAt 리셋 — 이전 lock 시점에 본인인증을 통과했더라도, 새 계정으로
  *        진입한 이상 다시 본인인증 받도록 강제.
  *      - 콜백은 user/partner 트랜잭션을 **하지 않음** — 본인인증 통과 시점에
@@ -71,7 +72,8 @@ export async function GET(req: NextRequest) {
  * ============================================================
  *
  * 매 진입마다 가장 최근 OAuth 계정으로 linkedAuthId 를 무조건 덮어씀. 횡령 방지는
- * 본인인증 (PortOne) 의 phone 매칭이 책임 — Kakao 계정 자체는 보안 게이트가 아님.
+ * 휴대폰 OTP (알리고 SMS 발송 대상 = invitation.phone) 가 책임 — Kakao 계정 자체는
+ * 보안 게이트가 아님.
  *
  * 가입 트랜잭션은 본인인증 통과 후 verifyPartnerSignupOtp action 이 소유 —
  * 여기서는 어떤 user/partner row 도 만들지 않음 (partial state 회귀 방지).

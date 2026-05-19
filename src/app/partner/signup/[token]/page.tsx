@@ -18,11 +18,12 @@ const SIGNUP_ERRORS: Record<string, string> = {
  *   1. **카카오 가입** — "카카오톡으로 시작" → Kakao OAuth. 매 진입마다 새로 인증.
  *      콜백이 invitation.linkedAuthId 에 Kakao auth.users.id 를 **무조건 덮어쓰고**
  *      (이전 lock 무시) `/verify` 로 forward. 다른 카카오 계정으로 재시도하면 가장
- *      최근 OAuth 계정으로 진행됨 — 진짜 인증은 본인인증 (PortOne) 이 책임.
+ *      최근 OAuth 계정으로 진행됨 — 진짜 인증은 휴대폰 OTP 가 책임.
  *
  *   2. **본인인증** — `/verify` 라우트. Kakao 세션 + 현재 linkedAuthId 매칭 검증 후
- *      PortOne 본인인증 폼 노출. 통과 시 단일 트랜잭션으로 user + partner + invitation
- *      소비. PortOne 의 phone 매칭이 횡령 방지 게이트.
+ *      휴대폰 OTP 폼 노출 (알리고 SMS + Redis). 통과 시 단일 트랜잭션으로 user +
+ *      partner + invitation 소비. SMS 발송 대상이 invitation.phone 으로 고정되어
+ *      횡령 방지 게이트가 됨.
  */
 export default async function PartnerSignupPage({
   params,

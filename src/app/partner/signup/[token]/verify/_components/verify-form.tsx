@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,18 +12,17 @@ import {
 } from "../../actions";
 
 /**
- * Step 2 본인인증 폼 — 이름/주민번호/휴대폰 입력 + OTP 발송/검증 + 가입 완료.
+ * Step 2 본인인증 폼 — invitation.phone 으로 알리고 SMS 발송 → 6자리 OTP 검증.
  *
  * 진입 게이트: verify 페이지가 Kakao 세션 + invitation.linkedAuthId 매칭을 검증.
  * 액션 자체도 동일 검증을 자체 수행 (server action 은 layout 게이트 미적용).
  *
- * 이름·휴대폰: invitation prefill, readonly (수정 불가).
- * 주민번호: 사용자 입력 (앞 6 / 뒤 1). 6자리 채우면 자동 focus → 뒤 1자리.
- * 인증번호 발송: 주민번호 형식 통과 후 활성. 누르면 OTP 입력 칸 노출.
- * 확인: OTP 6자리 입력 후 활성. 통과 시 server action 이 단일 트랜잭션으로 user +
- * partner INSERT + invitation 소비 후 `/partner` 로 redirect — client 별도 navigation 불필요.
- *
- * PortOne 연동 전 placeholder — 서버 액션은 production 환경에서 fail-closed.
+ * 이름·휴대폰: invitation prefill, readonly (수정 불가) — 발송 대상이 고정되어
+ * 횡령 방지 게이트가 됨.
+ * 인증번호 발송: 누르면 server action 이 알리고로 코드 SMS, Redis 에 EX=180 저장.
+ *   응답의 retryAfterSeconds 로 클라 쿨다운 타이머 동기화.
+ * 확인: OTP 6자리 입력 후 활성. 통과 시 server action 이 단일 트랜잭션으로
+ *   user + partner INSERT + invitation 소비 후 `/partner` 로 redirect.
  */
 export function VerifyForm({
   token,
@@ -34,51 +33,54 @@ export function VerifyForm({
   name: string;
   phone: string;
 }) {
-  const [rrnFront, setRrnFront] = useState("");
-  const [rrnBack, setRrnBack] = useState("");
   const [code, setCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
   const [sending, startSending] = useTransition();
   const [verifying, startVerifying] = useTransition();
+  // 재전송 쿨다운 — 서버가 알려준 잔여 초로 초기화, 1초씩 감소. 0 도달 시 재전송 가능.
+  const [cooldown, setCooldown] = useState(0);
 
-  const rrnBackRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
-  const rrnFormatOk =
-    /^\d{6}$/.test(rrnFront) && /^\d$/.test(rrnBack);
-
-  const onRrnFrontChange = (v: string) => {
-    const digits = v.replace(/\D/g, "").slice(0, 6);
-    setRrnFront(digits);
-    if (digits.length === 6) rrnBackRef.current?.focus();
-  };
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setInterval(() => setCooldown((c) => (c <= 1 ? 0 : c - 1)), 1000);
+    return () => clearInterval(t);
+  }, [cooldown]);
 
   const onSend = () => {
-    setError(null);
+    if (sending || cooldown > 0) return;
+    setSendError(null);
+    setVerifyError(null);
     startSending(async () => {
-      const result = await requestPartnerSignupOtp(token, rrnFront, rrnBack);
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      const result = await requestPartnerSignupOtp(token);
+      if (result.ok) {
+        setOtpSent(true);
+        setCooldown(result.retryAfterSeconds);
+        // 다음 tick 에 OTP input mount 후 focus.
+        setTimeout(() => codeRef.current?.focus(), 0);
+      } else {
+        setSendError(result.error);
+        // 쿨다운 에러일 때 서버가 잔여 초를 알려주면 타이머 초기화 — 정확한 카운트다운.
+        if (result.retryAfterSeconds && result.retryAfterSeconds > 0) {
+          setCooldown(result.retryAfterSeconds);
+        }
       }
-      setOtpSent(true);
-      // 다음 tick 에 OTP input mount 후 focus.
-      setTimeout(() => codeRef.current?.focus(), 0);
     });
   };
 
   const onVerify = () => {
-    setError(null);
+    setVerifyError(null);
     startVerifying(async () => {
-      // 성공 시 server action 이 `/partner` 로 redirect 를 throw 하므로 이 라인 도달 안 함.
-      // 실패 분기만 result 로 반환됨.
+      // 성공 시 server action 이 `/partner` 로 redirect 를 throw → 이 라인 도달 안 함.
       const result = await verifyPartnerSignupOtp(token, code);
-      if (!result.ok) {
-        setError(result.error);
-      }
+      if (!result.ok) setVerifyError(result.error);
     });
   };
+
+  const canVerify = otpSent && code.length === 6 && !verifying;
 
   return (
     <section className="mt-8 flex flex-col gap-5">
@@ -86,103 +88,71 @@ export function VerifyForm({
         <Input
           value={name}
           disabled
-          className="h-11 bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
+          className="h-14 px-4 text-base bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
         />
       </Field>
 
-      <Field label="주민등록번호">
-        <div className="flex items-center gap-2">
-          <Input
-            inputMode="numeric"
-            autoComplete="off"
-            maxLength={6}
-            value={rrnFront}
-            onChange={(e) => onRrnFrontChange(e.target.value)}
-            placeholder="앞 6자리"
-            className="h-11 flex-1"
-          />
-          <span className="text-[#afafaf]">-</span>
-          <Input
-            ref={rrnBackRef}
-            inputMode="numeric"
-            autoComplete="off"
-            maxLength={1}
-            value={rrnBack}
-            onChange={(e) =>
-              setRrnBack(e.target.value.replace(/\D/g, "").slice(0, 1))
-            }
-            placeholder=""
-            className="h-11 w-12 text-center"
-          />
-          <span
-            className="text-[#afafaf] tracking-[0.3em] select-none"
-            aria-hidden="true"
-          >
-            ••••••
-          </span>
-        </div>
-      </Field>
-
-      <Field label="휴대폰">
-        <div className="flex items-stretch gap-2">
+      <Field label="휴대폰 번호">
+        <div className="flex gap-2">
           <Input
             value={formatPhone(phone)}
             disabled
-            className="h-11 flex-1 bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
+            className="h-14 px-4 text-base tracking-wider flex-1 bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
           />
-          <Button
+          <button
             type="button"
             onClick={onSend}
-            disabled={!rrnFormatOk || sending}
-            className="h-11 rounded-full px-5 text-sm font-medium shrink-0"
+            disabled={sending || cooldown > 0}
+            className={cn(
+              "shrink-0 h-14 px-4 rounded-lg text-sm font-medium transition-colors whitespace-nowrap",
+              !sending && cooldown === 0
+                ? "bg-black text-white hover:bg-[#1a1a1a]"
+                : "bg-[#efefef] text-[#afafaf] cursor-not-allowed",
+            )}
           >
-            {sending ? "발송 중..." : otpSent ? "재발송" : "인증번호 발송"}
-          </Button>
+            {sending
+              ? "전송 중..."
+              : cooldown > 0
+                ? `${cooldown}초 후 재전송`
+                : otpSent
+                  ? "재전송"
+                  : "인증번호 전송"}
+          </button>
         </div>
+        {sendError && (
+          <p className="mt-2 text-xs text-red-600">{sendError}</p>
+        )}
       </Field>
 
       {otpSent && (
-        <Field label="인증번호">
-          <div className="flex items-stretch gap-2">
-            <Input
-              ref={codeRef}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              value={code}
-              onChange={(e) =>
-                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-              }
-              placeholder="6자리"
-              className="h-11 flex-1 tracking-[0.4em]"
-            />
-            <Button
-              type="button"
-              onClick={onVerify}
-              disabled={code.length !== 6 || verifying}
-              className={cn(
-                "h-11 rounded-full px-5 text-sm font-medium shrink-0",
-              )}
-            >
-              {verifying ? "확인 중..." : "확인"}
-            </Button>
-          </div>
+        <Field label="인증번호 6자리">
+          <Input
+            ref={codeRef}
+            type="tel"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="000000"
+            maxLength={6}
+            value={code}
+            onChange={(e) =>
+              setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+            }
+            className="h-14 px-4 text-base tracking-[0.4em] text-center"
+          />
+          {verifyError && (
+            <p className="mt-2 text-xs text-red-600">{verifyError}</p>
+          )}
         </Field>
       )}
 
-      {error && (
-        <p
-          role="alert"
-          className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700"
-        >
-          {error}
-        </p>
-      )}
-
-      <p className="text-[11px] text-[#afafaf] leading-relaxed">
-        ⚠ PortOne 본인인증 연동 전 placeholder — dev 전용. 실 운영 환경에서는
-        본인인증 서비스 결과로 검증됩니다.
-      </p>
+      <Button
+        type="button"
+        onClick={onVerify}
+        disabled={!canVerify}
+        className="mt-2 w-full h-14 rounded-full text-base font-medium"
+      >
+        {verifying ? "확인 중..." : "본인인증하고 가입 완료"}
+      </Button>
     </section>
   );
 }
@@ -195,8 +165,8 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-[#4b4b4b]">{label}</label>
+    <div className="flex flex-col gap-2">
+      <label className="text-sm font-medium text-black">{label}</label>
       {children}
     </div>
   );

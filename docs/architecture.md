@@ -388,8 +388,8 @@ partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일
    - 단일 `updateMany WHERE token = ? AND consumedAt IS NULL AND expiresAt > now()` 로 invitation 유효성 + lock 갱신을 한 쿼리에. updated.count === 0 이면 `signOut` + signup 페이지로 redirect (token 무효).
    - `linkedAuthId` 는 매번 현재 `authUser.id` 로 **무조건 덮어씀** (이전 lock 무시). `phoneVerifiedAt` 도 NULL 리셋 — 새 계정 진입이면 본인인증 다시 받도록.
    - **user/partner INSERT 안 함.** 콜백 책임은 lock 갱신 + `/partner/signup/<token>/verify` 로 forward.
-6. `/partner/signup/<token>/verify` 진입 — 페이지 가드: Kakao 세션 존재 + `invitation.linkedAuthId === authUser.id` 매칭. mismatch (다른 탭이 같은 링크로 새 OAuth 해 lock 옮긴 경우 등) 면 `signOut` + Step 1 으로 silent redirect (별도 에러 안내 X). 통과 시 PortOne 본인인증 폼 노출 (현재 placeholder; dev 에서 6자리 OTP 통과).
-7. `verifyPartnerSignupOtp` action 이 **가입 트랜잭션의 owner** — placeholder 자릿수 검증 + Kakao 세션 + `linkedAuthId` 매칭 + tx 안 재확인 (소비 / 만료 / `linkedAuthId` 셋 모두 → race-safe) 후 단일 트랜잭션으로:
+6. `/partner/signup/<token>/verify` 진입 — 페이지 가드: Kakao 세션 존재 + `invitation.linkedAuthId === authUser.id` 매칭. mismatch (다른 탭이 같은 링크로 새 OAuth 해 lock 옮긴 경우 등) 면 `signOut` + Step 1 으로 silent redirect (별도 에러 안내 X). 통과 시 휴대폰 OTP 폼 노출: name + invitation.phone prefill (readonly), "인증번호 전송" → `requestPartnerSignupOtp` 가 알리고로 6자리 SMS 발송 + Redis 에 `otp:partner-signup:{invitationId}` EX=180 저장. 같은 IP 의 발송 시도는 `otp:rl:{ip}` 로 60분 5회 제한 (마케팅 OTP 와 카운터 공유). `ALIGO_TEST_MODE=Y` 일 땐 코드 "000000" 고정 + 알리고 호출 생략.
+7. `verifyPartnerSignupOtp` action 이 **가입 트랜잭션의 owner** — Redis 코드 GET 일치 시 즉시 DEL (재사용 차단) + Kakao 세션 + `linkedAuthId` 매칭 + tx 안 재확인 (소비 / 만료 / `linkedAuthId` 셋 모두 → race-safe) 후 단일 트랜잭션으로:
    - `user` (authId=kakao, email=kakao, name/phone=invitation)
    - `partner` (invitation 의 partner 필드들)
    - invitation 소비 (`consumedAt`, `consumedUserId`, `phoneVerifiedAt` audit)
@@ -403,14 +403,15 @@ partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일
 - `user.phone` / `user.authId` / `partner.licenseNumber` UNIQUE 가 추가 방어. 충돌 시 verify action 이 사용자에게 안내 메시지 반환.
 
 **보안 의도 — Kakao 계정은 보안 게이트가 아님:**
-- Token URL = 1차 게이트 (192bit nanoid, 추측 불가). PortOne 본인인증 (name + invitation.phone 매칭) = 진짜 게이트.
+- Token URL = 1차 게이트 (192bit nanoid, 추측 불가). 휴대폰 OTP (알리고 SMS 발송 대상 = invitation.phone) = 진짜 게이트 — invitation 소유자만 코드 수신 가능.
 - Kakao 계정은 "가입 후 어떤 계정으로 로그인할지" 결정하는 수단일 뿐. `linkedAuthId` 는 매 진입마다 덮어쓰므로 다른 카카오 계정으로 같은 invitation 재시도 가능.
 - verify 페이지/액션의 `linkedAuthId === authUser.id` 매칭은 횡령 방지가 아니라 "최신 OAuth 한 브라우저 컨텍스트가 verify 한다" 는 일관성 검증 — 다른 탭이 lock 을 옮겼다면 stale 세션을 reject.
 - 가입 트랜잭션 시점이 본인인증 통과 시점과 동일 → user 만 있고 partner 없는 partial state 가 절대 발생 안 함.
 
 **외부 의존**:
-- **Kakao Developers**: "카카오계정(이메일)" 동의항목 필수 (`?error=no_email` 방지). Kakao 자체는 전화번호를 제공하지 않으므로 phone scope 는 불필요 — phone 매칭은 PortOne 본인인증이 책임.
-- **PortOne (본인인증)**: V2 API 기준. env `PORTONE_STORE_ID` / `PORTONE_CHANNEL_KEY` / `PORTONE_API_SECRET`. verify 페이지 폼이 PortOne 본인인증 SDK 호출 → 결과로 PortOne API 서버 검증 → phone vs invitation.phone 매칭 후 verify 액션이 가입 트랜잭션 실행.
+- **Kakao Developers**: "카카오계정(이메일)" 동의항목 필수 (`?error=no_email` 방지). Kakao 자체는 전화번호를 제공하지 않으므로 phone scope 는 불필요 — phone 검증은 휴대폰 OTP 가 책임.
+- **알리고 SMS** (휴대폰 OTP): env `ALIGO_KEY` / `ALIGO_USER_ID` / `ALIGO_SENDER` / `ALIGO_TEST_MODE`. 마케팅 요청서 OTP 와 동일한 `server/aligo.ts` 공용. dev 에선 `ALIGO_TEST_MODE=Y` → 코드 "000000" 고정 + 발송 생략.
+- **Redis**: env `REDIS_URL`. OTP 코드 (`otp:partner-signup:{invitationId}`, EX 180s) + IP 발송 시도 카운터 (`otp:rl:{ip}`, EX 3600s, 마케팅과 카운터 공유) 보관.
 
 **경로 은닉 (admin 만, defense in depth, optional)** — `ADMIN_KNOCK_PATH` env 가 설정되면 middleware 가:
 - `/<KNOCK>` 진입 시 `admin_knock` 쿠키 (30일) 발급 후 307 → /admin/login
