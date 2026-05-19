@@ -369,7 +369,7 @@ User 에는 role discriminator 컬럼이 없음 — 역할은 partner / admin ex
 **로그인 흐름:**
 
 - **Admin** (`/admin/login`) — 이메일/비밀번호. `signInAdmin` action 이 `signInWithPassword` → user lookup → admin.active 검증 → authId claim → `/admin` 으로 redirect.
-- **Partner — 로그인** (`/partner/login`) — 이미 가입한 partner. Kakao OAuth. `signInWithKakao` action 이 `signInWithOAuth` URL 반환 → Kakao 인증 → `/api/auth/callback` 라우트가 code→session 교환 + user lookup + partner.active 검증 → `/partner` 로 redirect.
+- **Partner — 로그인** (`/partner/login`) — 이미 가입한 partner. Kakao OAuth. `signInWithKakao` action 이 `signInWithOAuth` URL 반환 → Kakao 인증 → `/api/auth/callback` 라우트가 code→session 교환 + user lookup + partner.active 검증 → `?next` (middleware 가 미인증 진입 시 보존한 원 경로, 기본 `/partner`, `safeNextPath` 화이트리스트 통과한 것) 로 redirect.
 - **Partner — 가입** (`/partner/signup/<invitation_token>`) — 아래 §7.4 참조.
 - 등록 안 된 이메일은 두 흐름 모두 동일 에러 메시지 ("로그인에 실패했습니다." / "등록된 설계사 계정이 아닙니다.") 로 응답해 enumeration 방어.
 

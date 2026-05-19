@@ -1,6 +1,7 @@
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { safeNextPath } from "@/lib/safe-next-path";
 import { prisma } from "@/server/db/prisma";
 import { getSupabaseServerClient } from "@/server/supabase";
 
@@ -38,7 +39,10 @@ export async function GET(req: NextRequest) {
   const { searchParams, origin } = new URL(req.url);
   const code = searchParams.get("code");
   const signupToken = searchParams.get("signup");
-  const next = searchParams.get("next") ?? "/partner";
+  // defense in depth — 외부 도메인 / 다른 영역 / `//evil.com` 류 차단.
+  // login action / page 가 이미 검증하지만, callback URL 은 외부에 노출되므로
+  // 위조 redirectTo 로 진입 가능 → 여기서도 동일 validator 통과 강제.
+  const next = safeNextPath(searchParams.get("next"));
 
   if (!code) {
     if (signupToken) {
@@ -46,7 +50,7 @@ export async function GET(req: NextRequest) {
         `${origin}/partner/signup/${signupToken}?error=oauth_failed`,
       );
     }
-    return NextResponse.redirect(`${origin}/partner/login?error=no_code`);
+    return NextResponse.redirect(loginErrorUrl(origin, "no_code", next));
   }
 
   const supabase = await getSupabaseServerClient();
@@ -57,7 +61,7 @@ export async function GET(req: NextRequest) {
         `${origin}/partner/signup/${signupToken}?error=oauth_failed`,
       );
     }
-    return NextResponse.redirect(`${origin}/partner/login?error=oauth_failed`);
+    return NextResponse.redirect(loginErrorUrl(origin, "oauth_failed", next));
   }
 
   if (signupToken) {
@@ -65,6 +69,17 @@ export async function GET(req: NextRequest) {
   }
 
   return handleLogin(req, data.user, next);
+}
+
+/**
+ * /partner/login?error=<code> URL 빌더. next 가 기본값 (/partner) 이 아니면 query
+ * 에 보존해, 재시도 후에도 원래 목적지로 복귀 가능하게 함.
+ */
+function loginErrorUrl(origin: string, error: string, next: string): string {
+  const url = new URL(`${origin}/partner/login`);
+  url.searchParams.set("error", error);
+  if (next !== "/partner") url.searchParams.set("next", next);
+  return url.toString();
 }
 
 /* ============================================================
@@ -135,7 +150,7 @@ async function handleLogin(
   const email = authUser.email;
   if (!email) {
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/partner/login?error=no_email`);
+    return NextResponse.redirect(loginErrorUrl(origin, "no_email", next));
   }
 
   const user = await prisma.user.findUnique({
@@ -148,7 +163,7 @@ async function handleLogin(
   });
   if (!user || !user.partner?.active) {
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/partner/login?error=not_registered`);
+    return NextResponse.redirect(loginErrorUrl(origin, "not_registered", next));
   }
 
   if (!user.authId) {
@@ -159,7 +174,7 @@ async function handleLogin(
   } else if (user.authId !== authUser.id) {
     // 사전 등록된 email 이 이미 다른 Supabase 계정과 매핑됨 — 운영자 수동 정정 필요.
     await supabase.auth.signOut();
-    return NextResponse.redirect(`${origin}/partner/login?error=not_registered`);
+    return NextResponse.redirect(loginErrorUrl(origin, "not_registered", next));
   }
 
   return NextResponse.redirect(`${origin}${next}`);

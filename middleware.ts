@@ -186,6 +186,12 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = loginPath;
     url.search = "";
+    // partner 영역만 원래 경로를 ?next= 로 보존 — 로그인 후 자동 복귀.
+    // admin 은 화이트리스트 검증이 따로 있고 가짓수도 적어 일단 partner 만.
+    // 안전성은 login page / action / callback 의 safeNextPath 가 책임.
+    if (isPartnerPath) {
+      url.searchParams.set("next", pathname + req.nextUrl.search);
+    }
     const baseRes = isAdminPath
       ? withRobots(NextResponse.redirect(url, 307))
       : NextResponse.redirect(url, 307);

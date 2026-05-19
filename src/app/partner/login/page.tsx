@@ -1,5 +1,7 @@
+import type { Route } from "next";
 import { redirect } from "next/navigation";
 
+import { safeNextPath } from "@/lib/safe-next-path";
 import { getOptionalPartnerSession } from "@/server/dal";
 
 import { signInWithKakao } from "./actions";
@@ -17,19 +19,27 @@ const ERROR_MESSAGES: Record<string, string> = {
  * 흐름:
  *   1. "카카오톡으로 로그인" 클릭 → signInWithKakao server action
  *   2. Supabase signInWithOAuth → Kakao 인증 페이지로 redirect
- *   3. Kakao 인증 완료 → /api/auth/callback?code=… 로 redirect
+ *   3. Kakao 인증 완료 → /api/auth/callback?code=…&next=… 로 redirect
  *   4. callback 라우트가 code → session 교환 + partner 화이트리스트 검증
- *   5. 성공: /partner, 실패: /partner/login?error=…
+ *   5. 성공: ?next (기본 /partner), 실패: /partner/login?error=…&next=…
+ *
+ * `?next` 보존: middleware 가 미인증 partner 경로 접근 시 원 경로를 ?next= 로
+ * 실어 보내고, 이 페이지가 받아 hidden input 으로 action 까지 forward.
+ * 화이트리스트 검증은 `safeNextPath` 가 3 단계 (page / action / callback) 책임.
  */
 export default async function PartnerLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  const session = await getOptionalPartnerSession();
-  if (session) redirect("/partner");
+  const { error, next: nextRaw } = await searchParams;
+  // 화이트리스트 통과한 partner 영역 경로만 허용. 외부 URL / 다른 영역은 /partner 로.
+  const next = safeNextPath(nextRaw);
 
-  const { error } = await searchParams;
+  const session = await getOptionalPartnerSession();
+  // 이미 로그인 상태면 next 로 직행. typedRoutes 는 동적 path 인식 불가 → cast.
+  if (session) redirect(next as Route);
+
   const errorMessage = error ? ERROR_MESSAGES[error] ?? null : null;
 
   return (
@@ -51,6 +61,7 @@ export default async function PartnerLoginPage({
       ) : null}
 
       <form action={signInWithKakao} className="mt-8">
+        <input type="hidden" name="next" value={next} />
         <button
           type="submit"
           className="flex w-full h-12 items-center justify-center gap-2 rounded-full bg-[#FEE500] text-sm font-medium text-[#191600] transition-opacity hover:opacity-90 disabled:opacity-50"
