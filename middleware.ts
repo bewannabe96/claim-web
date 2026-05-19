@@ -31,10 +31,12 @@ import { NextResponse, type NextRequest } from "next/server";
  *    `requirePartnerSession()` 가 single source of truth.
  *
  * 3. **Supabase 세션 cookie silent refresh + stale cleanup** — 토큰 만료
- *    임박 시 @supabase/ssr 의 setAll 콜백으로 Set-Cookie 자동 갱신. getUser()
- *    호출이 부수 효과로 갱신 트리거. refresh 실패 (refresh_token_not_found 등
- *    AuthError) 면 stale `sb-*-auth-token*` cookie 를 명시 청소 — 라이브러리는
- *    AuthSessionMissingError 에서만 자동 청소하므로 refresh 실패 경로는 수동.
+ *    임박 시 @supabase/ssr 의 setAll 콜백으로 Set-Cookie 자동 갱신. getClaims()
+ *    호출이 부수 효과로 갱신 트리거 (asymmetric JWT signing keys 활성 시 로컬
+ *    서명 검증 → 네트워크 hit 0, 미활성 시 내부적으로 getUser fallback).
+ *    refresh 실패 (refresh_token_not_found 등 AuthError) 면 stale
+ *    `sb-*-auth-token*` cookie 를 명시 청소 — 라이브러리는 AuthSessionMissingError
+ *    에서만 자동 청소하므로 refresh 실패 경로는 수동.
  *
  * 4. **크롤러 차단 (admin 만)** — X-Robots-Tag 헤더로 search engine indexing 금지.
  *    `/admin/login` 까지 포함 모든 admin 응답 + knock 응답 + 404 응답 모두 적용.
@@ -127,6 +129,7 @@ export async function middleware(req: NextRequest) {
   const isLoginPath = pathname === loginPath;
 
   let hasUser = false;
+  let needsCookieCleanup = false;
   try {
     const supabase = createServerClient(
       process.env.SUPABASE_URL!,
@@ -135,30 +138,45 @@ export async function middleware(req: NextRequest) {
         cookies: {
           getAll: () => req.cookies.getAll(),
           setAll: (toSet) => {
+            // request 와 response 양쪽에 cookie 반영:
+            //   - req.cookies.set: 같은 요청의 다운스트림 (NextResponse.next({request})
+            //     으로 forward 된 Server Component / Route Handler) 가 fresh token 봄.
+            //     다만 이 프로젝트의 supabase.ts 는 `headers().get("cookie")` 로 raw
+            //     header 를 읽으므로 cookies() API 만 영향 받음.
+            //   - res.cookies.set: 브라우저로 Set-Cookie 전송.
             for (const { name, value, options } of toSet) {
+              req.cookies.set(name, value);
               res.cookies.set(name, value, options);
             }
           },
         },
       },
     );
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    hasUser = !!user;
+    // getClaims: asymmetric JWT signing keys 활성 시 로컬 검증 (네트워크 hit 0),
+    // 미활성 시 내부적으로 getUser fallback. 둘 다 만료 임박 시 silent refresh +
+    // setAll 호출 (= 토큰 갱신 트리거). throw 안 하고 { data, error } 로 반환하지만
+    // 내부 fallback 의 네트워크 오류는 throw 가능 → try/catch 와 error 둘 다 처리.
+    const { data, error } = await supabase.auth.getClaims();
+    if (error) {
+      if (isAuthError(error)) needsCookieCleanup = true;
+    } else {
+      hasUser = !!data?.claims.sub;
+    }
   } catch (e) {
-    // 무한 redirect 회피용 hasUser=false fallthrough. 실제 게이트는 layout DAL.
-    //
-    // AuthError (refresh_token_not_found 등) 면 stale auth cookie 명시 청소 —
-    // @supabase/auth-js 는 AuthSessionMissingError 에서만 자동 _removeSession 하므로
-    // refresh 실패는 cookie 가 남아 매 요청 반복 + login 페이지 DAL 도 throw 됨.
-    // 307 응답의 Set-Cookie 는 브라우저가 redirect 따라가기 전에 적용. env / 네트워크
-    // 오류엔 cookie 안 건드림 (일시 장애로 세션 날리지 않기 위함).
-    if (isAuthError(e)) {
-      for (const c of req.cookies.getAll()) {
-        if (/^sb-.+-auth-token(\.\d+)?$/.test(c.name)) {
-          res.cookies.set(c.name, "", { path: "/", maxAge: 0 });
-        }
+    if (isAuthError(e)) needsCookieCleanup = true;
+  }
+
+  // 무한 redirect 회피용 hasUser=false fallthrough. 실제 게이트는 layout DAL.
+  //
+  // refresh 실패 (refresh_token_not_found 등) 면 stale auth cookie 명시 청소 —
+  // @supabase/auth-js 는 AuthSessionMissingError 에서만 자동 _removeSession 하므로
+  // refresh 실패는 cookie 가 남아 매 요청 반복 + login 페이지 DAL 도 throw 됨.
+  // 307 응답의 Set-Cookie 는 브라우저가 redirect 따라가기 전에 적용. env / 네트워크
+  // 오류엔 cookie 안 건드림 (일시 장애로 세션 날리지 않기 위함).
+  if (needsCookieCleanup) {
+    for (const c of req.cookies.getAll()) {
+      if (/^sb-.+-auth-token(\.\d+)?$/.test(c.name)) {
+        res.cookies.set(c.name, "", { path: "/", maxAge: 0 });
       }
     }
   }

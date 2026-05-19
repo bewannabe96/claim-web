@@ -49,12 +49,12 @@ export default async function PartnerSignupVerifyPage({
   }
 
   const supabase = await getSupabaseServerClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
+  const { data: claimsData, error: claimsError } =
+    await supabase.auth.getClaims();
+  const authUserId = claimsError ? null : (claimsData?.claims.sub ?? null);
 
   // 세션 없으면 카카오 가입 단계로 redirect (그 페이지가 Step 1 시작 버튼 노출).
-  if (!authUser) {
+  if (!authUserId) {
     redirect(`/partner/signup/${token}`);
   }
 
@@ -66,7 +66,7 @@ export default async function PartnerSignupVerifyPage({
   // 현재 Kakao 세션이 최신 lock 과 다름 — 다른 탭이 같은 링크로 새 OAuth 한 경우 등.
   // 현재 세션을 signOut 하고 Step 1 으로 보내 새 OAuth 시작. 별도 에러 노출 안 함
   // (Kakao 계정 자체가 보안 게이트가 아니므로 사용자에겐 정상 흐름).
-  if (invitation.linkedAuthId !== authUser.id) {
+  if (invitation.linkedAuthId !== authUserId) {
     await supabase.auth.signOut();
     redirect(`/partner/signup/${token}`);
   }
