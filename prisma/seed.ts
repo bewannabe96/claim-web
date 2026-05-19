@@ -83,15 +83,14 @@ async function seedAdmin() {
  * **phone** — `LOCAL_DEV_PARTNER_PHONE` 으로 override (실 본인인증 시 매칭 키).
  *
  * **단계 진행**: invitation 은 `linkedAuthId=NULL, phoneVerifiedAt=NULL` 상태로
- * 시드됨 → 진입 시 Step 1 "카카오톡으로 시작" 버튼 노출. Kakao OAuth 통과 후
- * 콜백이 linkedAuthId 를 lock 하고 `/verify` 페이지로 forward → 본인인증
- * placeholder (6자리 OTP) 통과 시 가입 완료. 단계를 강제 건너뛰는 dev 토글은
- * 없음 — 각 단계가 진짜 보안 게이트 (Kakao 세션 + linkedAuthId 매칭) 라 우회하면
- * verify 가드에 막힘.
+ * 시드됨 → 진입 시 항상 "카카오톡으로 시작" 버튼 노출. Kakao OAuth 통과 후 콜백이
+ * linkedAuthId 를 갱신하고 `/verify` 로 forward → 본인인증 placeholder (6자리
+ * OTP) 통과 시 가입 완료. 매 진입마다 새 OAuth 가 강제되므로 다른 카카오 계정으로
+ * 재시도해도 그대로 진행 가능 — 횡령 방지는 PortOne 의 phone 매칭이 담당.
  *
- * **재시드 정책**: 이미 존재하면 skip. consume 후 재테스트하려면 admin UI 에서
- * 초청 + 파생된 partner 를 수동 삭제. Kakao lock 만 풀고 재진입하려면 admin UI
- * 에서 reissue (token 회전 + linkedAuthId NULL).
+ * **재시드 정책**: 이미 존재하면 skip (소비/미소비 무관). consume 후 재테스트하려면
+ * admin UI 에서 초청 + 파생된 partner 를 수동 삭제. 만료 임박 / token 회전이
+ * 필요하면 admin UI 의 reissue.
  */
 async function seedDevPartnerInvitation() {
   const DEV_INVITATION_ID = "local_dev_inv001";
