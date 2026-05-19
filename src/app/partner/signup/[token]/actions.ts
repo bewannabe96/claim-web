@@ -118,17 +118,17 @@ export async function requestPartnerSignupOtp(
   }
 
   const supabase = await getSupabaseServerClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) {
+  const { data: claimsData, error: claimsError } =
+    await supabase.auth.getClaims();
+  const authUserId = claimsError ? null : (claimsData?.claims.sub ?? null);
+  if (!authUserId) {
     return {
       ok: false,
       error: "카카오 세션이 만료됐어요. 처음부터 다시 시도해주세요.",
     };
   }
 
-  const result = await getInvitationForCaller(token, authUser.id);
+  const result = await getInvitationForCaller(token, authUserId);
   if (!result.ok) return result;
 
   // PortOne 연동 시: 본인인증 요청 (이름/RRN/phone 페이로드 전달 → SMS/PASS 발송).
@@ -152,17 +152,20 @@ export async function verifyPartnerSignupOtp(
   }
 
   const supabase = await getSupabaseServerClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser?.email) {
+  const { data: claimsData, error: claimsError } =
+    await supabase.auth.getClaims();
+  const claims = claimsError ? null : claimsData?.claims;
+  const authUserId = claims?.sub ?? null;
+  const authUserEmail =
+    typeof claims?.email === "string" ? claims.email : null;
+  if (!authUserId || !authUserEmail) {
     return {
       ok: false,
       error: "카카오 세션이 만료됐어요. 처음부터 다시 시도해주세요.",
     };
   }
 
-  const lookup = await getInvitationForCaller(token, authUser.id);
+  const lookup = await getInvitationForCaller(token, authUserId);
   if (!lookup.ok) return lookup;
   const { invitation } = lookup;
 
@@ -186,7 +189,7 @@ export async function verifyPartnerSignupOtp(
         !reread ||
         reread.consumedAt ||
         reread.expiresAt.getTime() < Date.now() ||
-        reread.linkedAuthId !== authUser.id
+        reread.linkedAuthId !== authUserId
       ) {
         throw new InvitationStaleError();
       }
@@ -194,8 +197,8 @@ export async function verifyPartnerSignupOtp(
       await tx.user.create({
         data: {
           id: userId,
-          authId: authUser.id,
-          email: authUser.email!,
+          authId: authUserId,
+          email: authUserEmail,
           name: invitation.name,
           phone: invitation.phone,
         },
