@@ -25,7 +25,7 @@ export default async function AdminPartnerInvitationDetailPage({
   const invitation = await getPartnerInvitationById(id);
   if (!invitation) notFound();
 
-  // 가입 절대 URL 구성 — `SITE_URL` env 우선 (Kakao OAuth redirectTo 와 동일 결정 로직).
+  // 가입 절대 URL 구성 — Kakao OAuth redirectTo 와 동일한 헤더 기반 base URL 추론.
   const signupUrl = `${await resolveOrigin()}/partner/signup/${invitation.token}`;
 
   const now = nowMs();

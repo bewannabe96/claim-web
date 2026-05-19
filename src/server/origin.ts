@@ -10,19 +10,17 @@ import { headers } from "next/headers";
  * Supabase 화이트리스트 mismatch (→ Site URL fallback) 같은 사고가 재발.
  *
  * 우선순위:
- *   1. `SITE_URL` env — 운영/스테이징 / ngrok 등 외부 노출 환경의 결정적 진실.
- *      Supabase Dashboard 의 Site URL / Redirect URLs 와 정확히 일치시켜야 함
- *      (mismatch 시 Supabase 가 redirectTo 무시하고 Site URL 로 fallback).
- *   2. 요청 `Origin` 헤더 — 브라우저가 채우는 표준 값. 로컬 dev / LAN IP 접속에
- *      가장 정확.
- *   3. `x-forwarded-host` / `x-forwarded-proto` — reverse proxy (Vercel / ngrok)
- *      에서 원본 host 가 internal 로 가려진 경우.
- *   4. `host` 헤더 + proto 추정 (localhost → http, 그 외 → https).
+ *   1. 요청 `Origin` 헤더 — 브라우저가 채우는 표준 값. 서버 액션 / 콜백 흐름
+ *      에선 항상 set 되므로 1순위. 로컬 dev / LAN IP / ngrok 모두 정확.
+ *   2. `x-forwarded-host` / `x-forwarded-proto` — reverse proxy (Vercel / ngrok)
+ *      에서 원본 host 가 internal 로 가려졌고 Origin 도 없는 드문 경우.
+ *   3. `host` 헤더 + proto 추정 (localhost → http, 그 외 → https) — 최종 폴백.
+ *
+ * 운영 측 책임: 사용자가 접근하는 모든 호스트 (prod / staging / LAN IP / ngrok) 가
+ * Supabase Dashboard 의 **Redirect URLs** 화이트리스트에 등록돼 있어야 함.
+ * 화이트리스트 누락 시 Supabase 가 redirectTo 무시하고 Site URL 로 fallback.
  */
 export async function resolveOrigin(): Promise<string> {
-  const siteUrl = process.env.SITE_URL;
-  if (siteUrl) return siteUrl.replace(/\/$/, "");
-
   const h = await headers();
   const originHeader = h.get("origin");
   if (originHeader) return originHeader;

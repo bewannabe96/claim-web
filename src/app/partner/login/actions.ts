@@ -23,11 +23,9 @@ import { getSupabaseServerClient } from "@/server/supabase";
  */
 export async function signInWithKakao(formData: FormData) {
   const supabase = await getSupabaseServerClient();
-  // 우선순위: SITE_URL env > Origin > x-forwarded-* > host (proto 는 dev http 대응).
-  // SITE_URL 이 진짜 신뢰 가능한 단일 진실 공급원 — Supabase Dashboard 의 Redirect URLs
-  // 화이트리스트에 등록된 값과 그대로 일치시켜, 헤더 추론 결과가 화이트리스트와 어긋나
-  // Supabase 가 Site URL (보통 localhost) 로 fallback 하는 사고를 차단. 미설정 시
-  // (로컬 dev 등) 헤더 추론으로 폴백.
+  // 헤더 기반 base URL 추론 — Supabase Dashboard 의 Redirect URLs 화이트리스트에
+  // 해당 호스트가 등록돼 있어야 함 (mismatch 시 Site URL 로 fallback).
+  // 결정 로직 단일화 진입점: `server/origin.ts`.
   const origin = await resolveOrigin();
   // safeNextPath: 페이지가 이미 화이트리스트 통과시켰지만 action 도 자체 검증.
   // formData 는 클라이언트가 임의로 보낼 수 있어 server action 자체 진입점에서도 필수.
