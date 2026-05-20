@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { safeNextPath } from "@/lib/safe-next-path";
 import { prisma } from "@/server/db/prisma";
-import { resolveOrigin } from "@/server/origin";
+import { getPublicBaseUrl } from "@/server/origin";
 import { getSupabaseServerClient } from "@/server/supabase";
 
 /**
@@ -36,10 +36,9 @@ import { getSupabaseServerClient } from "@/server/supabase";
  *
  * route handler 는 mutable cookie 컨텍스트라 supabase ssr setAll 가 정상 작동.
  *
- * **redirect URL origin**: `new URL(req.url).origin` 대신 `resolveOrigin()` 사용.
- * Vercel / Cloudflare 같은 reverse proxy 뒤에선 `req.url` 의 host 가 internal
- * 도메인으로 잡힐 수 있어, Supabase 공식 가이드도 `x-forwarded-host` 분기를
- * 권고. resolveOrigin 이 그 로직을 이미 포함 (Origin > x-forwarded-* > host).
+ * **redirect URL origin**: `new URL(req.url).origin` 대신 `getPublicBaseUrl()` 사용.
+ * Vercel branch deployment 의 vercel.app URL 로 콜백이 도착해도 (사용자가 alias 가 아닌
+ * deployment URL 로 진입 후 OAuth 시작한 경우 등) canonical alias 로 통일됨.
  * signInWithKakao action 의 redirectTo 와 동일 helper 로 통일.
  */
 export async function GET(req: NextRequest) {
@@ -50,7 +49,7 @@ export async function GET(req: NextRequest) {
   // login action / page 가 이미 검증하지만, callback URL 은 외부에 노출되므로
   // 위조 redirectTo 로 진입 가능 → 여기서도 동일 validator 통과 강제.
   const next = safeNextPath(searchParams.get("next"));
-  const origin = await resolveOrigin();
+  const origin = await getPublicBaseUrl();
 
   if (!code) {
     if (signupToken) {

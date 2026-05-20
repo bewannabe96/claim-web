@@ -12,7 +12,7 @@ import { AnalysisErrorSchema } from "@/features/plan-proposals/schema";
 import { sendNotificationLms } from "@/server/aligo";
 import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
-import { resolveOrigin } from "@/server/origin";
+import { getPublicBaseUrl } from "@/server/origin";
 
 /**
  * 분석 완료 웹훅 — eightytwo_judge 가 한 proposal 분석 종료 시 POST.
@@ -251,7 +251,7 @@ async function notifyAnalysisCompleted(planRequestId: string): Promise<void> {
     return;
   }
 
-  const origin = await resolveOrigin();
+  const origin = await getPublicBaseUrl();
   const url = `${origin}/plan-request/result/${request.resultToken}`;
   const customerName = request.name ?? "고객";
   const msg = [

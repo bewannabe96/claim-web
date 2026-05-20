@@ -4,7 +4,7 @@ import type { Route } from "next";
 import { redirect } from "next/navigation";
 
 import { safeNextPath } from "@/lib/safe-next-path";
-import { resolveOrigin } from "@/server/origin";
+import { getPublicBaseUrl } from "@/server/origin";
 import { getSupabaseServerClient } from "@/server/supabase";
 
 /**
@@ -23,10 +23,7 @@ import { getSupabaseServerClient } from "@/server/supabase";
  */
 export async function signInWithKakao(formData: FormData) {
   const supabase = await getSupabaseServerClient();
-  // 헤더 기반 base URL 추론 — Supabase Dashboard 의 Redirect URLs 화이트리스트에
-  // 해당 호스트가 등록돼 있어야 함 (mismatch 시 Site URL 로 fallback).
-  // 결정 로직 단일화 진입점: `server/origin.ts`.
-  const origin = await resolveOrigin();
+  const origin = await getPublicBaseUrl();
   // safeNextPath: 페이지가 이미 화이트리스트 통과시켰지만 action 도 자체 검증.
   // formData 는 클라이언트가 임의로 보낼 수 있어 server action 자체 진입점에서도 필수.
   const next = safeNextPath(formData.get("next"));

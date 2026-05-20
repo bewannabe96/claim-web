@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { updatePartnerSignupInvitation } from "@/features/partners/actions";
 import { getPartnerSignupInvitationById } from "@/features/partners/queries";
 import { nowMs } from "@/lib/wall-clock";
-import { resolveOrigin } from "@/server/origin";
+import { getPublicBaseUrl } from "@/server/origin";
 
 import { PartnerForm } from "../../../_components/partner-form";
 import {
@@ -25,8 +25,8 @@ export default async function AdminPartnerSignupInvitationDetailPage({
   const invitation = await getPartnerSignupInvitationById(id);
   if (!invitation) notFound();
 
-  // 가입 절대 URL 구성 — Kakao OAuth redirectTo 와 동일한 헤더 기반 base URL 추론.
-  const signupUrl = `${await resolveOrigin()}/partner/signup/${invitation.token}`;
+  // 가입 절대 URL 구성 — Kakao OAuth redirectTo 와 동일한 canonical base URL.
+  const signupUrl = `${await getPublicBaseUrl()}/partner/signup/${invitation.token}`;
 
   const now = nowMs();
   const expired = invitation.expiresAt.getTime() < now;

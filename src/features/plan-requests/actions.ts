@@ -15,7 +15,7 @@ import {
 import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
 import { getClientIp } from "@/server/get-client-ip";
-import { resolveOrigin } from "@/server/origin";
+import { getPublicBaseUrl } from "@/server/origin";
 import { getRedis } from "@/server/redis";
 import { getSettings } from "@/server/settings";
 
@@ -546,7 +546,7 @@ async function notifyPartnersOfNewAssignment(args: {
     partnerPhone: string | null;
   }>;
 }): Promise<void> {
-  const origin = await resolveOrigin();
+  const origin = await getPublicBaseUrl();
   const serviceName = getServiceName();
 
   const budget = formatBudgetRange(args.monthlyBudgetMin, args.monthlyBudgetMax);
