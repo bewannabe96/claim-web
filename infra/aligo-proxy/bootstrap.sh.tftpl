@@ -1,0 +1,125 @@
+#!/bin/sh
+# Lightsail 의 cloud-init 는 user_data 의 #! shebang 을 무시하고 /bin/sh (dash) 로 실행함.
+# pipefail, process substitution, [[ ... ]] 등 bashism 을 쓰려면 self-reexec 필수.
+[ -z "$${BASH_VERSION:-}" ] && exec /bin/bash "$0" "$@"
+
+set -euo pipefail
+exec > >(tee -a /var/log/aligo-proxy-bootstrap.log) 2>&1
+echo "[bootstrap] starting $(date -u)"
+
+# ── 도메인 결정 ────────────────────────────────────────────
+# terraform 이 inject 한 static IP 를 사용 (인스턴스 metadata 의 dynamic IP 가 아님!).
+# dynamic IP 를 쓰면 static IP attach 후 LE 챌린지가 우리 인스턴스로 안 옴.
+STATIC_IP="${static_ip}"
+DOMAIN="${user_domain}"
+if [ -z "$DOMAIN" ]; then
+  DOMAIN="$STATIC_IP.nip.io"
+fi
+echo "[bootstrap] static_ip=$STATIC_IP domain=$DOMAIN"
+
+# ── static IP attachment 완료 대기 ─────────────────────────
+# 인스턴스 부팅 직후엔 dynamic IP 만 갖고 있을 수 있음. attach 가 완료돼야
+# 외부에서 보낸 LE HTTP-01 challenge 가 우리에게 도달함.
+echo "[bootstrap] waiting for static IP attachment..."
+for i in $(seq 1 30); do
+  CURRENT=$(curl -s -m 5 https://api.ipify.org 2>/dev/null || echo "")
+  if [ "$CURRENT" = "$STATIC_IP" ]; then
+    echo "[bootstrap] static IP attached (egress=$CURRENT)"
+    break
+  fi
+  echo "[bootstrap]   attach pending: egress=$CURRENT, expected=$STATIC_IP (try $i/30)"
+  sleep 10
+done
+
+# ── apt 락 대기 (cloud-init 의 unattended-upgrades 와 충돌 회피) ─
+echo "[bootstrap] waiting for apt locks..."
+for i in $(seq 1 60); do
+  if ! fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock >/dev/null 2>&1; then
+    break
+  fi
+  sleep 3
+done
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+
+# ── Node.js 20 LTS ─────────────────────────────────────────
+echo "[bootstrap] installing Node.js 20"
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+
+# ── Caddy ──────────────────────────────────────────────────
+echo "[bootstrap] installing Caddy"
+apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list
+apt-get update -y
+apt-get install -y caddy
+
+# ── 디렉토리 ────────────────────────────────────────────────
+mkdir -p /opt/aligo-proxy /var/log/caddy
+chown -R ubuntu:ubuntu /opt/aligo-proxy
+chown -R caddy:caddy /var/log/caddy
+
+# ── 프록시 코드 + 메타 ─────────────────────────────────────
+cat > /opt/aligo-proxy/package.json <<'PKG_EOF'
+{ "name": "aligo-proxy", "type": "module", "version": "1.0.0", "private": true }
+PKG_EOF
+
+echo "${server_code_base64}" | base64 -d > /opt/aligo-proxy/server.mjs
+chown ubuntu:ubuntu /opt/aligo-proxy/package.json /opt/aligo-proxy/server.mjs
+
+# ── env (root 0600) ────────────────────────────────────────
+cat > /etc/aligo-proxy.env <<ENV_EOF
+PROXY_SHARED_SECRET="${shared_secret}"
+PROXY_LISTEN_HOST=127.0.0.1
+PROXY_LISTEN_PORT=8080
+ENV_EOF
+chmod 600 /etc/aligo-proxy.env
+
+# ── systemd unit ───────────────────────────────────────────
+cat > /etc/systemd/system/aligo-proxy.service <<'UNIT_EOF'
+[Unit]
+Description=Aligo SMS Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/aligo-proxy
+EnvironmentFile=/etc/aligo-proxy.env
+ExecStart=/usr/bin/node /opt/aligo-proxy/server.mjs
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/aligo-proxy
+
+[Install]
+WantedBy=multi-user.target
+UNIT_EOF
+
+# ── Caddyfile (도메인은 위에서 결정한 $DOMAIN 으로 박음) ──
+cat > /etc/caddy/Caddyfile <<CADDY_EOF
+$DOMAIN {
+  encode gzip
+  reverse_proxy 127.0.0.1:8080
+  log {
+    output file /var/log/caddy/access.log {
+      roll_size 10mb
+      roll_keep 5
+    }
+  }
+}
+CADDY_EOF
+
+# ── 기동 ────────────────────────────────────────────────────
+systemctl daemon-reload
+systemctl enable --now aligo-proxy
+systemctl restart caddy
+
+echo "[bootstrap] done $(date -u)"

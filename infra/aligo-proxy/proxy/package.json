@@ -1,0 +1,7 @@
+{
+  "name": "aligo-proxy",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Aligo SMS forward proxy for Vercel egress IP whitelist bypass"
+}

@@ -25,7 +25,7 @@
   resultRetentionDays / scenarioPriority).
 - `redis.ts` — `RedisClient` 인터페이스 + 어댑터 (`getRedis()`). 키 네임스페이스:
   - `otp:code:{requestId}:{phone}` (EX 180) — 본인인증 6자리 OTP.
-  - `otp:rl:{ip}` (EX 3600) — IP 별 OTP 발송 시도 카운터.
+  - `otp:rl:{ip}` (EX 3600) — IP 별 OTP 발송 시도 카운터. `OTP_RATE_LIMIT_DISABLED=Y` env 로 카운터 자체를 스킵 (load test / 스테이징 디버깅 편의).
   - `topup:pending:{paymentId}` (EX 3600) — 크레딧 충전 개시 시 `(partnerId, amount)` 보관.
     Stub / PortOne 양 provider 공유 — webhook 와 `acknowledgeTopup` 모두 이 stash 로 partnerId/amount 정규화 + 위변조 금액 검증.
 
@@ -36,6 +36,10 @@
 - `aligo.ts` — 알리고 SMS 게이트웨이 (`sendOtpSms`). 본인인증 6자리 코드 발송.
   `ALIGO_TEST_MODE=Y` 일 때 호출자가 알리고 호출 자체를 생략 + 코드 "000000" 고정 (`isAligoTestMode()`).
   https://smartsms.aligo.in/admin/api/spec.html.
+  운영 (Vercel) 에선 `ALIGO_PROXY_URL` + `ALIGO_PROXY_SECRET` 설정 시 알리고 직접 호출
+  대신 고정 IP 프록시 (`$URL/aligo/send/` + `Authorization: Bearer ...`) 경유 — Vercel egress
+  IP 가 동적이라 알리고 whitelist 통과 불가, 프록시 인프라는 [infra/aligo-proxy/](../../infra/aligo-proxy/).
+  EnvSchema refine 으로 "URL 만 있고 SECRET 누락" misconfig 차단.
 - `branding.ts` — 서비스 표시 이름 (`getServiceName()`). SMS prefix 등 사용자 노출 문구의 단일 진입점.
   env: `SERVICE_NAME`. 추후 이메일/알림톡 문구에서도 재사용.
 - `get-client-ip.ts` — `headers()` 기반 client IP 추출 (`x-forwarded-for` → `x-real-ip` → fallback).
