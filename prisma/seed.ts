@@ -40,6 +40,7 @@ async function main() {
   await seedDevPartnerInvitation();
   await seedExamplePartners();
   await seedPartnerCreditBalances();
+  await seedPartnerMatchStats();
 }
 
 async function seedAdmin() {
@@ -225,6 +226,9 @@ async function seedExamplePartners() {
       await tx.partnerCreditBalance.create({
         data: { partnerId: p.id },
       });
+      await tx.partnerMatchStats.create({
+        data: { partnerId: p.id },
+      });
     });
     created++;
   }
@@ -257,6 +261,30 @@ async function seedPartnerCreditBalances() {
   });
   console.log(
     `[seed] partner_credit_balance — ${partners.length} partner(s) checked, ${result.count} new row(s) created`,
+  );
+}
+
+/**
+ * `Partner.exists ⇔ PartnerMatchStats.exists` 불변식 유지.
+ *
+ * 매칭 후보 정렬 (`findMatchCandidates`) + `isNew` 판정이 모든 partner 에 stats row
+ * 존재를 전제. 정상 가입 트랜잭션 (verifyPartnerSignupOtp) 과 예시 픽스처
+ * (seedExamplePartners) 는 자체 tx 에서 eager-create 하므로, 시더는 그 외 경로
+ * (eager-create 도입 이전 레거시 partner / 수동 SQL) 의 누락을 메우는 catch-all.
+ *
+ * exposureCount 는 schema default(0). 운영 reset cron (docs/cron-jobs.md #8) 의
+ * 대상이기도 하지만 본 seed 는 신규 row 의 초기값만 책임 — 기존 row 는 그대로.
+ */
+async function seedPartnerMatchStats() {
+  const partners = await prisma.partner.findMany({ select: { id: true } });
+  if (partners.length === 0) return;
+
+  const result = await prisma.partnerMatchStats.createMany({
+    data: partners.map((p) => ({ partnerId: p.id })),
+    skipDuplicates: true,
+  });
+  console.log(
+    `[seed] partner_match_stats — ${partners.length} partner(s) checked, ${result.count} new row(s) created`,
   );
 }
 

@@ -270,8 +270,8 @@ export async function deletePartnerInvitation(
  * 기존 설계사 수정 — 어드민 전용. 이미 가입 완료된 partner 의 폼 필드를 갱신.
  *
  * email 은 폼에 없음 — auth.users.email 이 진실, 어드민이 수정하지 않음.
- * exposureCount/recentSubmissions 는 시스템 카운터라 폼 밖.
  * phone 변경 시 User.phone UNIQUE 제약을 P2002 로 분기.
+ * 매칭 카운터 (matchStats) 는 partner_match_stats 가 1:1 로 별도 관리.
  *
  * Server action 은 layout 의 인증 게이트를 거치지 않으므로 자체 가드 필수.
  */

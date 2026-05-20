@@ -350,6 +350,9 @@ auth.users (Supabase 관리)
 claim.user (id=nanoid, email/name/phone[UNIQUE])
    │ 1:1 (PK 공유) — 한 사용자가 둘 다 가질 수 있음
    ├──▶ claim.partner (bio, yearsOfExperience, trustMetric, licenseNumber, active)
+   │       │ 1:1 (PK 공유)
+   │       ├──▶ claim.partner_credit_balance  (잔액 + version)
+   │       └──▶ claim.partner_match_stats     (exposure / selected / contacted 카운터)
    └──▶ claim.admin   (active, 추후 permissions)
 
 claim.partner_invitation (임시) — partner 가입 진행 중 임시 보관

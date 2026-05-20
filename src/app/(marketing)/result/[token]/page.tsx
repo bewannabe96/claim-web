@@ -128,6 +128,7 @@ export default async function ResultPage({
         <RematchingState />
       ) : (
         <ResultView
+          resultToken={token}
           proposals={proposals}
           reportsById={reportsById}
           scenarioPriority={settings.scenarioPriority}

@@ -31,9 +31,10 @@ export function adaptProposal(
 ): ProposalData {
   const { proposal, partner } = card;
   const analyzed = proposal.analyzedAt != null;
+  const contacted = proposal.contactedAt != null;
 
   if (!report) {
-    return makeFallback(proposal, partner, analyzed);
+    return makeFallback(proposal, partner, analyzed, contacted);
   }
 
   const { headline, refund_table, coverage_payout } = report;
@@ -47,6 +48,7 @@ export function adaptProposal(
       trustMetric: partner.trustMetric,
     },
     analyzed,
+    contacted,
     insurer: headline.insurer,
     maturityAge,
     monthlyPremium: headline.total_actual_premium,
@@ -136,6 +138,7 @@ function makeFallback(
   proposal: ProposalCard["proposal"],
   partner: ProposalCard["partner"],
   analyzed: boolean,
+  contacted: boolean,
 ): ProposalData {
   return {
     id: proposal.id,
@@ -145,6 +148,7 @@ function makeFallback(
       trustMetric: partner.trustMetric,
     },
     analyzed,
+    contacted,
     insurer: "",
     maturityAge: 100,
     monthlyPremium: 0,
