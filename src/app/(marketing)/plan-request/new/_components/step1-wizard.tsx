@@ -6,6 +6,8 @@ import { useEffect, useState, useTransition } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatBudgetRange } from "@/features/plan-request-pricing/format";
+import type { PriceTier } from "@/features/plan-request-pricing/schema";
 import { submitStep1 } from "@/features/plan-requests/actions";
 import {
   FOCUSED_CONCERN_IDS,
@@ -48,20 +50,26 @@ type FormState = {
   medicalHistory: MedicalHistoryEntry[];
 };
 
-/** 보험료 옵션 */
-const BUDGET_OPTIONS: ReadonlyArray<{
+/**
+ * 보험료 옵션 — 진실 공급원은 DB `plan_request_price_tier`. 부모 server component
+ * 가 listPriceTiers() 로 읽어 prop 으로 내려줌. admin 이 추가/삭제/가격수정 한 결과가
+ * 그대로 반영됨.
+ */
+type BudgetOption = {
   id: string;
   label: string;
   min: number;
   max: number;
-}> = [
-  { id: "under-5", label: "5만원 미만", min: 0, max: 49999 },
-  { id: "5-10", label: "5~10만원", min: 50000, max: 100000 },
-  { id: "10-20", label: "10~20만원", min: 100000, max: 200000 },
-  { id: "20-30", label: "20~30만원", min: 200000, max: 300000 },
-  { id: "30-50", label: "30~50만원", min: 300000, max: 500000 },
-  { id: "over-50", label: "50만원 이상", min: 500000, max: 9999999 },
-];
+};
+
+function toBudgetOptions(tiers: ReadonlyArray<PriceTier>): BudgetOption[] {
+  return tiers.map((t) => ({
+    id: t.id,
+    label: formatBudgetRange(t.budgetMin, t.budgetMax),
+    min: t.budgetMin,
+    max: t.budgetMax,
+  }));
+}
 
 const PHASE_KEYS = [
   "coverage",
@@ -81,8 +89,9 @@ const PHASES: Record<PhaseKey, { title: string }> = {
 /** 매칭 로딩 화면 최소 노출 시간 (ms). */
 const MIN_MATCHING_MS = 2800;
 
-export function Step1Wizard() {
+export function Step1Wizard({ priceTiers }: { priceTiers: PriceTier[] }) {
   const router = useRouter();
+  const budgetOptions = toBudgetOptions(priceTiers);
   const [phaseIdx, setPhaseIdx] = useState(0);
   const [data, setData] = useState<FormState>({
     medicalHistory: [],
@@ -179,7 +188,11 @@ export function Step1Wizard() {
           )}
 
           {phaseKey === "budget" && (
-            <BudgetFields data={data} setData={setData} />
+            <BudgetFields
+              data={data}
+              setData={setData}
+              options={budgetOptions}
+            />
           )}
 
           {phaseKey === "medical" && (
@@ -380,13 +393,22 @@ function buildCoverage(d: FormState): CoverageRequest {
 function BudgetFields({
   data,
   setData,
+  options,
 }: {
   data: FormState;
   setData: React.Dispatch<React.SetStateAction<FormState>>;
+  options: ReadonlyArray<BudgetOption>;
 }) {
+  if (options.length === 0) {
+    return (
+      <p className="text-sm text-[#4b4b4b]">
+        보험료 옵션이 아직 등록되지 않았어요. 잠시 후 다시 시도해주세요.
+      </p>
+    );
+  }
   return (
     <ChipGroup>
-      {BUDGET_OPTIONS.map((opt) => {
+      {options.map((opt) => {
         const selected =
           data.monthlyBudgetMin === String(opt.min) &&
           data.monthlyBudgetMax === String(opt.max);

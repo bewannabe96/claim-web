@@ -90,18 +90,23 @@ model PlanRequest {
 }
 
 // ============================================================
-// plan_request_price_tier — budget 범위 → 요청서 가격 매핑 (6 row 고정)
+// plan_request_price_tier — budget 범위 → 요청서 가격 매핑 (가변 row, 비중첩)
 // ============================================================
-// step1-wizard 의 6개 BUDGET_OPTIONS 와 lock-step. seeder 가 position 별 upsert.
-// admin 페이지에서 price 만 mutable, (budgetMin, budgetMax) 는 코드의 preset 과
-// 일치해야 하므로 immutable. PlanRequest 생성 시점에 price 가 PlanRequest.price 로
-// snapshot 되어, admin 이 가격을 바꿔도 진행 중 요청에는 영향 X.
+// step1-wizard 의 BUDGET_OPTIONS 가 이 테이블에서 동적으로 로드됨 (server component
+// 가 listPriceTiers() 호출 → client wizard 에 prop). admin 페이지가 일괄 편집 —
+// $transaction(deleteMany + createMany) 로 전체 row 를 atomic 교체. 비중첩 + 연속
+// 구간 invariant 가 트랜잭션 단위로 보장됨.
 //
-// MVP 단계라 작은 lookup 테이블 — index 추가 안 함 (full scan 6 row).
+// 구간 표현: 인접 row 의 budgetMax+1 === 다음 row 의 budgetMin (1원 갭, 닫힘-열림
+// 구간). 첫 row 의 budgetMin=0, 마지막 row 의 budgetMax=9_999_999 (sentinel).
+// PlanRequest 생성 시점에 price 가 PlanRequest.price 로 snapshot 되어, admin 이
+// tier 를 어떻게 갈아끼우든 진행 중 요청에는 영향 X.
+//
+// 운영 규모상 lookup 테이블 — index 추가 안 함 (full scan, 보통 수십 row 미만).
 
 model PlanRequestPriceTier {
   id        String   @id                       // nanoid(16)
-  /// 0..5 — step1-wizard BUDGET_OPTIONS 의 표시 순서. UNIQUE.
+  /// 표시 순서 (boundary 오름차순). UNIQUE — bulk save 가 0..N-1 로 자동 재할당.
   position  Int      @unique
   budgetMin Int      @map("budget_min")
   budgetMax Int      @map("budget_max")

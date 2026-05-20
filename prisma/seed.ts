@@ -291,16 +291,13 @@ async function seedPartnerAssignmentStats() {
 }
 
 /**
- * `PlanRequestPriceTier` — step1-wizard 의 6개 BUDGET_OPTIONS 와 lock-step 으로
- * 매핑되는 (position, budgetMin, budgetMax, price) 6 row.
+ * `PlanRequestPriceTier` — 가입자 step1-wizard 의 budget chip 이 동적으로 로드하는
+ * 가격 매핑 row 의 초기값. admin UI 에서 추가/삭제/가격수정 가능하므로 seeder 는
+ * "최초 부트스트랩" 용도만 — 빈 테이블이면 6개 기본 tier 를 백필, 이미 row 가
+ * 있으면 (position UNIQUE 충돌 회피) skip.
  *
- * position 으로 upsert (멱등). 신규 row 만 price 를 기본값으로 채우고, 기존 row 의
- * price 는 admin 이 운영 중 수정한 값을 보존해야 하므로 update 시 건드리지 않음.
- *
- * 코드와의 결합:
- *   - position / budgetMin / budgetMax 는 step1-wizard.tsx 의 BUDGET_OPTIONS 와 1:1
- *     동기. 그 hardcoded preset 이 바뀌면 이 seeder + admin migration 도 같이 갱신.
- *   - price 초기값은 MVP 발족 시점의 어림값. 운영 시작 후엔 admin UI 에서 조정.
+ * 신규 row 만 price 를 기본값으로 채우고, 기존 row 의 price 는 admin 이 운영 중
+ * 수정한 값을 보존해야 하므로 update 시 건드리지 않음.
  */
 const DEFAULT_PRICE_TIERS = [
   { position: 0, budgetMin: 0, budgetMax: 49999, price: 10_000 },
