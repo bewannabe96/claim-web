@@ -272,8 +272,9 @@ async function seedPartnerCreditBalances() {
  * (seedExamplePartners) 는 자체 tx 에서 eager-create 하므로, 시더는 그 외 경로
  * (eager-create 도입 이전 레거시 partner / 수동 SQL) 의 누락을 메우는 catch-all.
  *
- * exposureCount 는 schema default(0). 운영 reset cron (docs/cron-jobs.md #8) 의
- * 대상이기도 하지만 본 seed 는 신규 row 의 초기값만 책임 — 기존 row 는 그대로.
+ * 카운터들은 모두 schema default(0). selectedCount 는 운영 reset cron
+ * (docs/cron-jobs.md #8) 의 대상이지만 본 seed 는 신규 row 의 초기값만 책임 —
+ * 기존 row 는 그대로.
  */
 async function seedPartnerMatchStats() {
   const partners = await prisma.partner.findMany({ select: { id: true } });

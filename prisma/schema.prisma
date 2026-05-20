@@ -233,8 +233,8 @@ model PartnerMatchStats {
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 
-  // 매칭 후보 정렬 — exposure_count 적은 순.
-  @@index([exposureCount])
+  // 매칭 후보 정렬 — selected_count 적은 순.
+  @@index([selectedCount])
   @@map("partner_match_stats")
   @@schema("claim")
 }

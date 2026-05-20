@@ -10,7 +10,7 @@ import { z } from "zod";
  * Partner = User (공통 정보) + Partner (설계사 추가 정보) + 매칭 카운터 (1:1) 의 조인 뷰.
  *
  * 가입자 노출: user.name, bio, yearsOfExperience, trustMetric
- * 매칭 사용 : matchStats.exposureCount
+ * 매칭 사용 : matchStats.selectedCount (정렬 키), matchStats.exposureCount (isNew 판정)
  * 운영 사용 : user.email (로그인), user.phone (알림톡), active, licenseNumber
  *
  * Prisma 모델은 1:1 분리 (PK 공유) — 타입은 query 가 include 로 묶어서 노출.

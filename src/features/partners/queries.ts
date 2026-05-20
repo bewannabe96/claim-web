@@ -18,7 +18,8 @@ const PARTNER_INCLUDE = {
  * 매칭 후보 추출 — PRD §5.2.
  *
  * 필터: active=true.
- * 정렬: matchStats.exposureCount 적은 순 → 랜덤 (tiebreak).
+ * 정렬: matchStats.selectedCount 적은 순 → 랜덤 (tiebreak).
+ *   가입자에게 적게 선택된 설계사를 우선 노출해 선택수가 평준화되도록 self-balancing.
  *
  * 풀이 작아 app-side ranking. 풀이 커지면 SQL window function 으로 이주.
  * stats row 누락된 레거시 partner 는 `?? 0` 폴백 — 가장 우선 순위가 되어 다음
@@ -30,14 +31,14 @@ export async function findMatchCandidates(
   const eligible = await prisma.partner.findMany({
     where: { active: true },
     include: PARTNER_INCLUDE,
-    orderBy: { matchStats: { exposureCount: "asc" } },
+    orderBy: { matchStats: { selectedCount: "asc" } },
   });
 
   return eligible
     .map((p) => ({ partner: p, jitter: Math.random() }))
     .sort((x, y) => {
-      const xc = x.partner.matchStats?.exposureCount ?? 0;
-      const yc = y.partner.matchStats?.exposureCount ?? 0;
+      const xc = x.partner.matchStats?.selectedCount ?? 0;
+      const yc = y.partner.matchStats?.selectedCount ?? 0;
       if (xc !== yc) return xc - yc;
       return x.jitter - y.jitter;
     })
