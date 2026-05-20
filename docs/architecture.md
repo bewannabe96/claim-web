@@ -411,7 +411,7 @@ partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일
 **외부 의존**:
 - **Kakao Developers**: "카카오계정(이메일)" 동의항목 필수 (`?error=no_email` 방지). Kakao 자체는 전화번호를 제공하지 않으므로 phone scope 는 불필요 — phone 검증은 휴대폰 OTP 가 책임.
 - **알리고 SMS** (휴대폰 OTP): env `ALIGO_KEY` / `ALIGO_USER_ID` / `ALIGO_SENDER` / `ALIGO_TEST_MODE`. 마케팅 요청서 OTP 와 동일한 `server/aligo.ts` 공용. dev 에선 `ALIGO_TEST_MODE=Y` → 코드 "000000" 고정 + 발송 생략. 운영 (Vercel) 에선 egress IP 가 동적이라 알리고 whitelist 통과 불가 → `ALIGO_PROXY_URL` + `ALIGO_PROXY_SECRET` 으로 고정 IP 프록시 경유 ([infra/aligo-proxy/](../infra/aligo-proxy/) — Lightsail + Caddy + Node forward proxy).
-- **Redis**: 백엔드 자동 선택 (`src/server/redis.ts`) — `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` 있으면 Upstash REST (prod / serverless), 그 외 `REDIS_URL` 로 ioredis (로컬 Docker). OTP 코드 (`otp:partner-signup:{invitationId}`, EX 180s) + IP 발송 시도 카운터 (`otp:rl:{ip}`, EX 3600s, 마케팅과 카운터 공유) 보관.
+- **Redis**: 백엔드 자동 선택 (`src/server/redis.ts`) — `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` 있으면 Upstash REST (prod / serverless), 그 외 `REDIS_URL` 로 ioredis (로컬 Docker). OTP 코드 (`otp:partner-signup:{invitationId}`, EX 180s) + IP 발송 시도 카운터 (`otp:rl:{ip}`, EX 3600s, 마케팅과 카운터 공유) 보관. 카운터는 `OTP_RATE_LIMIT_DISABLED=Y` env 로 우회 가능 (load test / 스테이징).
 
 **경로 은닉 (admin 만, defense in depth, optional)** — `ADMIN_KNOCK_PATH` env 가 설정되면 middleware 가:
 - `/<KNOCK>` 진입 시 `admin_knock` 쿠키 (30일) 발급 후 307 → /admin/login

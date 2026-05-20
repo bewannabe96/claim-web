@@ -25,7 +25,7 @@
   resultRetentionDays / scenarioPriority).
 - `redis.ts` — `RedisClient` 인터페이스 + 어댑터 (`getRedis()`). 키 네임스페이스:
   - `otp:code:{requestId}:{phone}` (EX 180) — 본인인증 6자리 OTP.
-  - `otp:rl:{ip}` (EX 3600) — IP 별 OTP 발송 시도 카운터.
+  - `otp:rl:{ip}` (EX 3600) — IP 별 OTP 발송 시도 카운터. `OTP_RATE_LIMIT_DISABLED=Y` env 로 카운터 자체를 스킵 (load test / 스테이징 디버깅 편의).
   - `topup:pending:{paymentId}` (EX 3600) — 크레딧 충전 개시 후 PG 콜백이
     paymentId 만 들고 와도 (partnerId, amount) 를 신뢰할 수 있게 보관 ([src/features/credits/payment/provider.ts](../features/credits/payment/provider.ts)).
 

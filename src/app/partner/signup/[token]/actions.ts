@@ -185,16 +185,20 @@ export async function requestPartnerSignupOtp(
   const ip = await getClientIp();
 
   // 1) IP 레이트리밋. EXPIRE 의 NX 효과로 첫 INCR 시에만 TTL 설정 → fixed 60분 윈도우.
-  const rlKey = rateLimitKey(ip);
-  const count = await redis.incr(rlKey);
-  if (count === 1) {
-    await redis.expire(rlKey, RATE_LIMIT_WINDOW_SECONDS);
-  }
-  if (count > RATE_LIMIT_MAX_ATTEMPTS) {
-    return {
-      ok: false,
-      error: "발송 시도가 너무 많습니다. 1시간 후 다시 시도해주세요.",
-    };
+  //    `OTP_RATE_LIMIT_DISABLED=Y` 일 땐 카운터 자체를 건드리지 않음 — load test /
+  //    스테이징 디버깅 편의. prod 미설정 시 default 동작 (rate limit on).
+  if (process.env.OTP_RATE_LIMIT_DISABLED !== "Y") {
+    const rlKey = rateLimitKey(ip);
+    const count = await redis.incr(rlKey);
+    if (count === 1) {
+      await redis.expire(rlKey, RATE_LIMIT_WINDOW_SECONDS);
+    }
+    if (count > RATE_LIMIT_MAX_ATTEMPTS) {
+      return {
+        ok: false,
+        error: "발송 시도가 너무 많습니다. 1시간 후 다시 시도해주세요.",
+      };
+    }
   }
 
   // 2) 재전송 쿨다운 — 기존 코드 TTL 살아있으면 그 잔여 초 반환.
