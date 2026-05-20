@@ -17,7 +17,7 @@
 | 3 | Partner Invitation 미사용 초청 정리 | 🔴 필수 | 12~24시간 | ❌ |
 | 4 | 0건 제출 시 자동 재매칭 | 🟡 권장 | 마감 직후 이벤트 | ❌ |
 | 5 | 분석 실패 자동 재시도 | 🟡 권장 | 30분~6시간 | ❌ |
-| 6 | SMS OTP 코드 만료 정리 | 🟡 권장 | 5~15분 | ❌ (OTP 자체 미구현) |
+| 6 | SMS OTP 코드 만료 정리 | ⏸ 보류 | — | ⏸ Redis TTL 자동 만료로 cron 불필요 |
 | 7 | 일일 운영 통계 사전 집계 | 🟢 선택 | 매일 자정 | ❌ |
 | 8 | 설계사 노출 카운트 리셋 | 🟢 선택 | 주/월 단위 | ❌ |
 | 9 | 오래된 데이터 아카이빙 | 🟢 선택 | 월 1회 | ❌ |
@@ -533,22 +533,22 @@ export async function GET(req: Request) {
 
 ---
 
-### 3.3 🟡 작업 #6: SMS OTP 코드 만료 정리
+### 3.3 ⏸ 작업 #6: SMS OTP 코드 만료 정리
 
-**상태**: ❌ 미구현 (OTP 자체가 데모 모드)
+**상태**: ⏸ 보류 — Redis TTL 자동 만료로 cron 불필요
 
-#### 배경
+#### 현재 구현
 
-- 현재: [src/features/requests/actions.ts:250](../src/features/requests/actions.ts) 의 `TODO: 실제 SMS 게이트웨이 호출 + 5분 TTL 코드 저장`.
-- MVP 는 `DEMO_OTP='000000'` 하드코드.
+- 알리고 SMS 게이트웨이 통합 완료: [src/server/aligo.ts](../src/server/aligo.ts).
+- 가입자 본인인증 OTP 발송: [src/features/requests/actions.ts](../src/features/requests/actions.ts) `sendOtp`.
+- 설계사 가입 OTP 발송: [src/app/partner/signup/[token]/actions.ts](../src/app/partner/signup/[token]/actions.ts).
+- 코드 저장: Redis 키 `otp:code:{requestId}:{phone}`, TTL = **180초** (`OTP_TTL_SECONDS`). TTL 이 곧 재전송 쿨다운 + 만료.
+- `ALIGO_TEST_MODE=Y` 일 때만 코드 `"000000"` 고정 + 알리고 호출 생략 (dev/test 편의).
 
-#### 실서비스 진입 시 결정사항
+#### 결론
 
-- 저장소: PostgreSQL `OtpCode` 테이블 vs Redis TTL.
-- Redis TTL 이면 cron 불필요 (TTL 만료 시 자동 삭제).
-- PostgreSQL 저장 시: `5분` 주기 cron 으로 `expiresAt < NOW()` 행 삭제.
-
-**현 단계 결론**: 보류. OTP 인프라 도입 시 함께 결정.
+- Redis 가 TTL 만료 시 키를 자동 삭제하므로 별도 cron 작업 불필요.
+- 향후 OTP 를 PostgreSQL (`OtpCode` 테이블 등) 로 영속화할 경우에만 본 작업 재개. 그 때는 `5~15분` 주기로 `expiresAt < NOW()` 행 삭제.
 
 ---
 
@@ -690,3 +690,4 @@ Phase 3 (필요 시)
 | 날짜 | 작업 | 변경 | 담당 |
 |------|------|------|------|
 | 2026-05-19 | 문서 | 초안 작성 | - |
+| 2026-05-20 | #6 | OTP 는 알리고 + Redis TTL 로 이미 구현 — cron 불필요로 보류 처리 | - |
