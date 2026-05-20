@@ -17,20 +17,34 @@ const PARTNER_INCLUDE = {
 /**
  * 배정 후보 산출 — PRD §5.2.
  *
- * 필터: active=true.
- * 정렬: assignmentStats.selectedCount 적은 순 → 랜덤 (tiebreak).
- *   가입자에게 적게 선택된 설계사를 우선 노출해 선택수가 평준화되도록 self-balancing.
+ * 필터:
+ *   - active=true
+ *   - creditBalance.balance >= requestPrice (자격 미달 partner 는 노출 자체 차단).
+ *     debt 가 있어도 balance >= requestPrice 면 OK — 진행 중 거래 흐름은 차감 후
+ *     balance=0 + debt 누적까지만 허용.
+ *
+ * 정렬 (멀티 키):
+ *   1. assignmentStats.selectedCount ASC — 자기-균형화 (적게 선택된 설계사 우선)
+ *   2. creditBalance.balance DESC — 베네핏 (잔액 많은 파트너 약한 우선순위)
+ *   3. random jitter — 동점 tiebreak
  *
  * 풀이 작아 app-side ranking. 풀이 커지면 SQL window function 으로 이주.
- * stats row 누락된 레거시 partner 는 `?? 0` 폴백 — 가장 우선 순위가 되어 다음
- * 후보 산출에서 다시 선택됨 (시더 catch-all 이 도달 전 임시 안전망).
+ * stats / balance row 누락된 레거시 partner 는 `?? 0` 폴백 — 단, balance 0 인 경우
+ * 필터에서 이미 걸러지므로 정상 흐름에선 도달 안 함 (시더 catch-all 이 보정).
  */
 export async function findAssignmentCandidates(
   limit: number,
+  requestPrice: number,
 ): Promise<PartnerCard[]> {
   const eligible = await prisma.partner.findMany({
-    where: { active: true },
-    include: PARTNER_INCLUDE,
+    where: {
+      active: true,
+      creditBalance: { balance: { gte: requestPrice } },
+    },
+    include: {
+      ...PARTNER_INCLUDE,
+      creditBalance: { select: { balance: true } },
+    },
     orderBy: { assignmentStats: { selectedCount: "asc" } },
   });
 
@@ -40,6 +54,9 @@ export async function findAssignmentCandidates(
       const xc = x.partner.assignmentStats?.selectedCount ?? 0;
       const yc = y.partner.assignmentStats?.selectedCount ?? 0;
       if (xc !== yc) return xc - yc;
+      const xb = x.partner.creditBalance?.balance ?? 0;
+      const yb = y.partner.creditBalance?.balance ?? 0;
+      if (xb !== yb) return yb - xb;
       return x.jitter - y.jitter;
     })
     .slice(0, limit)

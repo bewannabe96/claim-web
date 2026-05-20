@@ -68,12 +68,8 @@ export async function adjustCredit(
   });
 
   if (!result.ok) {
-    if (result.error === "insufficient_balance") {
-      return {
-        ok: false,
-        errors: { amount: ["잔액이 부족합니다. 현재 잔액보다 큰 차감은 불가합니다."] },
-      };
-    }
+    // insufficient_balance 는 debt 분배 도입 이후 unreachable — 음수 조정도 부족분이
+    // debt 로 누적됨 (admin 워크플로우상 의도된 결과). conflict 만 실제 발생 가능.
     return {
       ok: false,
       errors: {
@@ -213,16 +209,9 @@ export async function refundTopup(
         },
       );
     }
-    if (result.error === "insufficient_balance") {
-      return {
-        ok: false,
-        errors: {
-          amount: [
-            "환불 시점의 잔액이 부족합니다. 이미 소비된 충전분은 환불할 수 없어요 — 별도 조정으로 처리해주세요.",
-          ],
-        },
-      };
-    }
+    // insufficient_balance 는 debt 분배 도입 이후 unreachable — 환불이 잔액을 넘어가면
+    // 부족분이 debt 로 누적됨 (PG 환불은 이미 이루어졌으므로 ledger 가 그 의무를 기록).
+    // conflict 만 실제 발생 가능.
     return {
       ok: false,
       errors: { _form: ["동시 갱신 충돌 — 잠시 후 다시 시도해주세요."] },
@@ -389,12 +378,15 @@ export async function acknowledgeTopup({
 }
 
 /**
- * 시스템 자동 차감 — 후속 PR 의 spend 트리거 (assignment 노출 등) 가 호출.
+ * 시스템 자동 차감 — plan-proposal contact 같은 spend 트리거가 호출.
  *
  * 세션 가드 없음 — 이미 인가된 컨텍스트 (다른 server action / webhook / job) 에서
  * 호출됨을 가정. 호출처가 자체 인증 책임.
  *
  * 멱등성: idempotencyKey 필수. spend 트리거는 항상 같은 키로 안전 재시도 가능해야 함.
+ *
+ * 잔액 부족: balance 가 amount 보다 적으면 부족분이 debt 로 누적 (음수 잔액 차단 없음).
+ * insufficient_balance 에러는 반환되지 않음. conflict / invalid_input 만 실제 발생.
  */
 export async function spendCredit(input: {
   partnerId: string;
@@ -408,9 +400,10 @@ export async function spendCredit(input: {
       ok: true;
       ledgerId: string;
       balanceAfter: number;
+      debtAfter: number;
       alreadyApplied: boolean;
     }
-  | { ok: false; error: "insufficient_balance" | "conflict" | "invalid_input" }
+  | { ok: false; error: "conflict" | "invalid_input" }
 > {
   const parsed = SpendInputSchema.safeParse(input);
   if (!parsed.success) {
@@ -429,7 +422,11 @@ export async function spendCredit(input: {
   });
 
   if (!result.ok) {
-    return { ok: false, error: result.error };
+    // insufficient_balance 는 unreachable (debt 분배). conflict 만 가능.
+    if (result.error === "conflict") {
+      return { ok: false, error: "conflict" };
+    }
+    return { ok: false, error: "conflict" };
   }
 
   revalidatePath(`/partner/credits`);
@@ -439,6 +436,7 @@ export async function spendCredit(input: {
     ok: true,
     ledgerId: result.ledgerId,
     balanceAfter: result.balanceAfter,
+    debtAfter: result.debtAfter,
     alreadyApplied: result.alreadyApplied,
   };
 }

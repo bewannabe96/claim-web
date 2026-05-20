@@ -20,7 +20,7 @@ export async function CreditBalanceCard({
   showActions?: boolean;
   className?: string;
 }) {
-  const { balance } = await getCreditBalance(partnerId);
+  const { balance, debt } = await getCreditBalance(partnerId);
 
   return (
     <section
@@ -35,6 +35,11 @@ export async function CreditBalanceCard({
           {formatKrw(balance)}
           <span className="text-base font-medium text-[#4b4b4b] ml-1.5">원</span>
         </p>
+        {debt > 0 && (
+          <p className="text-xs font-medium text-red-600">
+            누적 부채 {formatKrw(debt)}원 — 다음 충전 시 우선 차감
+          </p>
+        )}
       </div>
       {showActions && (
         <div className="flex items-center gap-2">

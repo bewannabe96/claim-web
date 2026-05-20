@@ -79,6 +79,7 @@ export type LedgerEntry = {
   id: string;
   amount: number;
   balanceAfter: number;
+  debtAfter: number;
   type: CreditType;
   reason: string | null;
   referenceType: string | null;
