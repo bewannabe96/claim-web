@@ -609,7 +609,7 @@ model DailyMetrics {
 #### 무엇을 한다
 
 ```ts
-await prisma.partner.updateMany({
+await prisma.partnerMatchStats.updateMany({
   data: { exposureCount: 0 },
 });
 ```

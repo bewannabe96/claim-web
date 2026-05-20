@@ -322,6 +322,10 @@ export async function verifyPartnerSignupOtp(
       await tx.partnerCreditBalance.create({
         data: { partnerId: userId },
       });
+      // 매칭 카운터 row eager-create — Partner.exists ⇔ PartnerMatchStats.exists 불변식.
+      await tx.partnerMatchStats.create({
+        data: { partnerId: userId },
+      });
       await tx.partnerInvitation.update({
         where: { id: invitation.id },
         data: {

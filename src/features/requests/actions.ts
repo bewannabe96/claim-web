@@ -114,6 +114,13 @@ export async function submitStep1(
         selected: false,
       })),
     }),
+    // 매칭 후보로 노출된 partner 들의 카운트 +1 — candidate row 와 같은 트랜잭션에
+    // 묶어 atomicity 보장. stats row 누락된 레거시 partner 는 silent skip (시더 백필
+    // 이 catch-all). exposureCount 정의: PlanRequestCandidate INSERT = 후보 카드 등장.
+    prisma.partnerMatchStats.updateMany({
+      where: { partnerId: { in: candidates.map((c) => c.id) } },
+      data: { exposureCount: { increment: 1 } },
+    }),
   ]);
 
   revalidatePath("/admin/requests");
@@ -445,6 +452,14 @@ export async function finalizeRequest(
         status: "pending",
         createdAt: now,
       })),
+    }),
+    // 가입자가 선택해 제안서 요청까지 완료한 partner 들의 selectedCount +1.
+    // 정의: match_assignment INSERT = "제안서 요청" (결과 페이지의 문자요청과는 별개).
+    // exposureCount 와 동일한 silent-skip 시맨틱 — stats row 누락된 레거시 partner 는
+    // 시더 catch-all 이 보정.
+    prisma.partnerMatchStats.updateMany({
+      where: { partnerId: { in: req.candidates.map((c) => c.partnerId) } },
+      data: { selectedCount: { increment: 1 } },
     }),
   ]);
 
