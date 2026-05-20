@@ -407,7 +407,7 @@ pnpm exec tsx scripts/test-credit-concurrency.ts <partnerId> spend    # debt 분
 |---|---|---|---|
 | 가입자 연락 요청 | [features/plan-proposals/actions.ts](../src/features/plan-proposals/actions.ts) `requestPlanProposalContact` | `PlanRequest.price` (Step1 snapshot) | `proposal-contact:${proposalId}` |
 
-가격 결정은 `PlanRequestPriceTier` (budget 별 6 row, admin 편집) → `PlanRequest.price` 컬럼 snapshot. 자세한 가격 모델은 [domain-glossary.md](domain-glossary.md) 참조. 잔액 부족 시 ledger 가 정상 작성되고 부족분이 `debt` 로 누적되므로 호출자는 별도 분기 처리 불요.
+가격 결정은 `PlanRequestPriceTier` (budget 범위별 row, admin 페이지에서 추가/삭제/가격수정) → `PlanRequest.price` 컬럼 snapshot. 자세한 가격 모델은 [domain-glossary.md](domain-glossary.md) 참조. 잔액 부족 시 ledger 가 정상 작성되고 부족분이 `debt` 로 누적되므로 호출자는 별도 분기 처리 불요.
 
 ## 8. 후속 작업 (이번 범위 외)
 

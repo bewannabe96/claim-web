@@ -82,13 +82,11 @@ export async function submitStep1(
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
 
-  // 요청서 가격 snapshot — admin 이 이후 tier 가격을 바꿔도 이 요청에는 영향 X.
-  // step1-wizard 의 BUDGET_OPTIONS 가 항상 정확히 일치하는 (min, max) 만 보내므로
-  // tier lookup 은 정상 흐름에선 항상 hit. drift 시 throw → 사용자에게 generic 에러.
-  const price = await getPriceForBudget(
-    parsed.data.monthlyBudgetMin,
-    parsed.data.monthlyBudgetMax,
-  );
+  // 요청서 가격 snapshot — admin 이 이후 tier 가격/구성을 바꿔도 이 요청에는 영향 X.
+  // step1-wizard chip 은 server component 가 listPriceTiers() 로 내려준 동일 row
+  // 에서 만들어지므로 tier lookup 은 정상 흐름에선 항상 hit. 동시 삭제 등 race 시
+  // throw → 사용자에게 generic 에러.
+  const price = await getPriceForBudget(parsed.data.monthlyBudgetMin);
 
   // 배정 후보 산출 (DB) — 가격을 넘겨 자격 미달 파트너 (잔액 < 가격) 자동 제외.
   const settings = await getSettings();

@@ -19,11 +19,12 @@
 - **`price` 컬럼**: Step1 생성 시점에 `PlanRequestPriceTier` 에서 매칭한 가격을 snapshot. 이후 admin 이 tier 가격을 바꿔도 진행 중 요청에는 영향 없음. 결과 페이지 "문자 보내기" 시 이 가격으로 partner 크레딧 차감.
 
 #### `PlanRequestPriceTier` (요청서 가격 tier)
-- **정의**: 가입자 budget 범위 → 요청서당 차감 가격 매핑. 6 row 고정 (step1-wizard 의 `BUDGET_OPTIONS` 와 lock-step).
-- **DB**: `plan_request_price_tier`
-- **수명**: seeder 가 6 row 백필 (멱등 upsert by position). admin 페이지에서 `price` 만 mutable, `position` / `budgetMin` / `budgetMax` 는 immutable.
+- **정의**: 가입자 budget 범위 → 요청서당 차감 가격 매핑. 가변 row, 비중첩 + 연속 구간 (boundary 모델). step1-wizard 의 budget chip 이 이 테이블에서 동적으로 로드됨 (부모 server component 가 `listPriceTiers()` 호출 → client wizard 에 prop).
+- **DB**: `plan_request_price_tier`. 인접 row 의 `budgetMax+1 === 다음 row 의 budgetMin` (1원 갭으로 닫힘-열림 구간). 첫 row 의 `budgetMin=0`, 마지막 row 의 `budgetMax=9_999_999` (sentinel).
+- **수명**: seeder 가 6 row 초기 백필 (빈 테이블일 때만). admin 페이지에서 **일괄 편집** (만원 단위 입력, `$transaction(deleteMany + createMany)` 로 전체 atomic 교체). `position` 은 boundary 오름차순으로 server action 이 자동 재할당 (UNIQUE).
 - **위치**: features/plan-request-pricing/
-- **Snapshot 정책**: PlanRequest 생성 시점에 `PlanRequest.price` 로 고정. tier 자체는 admin 운영용 lookup 테이블.
+- **Snapshot 정책**: PlanRequest 생성 시점에 `PlanRequest.price` 로 고정. admin 이 tier 를 어떻게 갈아끼우든 진행 중 요청에는 영향 없음.
+- **가격 lookup**: `getPriceForBudget(budgetMin)` 은 "사용자 `budgetMin` 을 포함하는 tier" 를 찾음 (containment). race / 운영 중 범위 조정에 견고.
 
 #### `PlanRequestAssignmentCandidate` (배정 후보)
 - **정의**: 알고리즘이 산출한 `(PlanRequest × Partner)` 후보 슬롯. N명 산출 후 가입자가 K명 선택. selected=true 인 row 가 실제 배정 대상.

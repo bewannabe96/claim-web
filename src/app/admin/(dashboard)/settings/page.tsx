@@ -30,7 +30,10 @@ export default async function AdminSettingsPage() {
             가격은 요청서 생성 시점에 snapshot 되므로, 변경 후 발생한 신규 요청부터 적용됩니다.
           </p>
         </div>
-        <PricingForm tiers={priceTiers} />
+        <PricingForm
+          key={priceTiers.map((t) => t.id).join("|")}
+          tiers={priceTiers}
+        />
       </section>
 
       <section className="flex flex-col gap-4">
