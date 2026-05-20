@@ -6,6 +6,8 @@
 
 진실 공급원: [docs/architecture.md](../docs/architecture.md). 새 패턴을 도입하기 전에 거기에 이미 정의돼 있는지 확인.
 
+도메인 엔티티 이름 / 어휘 / 명명 컨벤션은 [docs/domain-glossary.md](../docs/domain-glossary.md) — 새 모델 / 라우트 / features 폴더 만들기 전에 확인.
+
 ## 디렉토리 책임 분리
 
 | 디렉토리 | 책임 |

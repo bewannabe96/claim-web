@@ -2,6 +2,8 @@
 
 > Next.js 16 + React 19 + App Router + Turbopack + Tailwind v4 + shadcn/ui (Nova) + pnpm 기준의 권장 아키텍처.
 > 이 프로젝트(보험 가입자 ↔ 설계사 매칭 MVP)에 적용할 표준 패턴을 정리합니다.
+>
+> **도메인 엔티티 이름 / 어휘 / 명명 컨벤션은 [domain-glossary.md](domain-glossary.md) 참조** — 본 문서는 아키텍처 패턴, glossary 는 도메인 사전.
 
 ---
 

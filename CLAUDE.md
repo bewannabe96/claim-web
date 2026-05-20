@@ -10,6 +10,10 @@
 2. **작업할 디렉토리의 `CLAUDE.md`** — 디렉토리별 로컬 규칙. [src/CLAUDE.md](src/CLAUDE.md)에서 시작해 트리 따라 내려갈 것.
 3. 의심나면 `node_modules/next/dist/docs/`로 직접 확인.
 
+## 도메인 어휘
+
+코드 / 주석 / 내부 문서에서 `매칭`, `요청`, `배정`, `Plan*` 등 도메인 용어를 사용하기 전에 **[docs/domain-glossary.md](docs/domain-glossary.md) 를 확인**할 것. 엔티티 캐노니컬 이름 / 어휘 정책 / 명명 컨벤션의 단일 진실 공급원.
+
 ## 가장 자주 틀리는 항목
 
 - `params`, `searchParams`, `cookies()`, `headers()` **모두 async** — `await` 필요.
