@@ -33,9 +33,12 @@
   - `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` → Upstash REST (HTTP, prod / serverless 권장).
   - 그 외 → `REDIS_URL` 로 ioredis (TCP, 로컬 Docker Redis).
   호출부는 `RedisClient` 만 의존 — 새 백엔드 추가는 어댑터 함수 한 개 추가 + env 분기.
-- `aligo.ts` — 알리고 SMS 게이트웨이 (`sendOtpSms`). 본인인증 6자리 코드 발송.
-  `ALIGO_TEST_MODE=Y` 일 때 호출자가 알리고 호출 자체를 생략 + 코드 "000000" 고정 (`isAligoTestMode()`).
-  https://smartsms.aligo.in/admin/api/spec.html.
+- `aligo.ts` — 알리고 SMS / LMS 게이트웨이. https://smartsms.aligo.in/admin/api/spec.html.
+  공통 호출은 internal `callAligo` 헬퍼가 담당, 두 종류의 export:
+  - `sendOtpSms(receiver, code)` — 본인인증 6자리 코드 SMS (90byte 본문 한도).
+    `ALIGO_TEST_MODE=Y` 일 때는 **호출자가** 알리고 호출 자체를 생략 + 코드 "000000" 고정 (`isAligoTestMode()`) — 코드가 의미를 가져 호출자 분기 필요.
+  - `sendNotificationLms(receiver, message)` — URL 포함 사용자 알림 LMS (2000byte 본문). 분석 완료 → 가입자, 신규 제안서 요청 → 설계사, 연락 요청 → 설계사 세 시점에서 호출. `ALIGO_TEST_MODE=Y` 일 때는 **함수 내부에서** 알리고 호출 skip + console.log 만 (OTP 와 다른 패턴 — 호출자 분기 불필요).
+
   운영 (Vercel) 에선 `ALIGO_PROXY_URL` + `ALIGO_PROXY_SECRET` 설정 시 알리고 직접 호출
   대신 고정 IP 프록시 (`$URL/aligo/send/` + `Authorization: Bearer ...`) 경유 — Vercel egress
   IP 가 동적이라 알리고 whitelist 통과 불가, 프록시 인프라는 [infra/aligo-proxy/](../../infra/aligo-proxy/).
