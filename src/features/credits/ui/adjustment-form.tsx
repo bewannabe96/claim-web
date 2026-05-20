@@ -48,6 +48,9 @@ export function AdjustmentForm({ partnerId }: { partnerId: string }) {
           placeholder="예: 10000 또는 -5000"
           className="h-11"
         />
+        <p className="text-xs text-[#4b4b4b]">
+          잔액보다 큰 음수 입력 시 부족분은 부채(debt)로 누적됩니다. 다음 충전 시 자동 충당돼요.
+        </p>
         {errors?.amount && (
           <p className="text-xs text-red-600">{errors.amount[0]}</p>
         )}
