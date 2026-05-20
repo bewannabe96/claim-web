@@ -11,15 +11,23 @@ import type { CreditType } from "../schema";
  * 크레딧 변동 단일 chokepoint — 모든 잔액 변동은 반드시 이 함수 경유.
  *
  * 직접 `prisma.partnerCreditBalance.update` / `prisma.partnerCreditLedger.create`
- * 호출 금지. adjustCredit / confirmTopup / spendCredit / 후속 refund 모두 이 헬퍼 호출.
+ * 호출 금지. adjustCredit / confirmTopup / spendCredit / refundTopup 모두 이 헬퍼 호출.
+ *
+ * **양변 분해 — balance & debt 두 수치**:
+ *   - balance(≥0): 사용 가능 자산.
+ *   - debt(≥0): 누적 부채.
+ *   - amount ≥ 0 (topup/refund/positive adjustment): debt 를 먼저 갚고 남는 게 balance 로.
+ *   - amount < 0 (spend/negative adjustment): balance 를 먼저 쓰고 부족분은 debt 에 누적.
+ *
+ * 이 분배 덕분에 newBalance / newDebt 는 항상 ≥ 0 보장 → `insufficient_balance`
+ * 차단이 더 이상 발생하지 않음. union 의 그 variant 는 호환 위해 남기되 unreachable
+ * (호출처는 그 분기를 처리할 필요 없으나, 시그니처 호환을 위해 제거하지 않음).
  *
  * 보장:
  *   1. 멱등성 — idempotencyKey 가 주어지면 같은 키로 두 번째 호출은 no-op (alreadyApplied: true).
  *      UNIQUE 인덱스 + 사전 lookup + P2002 catch 의 3중 방어.
- *   2. 원자성 — ledger INSERT 와 balance UPDATE 가 단일 트랜잭션. version 충돌 시 ledger 도 rollback.
+ *   2. 원자성 — ledger INSERT 와 balance/debt UPDATE 가 단일 트랜잭션. version 충돌 시 ledger 도 rollback.
  *   3. 동시성 — version 컬럼 낙관적 잠금. 1회 재시도 후 두 번째 실패는 conflict 반환.
- *   4. 음수 잔액 금지 — newBalance < 0 이면 트랜잭션 진입 전 insufficient_balance 반환
- *      (앱 레이어 단일 enforcement, DB CHECK 미사용).
  *
  * 두 번째 시도 후에도 충돌하면 호출자에게 conflict 를 반환하고 호출자가 사용자에게
  * "잠시 후 다시 시도" 안내. 운영 중 빈번하면 queue 모델로 격상 고려 (현 규모에선 과설계).
@@ -43,7 +51,15 @@ export type ApplyLedgerInput = {
 };
 
 export type ApplyLedgerResult =
-  | { ok: true; ledgerId: string; balanceAfter: number; alreadyApplied: boolean }
+  | {
+      ok: true;
+      ledgerId: string;
+      balanceAfter: number;
+      debtAfter: number;
+      alreadyApplied: boolean;
+    }
+  /// `insufficient_balance` 는 debt 분배 도입 이후로 발생하지 않음 (unreachable).
+  /// 시그니처 호환을 위해 union 에 남김. `conflict` 만 실제로 반환될 수 있음.
   | { ok: false; error: "insufficient_balance" | "conflict" };
 
 class VersionConflictError extends Error {}
@@ -55,13 +71,14 @@ export async function applyLedger(
   if (input.idempotencyKey) {
     const existing = await prisma.partnerCreditLedger.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
-      select: { id: true, balanceAfter: true },
+      select: { id: true, balanceAfter: true, debtAfter: true },
     });
     if (existing) {
       return {
         ok: true,
         ledgerId: existing.id,
         balanceAfter: existing.balanceAfter,
+        debtAfter: existing.debtAfter,
         alreadyApplied: true,
       };
     }
@@ -71,7 +88,7 @@ export async function applyLedger(
   for (let attempt = 0; attempt < 2; attempt++) {
     const current = await prisma.partnerCreditBalance.findUnique({
       where: { partnerId: input.partnerId },
-      select: { balance: true, version: true },
+      select: { balance: true, debt: true, version: true },
     });
 
     if (!current) {
@@ -85,11 +102,20 @@ export async function applyLedger(
       continue;
     }
 
-    const newBalance = current.balance + input.amount;
-
-    // 음수 잔액 차단 — 트랜잭션 진입 전. ledger 도 남지 않음.
-    if (newBalance < 0) {
-      return { ok: false, error: "insufficient_balance" };
+    // amount 의 부호에 따라 balance / debt 분배.
+    let newBalance: number;
+    let newDebt: number;
+    if (input.amount >= 0) {
+      // 입금 — debt 먼저 갚고 잔액은 남는 만큼.
+      const repay = Math.min(current.debt, input.amount);
+      newDebt = current.debt - repay;
+      newBalance = current.balance + (input.amount - repay);
+    } else {
+      // 출금 — balance 먼저 쓰고 부족분은 debt 누적.
+      const need = -input.amount;
+      const take = Math.min(current.balance, need);
+      newBalance = current.balance - take;
+      newDebt = current.debt + (need - take);
     }
 
     const ledgerId = newId();
@@ -102,6 +128,7 @@ export async function applyLedger(
             partnerId: input.partnerId,
             amount: input.amount,
             balanceAfter: newBalance,
+            debtAfter: newDebt,
             type: input.type,
             reason: input.reason,
             referenceType: input.referenceType,
@@ -117,6 +144,7 @@ export async function applyLedger(
           where: { partnerId: input.partnerId, version: current.version },
           data: {
             balance: newBalance,
+            debt: newDebt,
             version: { increment: 1 },
           },
         });
@@ -128,7 +156,13 @@ export async function applyLedger(
         }
       });
 
-      return { ok: true, ledgerId, balanceAfter: newBalance, alreadyApplied: false };
+      return {
+        ok: true,
+        ledgerId,
+        balanceAfter: newBalance,
+        debtAfter: newDebt,
+        alreadyApplied: false,
+      };
     } catch (err) {
       if (err instanceof VersionConflictError) {
         // 다음 시도. 마지막 시도였다면 루프 종료 후 conflict 반환.
@@ -143,13 +177,14 @@ export async function applyLedger(
         if (input.idempotencyKey) {
           const winner = await prisma.partnerCreditLedger.findUnique({
             where: { idempotencyKey: input.idempotencyKey },
-            select: { id: true, balanceAfter: true },
+            select: { id: true, balanceAfter: true, debtAfter: true },
           });
           if (winner) {
             return {
               ok: true,
               ledgerId: winner.id,
               balanceAfter: winner.balanceAfter,
+              debtAfter: winner.debtAfter,
               alreadyApplied: true,
             };
           }

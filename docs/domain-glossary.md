@@ -16,6 +16,14 @@
 - **수명**: 한 번 INSERT 후 status 만 전이 (`draft → selecting → confirming → dispatched → analyzing → completed`).
 - **위치**: features/plan-requests/
 - **소유 라우트** (가입자): `/plan-request/*`
+- **`price` 컬럼**: Step1 생성 시점에 `PlanRequestPriceTier` 에서 매칭한 가격을 snapshot. 이후 admin 이 tier 가격을 바꿔도 진행 중 요청에는 영향 없음. 결과 페이지 "문자 보내기" 시 이 가격으로 partner 크레딧 차감.
+
+#### `PlanRequestPriceTier` (요청서 가격 tier)
+- **정의**: 가입자 budget 범위 → 요청서당 차감 가격 매핑. 6 row 고정 (step1-wizard 의 `BUDGET_OPTIONS` 와 lock-step).
+- **DB**: `plan_request_price_tier`
+- **수명**: seeder 가 6 row 백필 (멱등 upsert by position). admin 페이지에서 `price` 만 mutable, `position` / `budgetMin` / `budgetMax` 는 immutable.
+- **위치**: features/plan-request-pricing/
+- **Snapshot 정책**: PlanRequest 생성 시점에 `PlanRequest.price` 로 고정. tier 자체는 admin 운영용 lookup 테이블.
 
 #### `PlanRequestAssignmentCandidate` (배정 후보)
 - **정의**: 알고리즘이 산출한 `(PlanRequest × Partner)` 후보 슬롯. N명 산출 후 가입자가 K명 선택. selected=true 인 row 가 실제 배정 대상.
@@ -85,9 +93,10 @@
 - **정의**: 설계사 크레딧 잔액. Partner 와 1:1.
 - **DB**: `partner_credit_balance`
 - **위치**: features/credits/
+- **`balance` / `debt` 양변 회계**: 둘 다 항상 ≥ 0. spend 시 잔액 부족분이 `debt` 로 누적, topup 시 `debt` 우선 충당 후 남는 게 `balance` 로. 음수 표현 회피 + 자산/부채 의미적 분리.
 
 #### `PartnerCreditLedger`
-- **정의**: 크레딧 거래 원장. type: `topup / spend / adjustment / refund`.
+- **정의**: 크레딧 거래 원장. type: `topup / spend / adjustment / refund`. 각 row 에 `balanceAfter` + `debtAfter` 스냅샷 보유.
 - **DB**: `partner_credit_ledger`
 - **위치**: features/credits/
 
@@ -139,7 +148,21 @@
 
 **설계사 POV 의 "받은 요청"** = `PlanRequestAssignment`. 코드/문서에서는 "배정" 으로 부른다. user-facing 메시지 ("새 요청이 도착했어요") 는 예외 OK.
 
-### 2.3 "Plan" prefix 의 의미
+### 2.3 "차감 / 부채" — 크레딧 어휘
+
+| 코드 / 내부 문서 | user-facing | DB / 모델 |
+|---|---|---|
+| **"차감"** (spend) | "사용" / "결제" | `PartnerCreditLedger.type = 'spend'` |
+| **"부채"** | "누적 부채" / "다음 충전 시 우선 차감" | `PartnerCreditBalance.debt` |
+| **"충전"** (topup) | "충전" | `type = 'topup'` |
+| **"환불"** (refund) | "환불" | `type = 'refund'`, `referenceId = paymentId` |
+| **"조정"** (adjustment) | (운영 내부) | `type = 'adjustment'` |
+
+**원칙**:
+- "음수 잔액" 표현은 금지 — 실제 데이터 모델은 `balance(≥0) + debt(≥0)` 양변. 코드/문서에서 "음수 잔액", "잔액 부족" 같은 표현 대신 "부채 누적" 사용.
+- "spend 실패" 표현은 금지 — `applyLedger` 의 분배 알고리즘 도입 후 잔액 부족으로 인한 실패는 없음. 호출자는 conflict / invalid_input 만 분기 처리.
+
+### 2.4 "Plan" prefix 의 의미
 
 `Plan` prefix 가 붙은 엔티티는 모두 **"설계 요청 (PlanRequest) 라이프사이클의 일부"** 임을 뜻한다:
 - `PlanRequest` — 본체
@@ -194,6 +217,7 @@ model Partner {
 - Plan 라이프사이클 산하 폴더는 **`plan-` prefix**:
   - `features/plan-requests/` — PlanRequest, PlanRequestMedicalHistory, PlanRequestAssignmentCandidate, PlanRequestAssignment (생성)
   - `features/plan-proposals/` — PlanProposal, PlanProposalAnalysisReport, PlanRequestAssignment (토큰 조회 + 제출)
+  - `features/plan-request-pricing/` — PlanRequestPriceTier (budget → 가격 lookup, admin 운영용)
 - 직교 도메인은 단일어:
   - `features/partners/` — Partner, PartnerSignupInvitation, PartnerAssignmentStats
   - `features/credits/` — PartnerCreditBalance, PartnerCreditLedger
@@ -246,6 +270,9 @@ src/features/
 │                      # PlanRequestAssignmentCandidate,
 │                      # PlanRequestAssignment (생성 — finalize 트랜잭션)
 │                      # OTP (본인인증 — PlanRequest 흐름의 일부)
+│
+├─ plan-request-pricing/ # PlanRequestPriceTier (budget → 가격 lookup)
+│                        # admin 페이지 (/admin/settings) 에서 편집
 │
 └─ plan-proposals/     # PlanProposal, PlanProposalAnalysisReport
                        # PlanRequestAssignment (token 조회 + 제출 — 설계사 진입점)

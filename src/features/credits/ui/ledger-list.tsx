@@ -111,6 +111,11 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
         <p className="text-xs text-[#4b4b4b] tabular-nums">
           잔액 {formatKrw(entry.balanceAfter)}원
         </p>
+        {entry.debtAfter > 0 && (
+          <p className="text-xs text-red-600 tabular-nums">
+            부채 {formatKrw(entry.debtAfter)}원
+          </p>
+        )}
       </div>
     </li>
   );

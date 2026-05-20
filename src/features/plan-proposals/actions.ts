@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { spendCredit } from "@/features/credits/actions";
 import { requireAdminSession } from "@/server/dal";
 import { newId } from "@/lib/id";
 import { sendNotificationLms } from "@/server/aligo";
@@ -221,8 +222,9 @@ export async function requestPlanProposalContact(
   });
   if (!request) return { ok: false, error: "not_found" };
 
-  // partner.user.name/phone + request.name/phone 까지 join — 마킹 성공 분기에서
-  // 설계사 알림 LMS 본문에 양측 이름 + 가입자 연락처를 박는다 (DB 재조회 회피).
+  // partner.user.name/phone + request.name/phone/price 까지 join — 마킹 성공 분기에서
+  // 설계사 알림 LMS 본문에 양측 이름 + 가입자 연락처를 박고, 차감 시점에 snapshot 된
+  // request.price 를 그대로 사용 (DB 재조회 회피).
   const proposal = await prisma.planProposal.findUnique({
     where: { id: proposalId },
     select: {
@@ -237,7 +239,7 @@ export async function requestPlanProposalContact(
               user: { select: { name: true, phone: true } },
             },
           },
-          request: { select: { name: true, phone: true } },
+          request: { select: { name: true, phone: true, price: true } },
         },
       },
     },
@@ -251,18 +253,60 @@ export async function requestPlanProposalContact(
     return { ok: true, alreadyContacted: true };
   }
 
-  // race-safe 마킹 + 카운터 증가. updateMany WHERE contactedAt IS NULL 의 count 가
-  // 0 이면 다른 호출이 먼저 마킹한 것 — 그 경우 카운터 트랜잭션 + 알림 발송을 모두
-  // 건너뛰어 중복 +1 / 중복 LMS 방지.
-  const marked = await prisma.planProposal.updateMany({
-    where: { id: proposalId, contactedAt: null },
-    data: { contactedAt: new Date() },
-  });
-  if (marked.count > 0) {
-    await prisma.partnerAssignmentStats.updateMany({
+  // race-safe 마킹 + 카운터 증가 — 한 트랜잭션. count=0 이면 다른 호출이 먼저 마킹한
+  // 것이고 그 경우 spend / LMS 도 모두 건너뛰어 중복 차감 / 중복 LMS 방지.
+  const { newlyMarked } = await prisma.$transaction(async (tx) => {
+    const m = await tx.planProposal.updateMany({
+      where: { id: proposalId, contactedAt: null },
+      data: { contactedAt: new Date() },
+    });
+    if (m.count === 0) return { newlyMarked: false };
+    await tx.partnerAssignmentStats.updateMany({
       where: { partnerId: proposal.assignment.partnerId },
       data: { contactedCount: { increment: 1 } },
     });
+    return { newlyMarked: true };
+  });
+
+  if (newlyMarked) {
+    // 크레딧 차감 — Step1 시점에 PlanRequest.price 로 snapshot 된 금액. price 가 null
+    // 인 경우는 가격 모델 도입 이전 row (정상 흐름에선 Step1 트랜잭션이 항상 채움) —
+    // defensive 로 0 처리해 차감 없이 흐름 통과 (audit 로그만).
+    //
+    // 트랜잭션 경계: applyLedger 가 자체 트랜잭션을 보유해 contactedAt 마킹 트랜잭션과
+    // 분리됨. crash 시점에 마킹 후 spend 전이면 다음 retry 에서 newlyMarked=false 라
+    // spend 도 발화 안 함 (corner case — MVP 수준에서 운영 모니터링).
+    //
+    // 멱등키: proposal-contact:${proposalId} — 같은 proposal 에 대한 어떤 재시도도
+    // alreadyApplied 로 흡수. 음수 잔액은 debt 분배로 자동 처리 (insufficient_balance
+    // 반환 없음).
+    const price = proposal.assignment.request.price ?? 0;
+    if (price > 0) {
+      const spend = await spendCredit({
+        partnerId: proposal.assignment.partnerId,
+        amount: price,
+        referenceType: "plan_proposal",
+        referenceId: proposalId,
+        idempotencyKey: `proposal-contact:${proposalId}`,
+        reason: "가입자 연락 요청",
+      });
+      if (!spend.ok) {
+        // conflict / invalid_input — 운영 모니터링용 로그. 사용자 흐름은 그대로 진행
+        // (마킹은 이미 commit 됐고, 빈번하면 별도 reconciliation job 으로 보정).
+        console.error("[requestPlanProposalContact] spendCredit failed", {
+          proposalId,
+          partnerId: proposal.assignment.partnerId,
+          amount: price,
+          error: spend.error,
+        });
+      }
+    } else {
+      console.warn(
+        "[requestPlanProposalContact] missing price snapshot — skipping spend",
+        { proposalId, requestId: request.id },
+      );
+    }
+
     await notifyPartnerOfContactRequest({
       proposalId,
       partnerName: proposal.assignment.partner.user.name,

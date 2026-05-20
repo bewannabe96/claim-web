@@ -29,13 +29,25 @@ credits/
 
 모든 amount 는 `Int` (원). **Decimal / Float / BigInt 금지.** INT4 최대 ~21억 (KRW 잔액 상한 충분), JSON Number 안전범위 2^53-1 (송신/수신 안전). 표시는 `Intl.NumberFormat("ko-KR")`.
 
-### 진실의 소스는 ledger — balance 는 cached derived 값
+### 진실의 소스는 ledger — balance / debt 는 cached derived 값
 
 `PartnerCreditBalance` (1:1 with Partner) 는 운영 편의용 캐시 row. 진실은 `PartnerCreditLedger` (append-only) 의 sum. 모든 잔액 변동은:
-1. ledger row 1개 INSERT (`balanceAfter` 스냅샷 포함)
-2. balance row UPDATE (optimistic lock)
+1. ledger row 1개 INSERT (`balanceAfter` + `debtAfter` 스냅샷 포함)
+2. balance row UPDATE (optimistic lock; `balance` + `debt` 동시 갱신)
 
 두 작업은 **단일 트랜잭션** 안에서 일어남. 따로 호출 금지.
+
+### balance / debt 양변 회계
+
+`PartnerCreditBalance` 는 두 수치를 들고 있음 — 둘 다 항상 ≥ 0:
+- `balance`: 사용 가능 자산.
+- `debt`: 누적 부채 (잔액 부족 spend 시 부족분이 여기로 쌓임).
+
+`applyLedger` 가 `amount` 부호에 따라 분배:
+- `amount ≥ 0` (topup / refund / 양수 adjustment): `debt` 를 먼저 갚고 남는 게 `balance` 로 → 다음 충전이 부채를 자동 충당.
+- `amount < 0` (spend / 음수 adjustment): `balance` 를 먼저 쓰고 부족분은 `debt` 에 누적.
+
+이 분배 덕분에 `newBalance` / `newDebt` 가 항상 ≥ 0 → **`insufficient_balance` 차단은 더 이상 발생하지 않음** (union variant 는 시그니처 호환 위해 남아 있지만 unreachable). 잔액 부족 시나리오는 호출자에서 별도 처리할 필요 없이 ledger 가 자동으로 부채로 흡수.
 
 ### 단일 chokepoint — `lib/apply-ledger.ts`
 
@@ -48,13 +60,14 @@ const result = await applyLedger({
   referenceType, referenceId, idempotencyKey, createdById,
 });
 if (!result.ok) {
-  // result.error = "insufficient_balance" | "conflict"
+  // result.error = "conflict" (insufficient_balance 는 unreachable — debt 분배)
 }
+// result.balanceAfter / result.debtAfter 둘 다 ledger 스냅샷 값.
 ```
 
 직접 prisma 호출 시 보장이 깨짐:
 - 멱등성 (idempotencyKey UNIQUE 인덱스 + P2002 catch)
-- 음수 잔액 차단 (앱 레이어 단일 enforcement)
+- balance / debt 양변 분배 (앱 레이어 단일 enforcement)
 - 낙관적 잠금 재시도 (`version` 컬럼)
 - ledger ↔ balance 원자성
 
@@ -158,7 +171,7 @@ PortOne 흐름에서 webhook 도착 대기 없이 잔액 즉시 갱신:
 - ❌ `prisma.partnerCreditBalance.update` / `prisma.partnerCreditLedger.create` 직접 호출 — `applyLedger` 경유 필수.
 - ❌ `Decimal` / `Float` / `BigInt` amount 컬럼 사용.
 - ❌ ledger row UPDATE / DELETE — 진실로 append-only. 환불은 역항목 새 row (`type='refund'`) 로.
-- ❌ DB CHECK 로 `balance >= 0` 강제 — 프로젝트 컨벤션상 DB CHECK 미사용. `applyLedger` 의 newBalance 가드가 단일 enforcement.
+- ❌ DB CHECK 로 `balance >= 0` 강제 — 프로젝트 컨벤션상 DB CHECK 미사용. `applyLedger` 의 양변 분배가 단일 enforcement (balance / debt 모두 자연히 ≥ 0).
 - ❌ `refundTopup` 을 referenceId 없이 호출 / `adjustCredit` 에 referenceId 채워 호출 — 의미 혼탁. 환불은 결제건 종속, 조정은 무관.
 - ❌ Action 안에서 직접 stash 조작 — provider 가 자체 책임. `initiateTopup` 은 stash 메커니즘을 알지 않음.
 - ❌ webhook route 에서 `requirePartnerSession()` 호출 — 웹훅은 PG 인프라 호출. `PaymentProvider.verifyWebhook` 가 인증.
@@ -168,28 +181,38 @@ PortOne 흐름에서 webhook 도착 대기 없이 잔액 즉시 갱신:
 - ❌ `spendCredit` 을 클라이언트나 미인가 액션에서 호출 — 호출처가 자체 인증 필수 (세션 가드 없음).
 - ❌ `'use cache'` 를 `queries.ts` 에 추가 — 모든 호출이 `require*Session()` 트리 하위라 자동 dynamic. 캐싱 추가 시 잔액 stale 위험.
 
-## 새 spend 트리거 추가 시 (후속 PR)
+## Spend 트리거 패턴
+
+현재 운영 중인 spend 트리거:
+
+| 트리거 | 호출처 | idempotencyKey | amount |
+|---|---|---|---|
+| 가입자 연락 요청 | [features/plan-proposals/actions.ts](../plan-proposals/actions.ts) `requestPlanProposalContact` | `proposal-contact:${proposalId}` | `PlanRequest.price` (snapshot) |
+
+신규 spend 트리거 추가 시 템플릿:
 
 ```ts
-// features/<도메인>/actions.ts (예: assignments)
+// features/<도메인>/actions.ts
 import { spendCredit } from "@/features/credits/actions";
 
-export async function publishAssignment(/* ... */) {
-  await requireAdminSession();  // 또는 시스템 컨텍스트 자체 인증
-  // ... assignment 발행 로직
+export async function someTrigger(/* ... */) {
+  // 호출처 자체 인증 (admin 액션이면 requireAdminSession, customer flow 면 token 검증 등)
 
   const spend = await spendCredit({
     partnerId,
-    amount: EXPOSURE_PRICE,
-    referenceType: "assignment",
-    referenceId: assignment.id,
-    idempotencyKey: `assignment:${assignment.id}:exposure`,
-    reason: "Assignment 노출 차감",
+    amount: PRICE,
+    referenceType: "<도메인>",
+    referenceId: entityId,
+    idempotencyKey: `<도메인>:${entityId}`,
+    reason: "사람이 읽을 사유",
   });
-  if (!spend.ok && spend.error === "insufficient_balance") {
-    // 정책 결정: assignment 발행 보류 / 알림 / fallback partner 선택
+  if (!spend.ok) {
+    // conflict / invalid_input — 운영 모니터링 로그. 사용자 흐름은 그대로 진행.
+    // insufficient_balance 는 unreachable (debt 분배로 흡수).
   }
 }
 ```
 
 `idempotencyKey` 는 같은 트리거가 두 번 발화해도 같은 키여야 함. 재시도 안전.
+
+**spend 와 도메인 mutation 의 트랜잭션 경계**: `applyLedger` 가 자체 트랜잭션을 보유하므로, 외부 도메인 mutation (예: `contactedAt` 마킹) 과 같은 트랜잭션으로 묶을 수 없음. 패턴: ① 도메인 mutation 트랜잭션 commit → ② 결과 분기에 따라 `spendCredit` 호출. process crash 시점에 ① 후 ② 전이면 다음 retry 에서 mutation 이 멱등 분기로 빠져 spend 미발화 (corner case — 빈번하면 outbox 패턴 도입).

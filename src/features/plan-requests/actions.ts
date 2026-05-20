@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { findAssignmentCandidates } from "@/features/partners/queries";
+import { getPriceForBudget } from "@/features/plan-request-pricing/queries";
 import { newId, newToken } from "@/lib/id";
 import {
   isAligoTestMode,
@@ -81,9 +82,20 @@ export async function submitStep1(
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
 
-  // 배정 후보 산출 (DB)
+  // 요청서 가격 snapshot — admin 이 이후 tier 가격을 바꿔도 이 요청에는 영향 X.
+  // step1-wizard 의 BUDGET_OPTIONS 가 항상 정확히 일치하는 (min, max) 만 보내므로
+  // tier lookup 은 정상 흐름에선 항상 hit. drift 시 throw → 사용자에게 generic 에러.
+  const price = await getPriceForBudget(
+    parsed.data.monthlyBudgetMin,
+    parsed.data.monthlyBudgetMax,
+  );
+
+  // 배정 후보 산출 (DB) — 가격을 넘겨 자격 미달 파트너 (잔액 < 가격) 자동 제외.
   const settings = await getSettings();
-  const candidates = await findAssignmentCandidates(settings.candidateCount);
+  const candidates = await findAssignmentCandidates(
+    settings.candidateCount,
+    price,
+  );
 
   // 부모 (plan_request) → 자식 (medical_history, candidates) 순서로 트랜잭션.
   // FK 무결성 보장 + 일부만 들어가는 부분 실패 방지.
@@ -99,6 +111,7 @@ export async function submitStep1(
         coverage: parsed.data.coverage,
         additionalNotes: parsed.data.additionalNotes ?? null,
         status: "selecting",
+        price,
       },
     }),
     prisma.planRequestMedicalHistory.createMany({

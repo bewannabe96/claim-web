@@ -41,6 +41,7 @@ async function main() {
   await seedExamplePartners();
   await seedPartnerCreditBalances();
   await seedPartnerAssignmentStats();
+  await seedPlanRequestPriceTiers();
 }
 
 async function seedAdmin() {
@@ -286,6 +287,52 @@ async function seedPartnerAssignmentStats() {
   });
   console.log(
     `[seed] partner_assignment_stats — ${partners.length} partner(s) checked, ${result.count} new row(s) created`,
+  );
+}
+
+/**
+ * `PlanRequestPriceTier` — step1-wizard 의 6개 BUDGET_OPTIONS 와 lock-step 으로
+ * 매핑되는 (position, budgetMin, budgetMax, price) 6 row.
+ *
+ * position 으로 upsert (멱등). 신규 row 만 price 를 기본값으로 채우고, 기존 row 의
+ * price 는 admin 이 운영 중 수정한 값을 보존해야 하므로 update 시 건드리지 않음.
+ *
+ * 코드와의 결합:
+ *   - position / budgetMin / budgetMax 는 step1-wizard.tsx 의 BUDGET_OPTIONS 와 1:1
+ *     동기. 그 hardcoded preset 이 바뀌면 이 seeder + admin migration 도 같이 갱신.
+ *   - price 초기값은 MVP 발족 시점의 어림값. 운영 시작 후엔 admin UI 에서 조정.
+ */
+const DEFAULT_PRICE_TIERS = [
+  { position: 0, budgetMin: 0, budgetMax: 49999, price: 10_000 },
+  { position: 1, budgetMin: 50000, budgetMax: 100000, price: 20_000 },
+  { position: 2, budgetMin: 100000, budgetMax: 200000, price: 30_000 },
+  { position: 3, budgetMin: 200000, budgetMax: 300000, price: 50_000 },
+  { position: 4, budgetMin: 300000, budgetMax: 500000, price: 80_000 },
+  { position: 5, budgetMin: 500000, budgetMax: 9999999, price: 100_000 },
+] as const;
+
+async function seedPlanRequestPriceTiers() {
+  let created = 0;
+  for (const tier of DEFAULT_PRICE_TIERS) {
+    const existing = await prisma.planRequestPriceTier.findUnique({
+      where: { position: tier.position },
+      select: { id: true },
+    });
+    if (existing) continue;
+
+    await prisma.planRequestPriceTier.create({
+      data: {
+        id: newId(),
+        position: tier.position,
+        budgetMin: tier.budgetMin,
+        budgetMax: tier.budgetMax,
+        price: tier.price,
+      },
+    });
+    created++;
+  }
+  console.log(
+    `[seed] plan_request_price_tier — ${DEFAULT_PRICE_TIERS.length} tier(s) checked, ${created} new row(s) created`,
   );
 }
 

@@ -13,14 +13,14 @@ import type { CreditType, LedgerEntry } from "./schema";
 
 /**
  * 잔액 조회. row 없으면 lazy upsert — 가입 트랜잭션에서 eager-create 도입 전 partner
- * 들에 대한 cold-path 방어.
+ * 들에 대한 cold-path 방어. debt 는 spend 시 잔액 부족분이 누적되는 부채 카운터.
  */
 export async function getCreditBalance(
   partnerId: string,
-): Promise<{ balance: number; version: number }> {
+): Promise<{ balance: number; debt: number; version: number }> {
   const found = await prisma.partnerCreditBalance.findUnique({
     where: { partnerId },
-    select: { balance: true, version: true },
+    select: { balance: true, debt: true, version: true },
   });
   if (found) return found;
 
@@ -28,7 +28,7 @@ export async function getCreditBalance(
     where: { partnerId },
     update: {},
     create: { partnerId },
-    select: { balance: true, version: true },
+    select: { balance: true, debt: true, version: true },
   });
   return created;
 }
@@ -72,6 +72,7 @@ export async function listCreditLedger(
       id: true,
       amount: true,
       balanceAfter: true,
+      debtAfter: true,
       type: true,
       reason: true,
       referenceType: true,
@@ -161,6 +162,7 @@ export async function getRecentLedger(
       id: true,
       amount: true,
       balanceAfter: true,
+      debtAfter: true,
       type: true,
       reason: true,
       referenceType: true,
