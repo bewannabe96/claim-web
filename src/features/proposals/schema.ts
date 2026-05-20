@@ -82,6 +82,8 @@ export type Proposal = {
   submittedAt: string;
   /** 외부 분석 파이프라인 콜백 수신 시각. null = 아직. */
   analyzedAt?: string;
+  /** 가입자가 결과 페이지에서 이 제안서를 보고 "문자 보내기" 한 시각. */
+  contactedAt?: string;
   /**
    * 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 정보.
    * 성공 시점이 와도 명시적으로 비우지 않으므로, read 측은 `analyzedAt` 우선 분기.

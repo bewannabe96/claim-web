@@ -182,6 +182,74 @@ export async function submitProposal(
 }
 
 /* ============================================================
+ * 연락 요청 — 결과 페이지 "문자 보내기" CTA
+ *
+ * 가입자가 제안서 비교 후 특정 설계사에게 연락을 요청한 시점에 호출. 인증은
+ * resultToken (가입자의 일회용 토큰) — 페이지 자체가 토큰 기반이라 액션도 동일.
+ *
+ * 멱등성: 같은 (resultToken, proposalId) 로 여러 번 호출돼도 카운터는 1 만 올라감.
+ * `proposal.contactedAt IS NULL` 조건의 updateMany 가 0 row 면 (이미 마킹됨) 카운터
+ * 증가 트랜잭션 자체를 스킵. 새 탭 / 새로고침으로 button 재활성 케이스 방어.
+ *
+ * 검증:
+ *   1. resultToken → plan_request 존재 확인
+ *   2. proposalId → assignment.requestId 가 위 plan_request 와 일치
+ *   3. proposal.contactedAt 이 NULL 일 때만 set + counter +1
+ *
+ * 외부 SMS 발송은 본 액션 책임 아님 (향후 작업) — 본 액션은 "가입자가 연락을
+ * 원했다" 라는 사실의 기록만 담당.
+ * ============================================================ */
+
+export type RequestContactResult =
+  | { ok: true; alreadyContacted: boolean }
+  | { ok: false; error: "not_found" };
+
+export async function requestProposalContact(
+  resultToken: string,
+  proposalId: string,
+): Promise<RequestContactResult> {
+  const request = await prisma.planRequest.findFirst({
+    where: { resultToken },
+    select: { id: true },
+  });
+  if (!request) return { ok: false, error: "not_found" };
+
+  const proposal = await prisma.proposal.findUnique({
+    where: { id: proposalId },
+    select: {
+      id: true,
+      contactedAt: true,
+      assignment: { select: { requestId: true, partnerId: true } },
+    },
+  });
+  if (!proposal || proposal.assignment.requestId !== request.id) {
+    return { ok: false, error: "not_found" };
+  }
+
+  if (proposal.contactedAt) {
+    // 멱등 — UI 가 button 을 disabled 로 풀어줄 수 있도록 ok=true 로 응답.
+    return { ok: true, alreadyContacted: true };
+  }
+
+  // race-safe 마킹 + 카운터 증가. updateMany WHERE contactedAt IS NULL 의 count 가
+  // 0 이면 다른 호출이 먼저 마킹한 것 — 그 경우 카운터 트랜잭션을 건너뛰어 중복
+  // +1 방지.
+  const marked = await prisma.proposal.updateMany({
+    where: { id: proposalId, contactedAt: null },
+    data: { contactedAt: new Date() },
+  });
+  if (marked.count > 0) {
+    await prisma.partnerMatchStats.updateMany({
+      where: { partnerId: proposal.assignment.partnerId },
+      data: { contactedCount: { increment: 1 } },
+    });
+  }
+
+  revalidatePath(`/result/${resultToken}`);
+  return { ok: true, alreadyContacted: false };
+}
+
+/* ============================================================
  * 분석 재시도 — 어드민 전용
  *
  * 외부 파이프라인이 `status=failed` 를 보낸 proposal 에 대해 어드민이 수기 수정

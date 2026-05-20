@@ -22,7 +22,8 @@ const PARTNER_COLUMNS = [
   { key: "bio", label: "소개" },
   { key: "experience", label: "경력", align: "right" as const },
   { key: "exposure", label: "누적 노출", align: "right" as const },
-  { key: "missRate", label: "미제출률", align: "right" as const },
+  { key: "selected", label: "제안서 요청", align: "right" as const },
+  { key: "contacted", label: "연락 요청", align: "right" as const },
   { key: "active", label: "활성", align: "center" as const },
 ];
 
@@ -119,78 +120,68 @@ export default async function AdminPartnersPage() {
       </Card>
 
       <DataTable columns={PARTNER_COLUMNS}>
-        {partners.map((a) => {
-          const miss = missRate(a.recentSubmissions);
-          return (
-            <tr key={a.id} className="hover:bg-[#fafafa] transition-colors">
-              <Td>
-                <Link
-                  href={`/admin/partners/${a.id}`}
-                  className="flex items-center gap-3 group"
-                >
-                  <span className="flex items-center justify-center w-9 h-9 rounded-full bg-black text-white text-sm font-bold shrink-0">
-                    {a.user.name.charAt(0)}
-                  </span>
-                  <span className="flex flex-col gap-0.5 min-w-0">
-                    <span className="text-sm font-medium text-black group-hover:underline truncate">
-                      {a.user.name}
-                    </span>
-                    <span className="text-xs text-[#4b4b4b] truncate">
-                      {a.user.phone ?? a.user.email}
-                    </span>
-                  </span>
-                </Link>
-              </Td>
-              <Td>
-                <span className="text-xs text-[#4b4b4b] line-clamp-1 max-w-[280px] block">
-                  {a.bio}
+        {partners.map((a) => (
+          <tr key={a.id} className="hover:bg-[#fafafa] transition-colors">
+            <Td>
+              <Link
+                href={`/admin/partners/${a.id}`}
+                className="flex items-center gap-3 group"
+              >
+                <span className="flex items-center justify-center w-9 h-9 rounded-full bg-black text-white text-sm font-bold shrink-0">
+                  {a.user.name.charAt(0)}
                 </span>
-              </Td>
-              <Td align="right">
-                <span className="text-sm text-black">
-                  {a.yearsOfExperience}년
-                </span>
-              </Td>
-              <Td align="right">
-                <span className="text-sm text-black">{a.exposureCount}회</span>
-              </Td>
-              <Td align="right">
-                {a.recentSubmissions.length === 0 ? (
-                  <span className="text-xs text-[#afafaf]">—</span>
-                ) : (
-                  <span
-                    className={cn(
-                      "text-sm font-medium",
-                      miss > 0.3 ? "text-black" : "text-[#4b4b4b]",
-                    )}
-                  >
-                    {Math.round(miss * 100)}%
+                <span className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-sm font-medium text-black group-hover:underline truncate">
+                    {a.user.name}
                   </span>
+                  <span className="text-xs text-[#4b4b4b] truncate">
+                    {a.user.phone ?? a.user.email}
+                  </span>
+                </span>
+              </Link>
+            </Td>
+            <Td>
+              <span className="text-xs text-[#4b4b4b] line-clamp-1 max-w-[280px] block">
+                {a.bio}
+              </span>
+            </Td>
+            <Td align="right">
+              <span className="text-sm text-black">
+                {a.yearsOfExperience}년
+              </span>
+            </Td>
+            <Td align="right">
+              <span className="text-sm text-black">
+                {a.matchStats?.exposureCount ?? 0}회
+              </span>
+            </Td>
+            <Td align="right">
+              <span className="text-sm text-black">
+                {a.matchStats?.selectedCount ?? 0}회
+              </span>
+            </Td>
+            <Td align="right">
+              <span className="text-sm text-black">
+                {a.matchStats?.contactedCount ?? 0}회
+              </span>
+            </Td>
+            <Td align="center">
+              <span
+                className={cn(
+                  "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium",
+                  a.active
+                    ? "bg-black text-white"
+                    : "bg-[#efefef] text-[#4b4b4b]",
                 )}
-              </Td>
-              <Td align="center">
-                <span
-                  className={cn(
-                    "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium",
-                    a.active
-                      ? "bg-black text-white"
-                      : "bg-[#efefef] text-[#4b4b4b]",
-                  )}
-                >
-                  {a.active ? "활성" : "비활성"}
-                </span>
-              </Td>
-            </tr>
-          );
-        })}
+              >
+                {a.active ? "활성" : "비활성"}
+              </span>
+            </Td>
+          </tr>
+        ))}
       </DataTable>
     </div>
   );
-}
-
-function missRate(recent: boolean[]): number {
-  if (recent.length === 0) return 0;
-  return recent.filter((s) => !s).length / recent.length;
 }
 
 function formatDate(d: Date): string {

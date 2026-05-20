@@ -168,8 +168,8 @@ model User {
 // partner — 설계사 추가 정보 (User 와 1:1, PK 공유)
 // ============================================================
 // 가입자 노출:  user.name, bio, yearsOfExperience, trustMetric
-// 매칭 가중치: exposureCount (형평성), recentSubmissions (페널티)
 // 운영:        user.email (로그인), user.phone (알림톡), active
+// 매칭 카운터: partner_match_stats 가 1:1 로 보유 (본체 hot row 와 분리).
 //
 // id 는 User.id 와 동일 — 1:1 extension. match_assignment / plan_request_candidate
 // 의 partnerId 는 이 id (= User.id) 를 참조.
@@ -184,24 +184,58 @@ model Partner {
   licenseNumber      String   @unique @map("license_number")
   active             Boolean  @default(true)
 
-  // 매칭 가중치
-  exposureCount      Int       @default(0) @map("exposure_count")
-  // recent_submissions[N] — 최근 N 건의 제출 이력 (true=제출, false=미제출).
-  // 페널티 윈도우 안에서 미제출률 = (false 개수) / length. 앱 레이어가 push/trim.
-  recentSubmissions  Boolean[] @default([]) @map("recent_submissions")
-
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   user          User                   @relation(fields: [id], references: [id], onDelete: Cascade)
   candidates    PlanRequestCandidate[]
   assignments   MatchAssignment[]
+  matchStats    PartnerMatchStats?
   creditBalance PartnerCreditBalance?
   creditLedger  PartnerCreditLedger[]
 
-  // 매칭 후보 추출 — active=true 중 exposure_count 적은 순으로 정렬.
-  @@index([active, exposureCount])
   @@map("partner")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner_match_stats — 설계사 매칭 카운터 (Partner 와 1:1, PK 공유)
+// ============================================================
+// 매칭의 형평성 정렬 키 + 운영 지표. 본체 Partner 의 read-heavy 경로
+// (어드민 편집/카드 노출)에서 분리해 hot row 의 width 를 줄임.
+//
+// 각 카운터 정의 (퍼널 단계 순):
+//   - exposureCount: plan_request_candidate INSERT (= 후보 카드 등장).
+//     가입자가 선택하지 않아도 카운트 +1. submitStep1 트랜잭션 안에서 candidate
+//     row 와 같은 트랜잭션으로 증가.
+//   - selectedCount: match_assignment INSERT (= 가입자가 Step3 finalize 까지
+//     완료해 알림톡 발송 대상이 됨, 즉 "제안서 요청"). finalizeRequest 트랜잭션
+//     안에서 assignment 와 같이 증가.
+//   - contactedCount: 결과 페이지에서 제안서 비교 후 가입자가 "문자 보내기" 액션
+//     으로 연락을 요청한 횟수. proposal.contactedAt IS NULL 인 경우에만 +1
+//     (멱등) — requestProposalContact 액션 트랜잭션 안에서 proposal 마킹과 함께.
+//
+// 항상 exposureCount >= selectedCount >= contactedCount (퍼널의 부분집합 관계).
+// DB CHECK 미사용 정책이라 앱 레이어가 정의로 보장.
+//
+// 1:1 보장: partnerId = PK 이자 FK. 빈 row 는 가입 트랜잭션
+// (verifyPartnerSignupOtp) 안에서 함께 INSERT — Partner.exists ⇔
+// PartnerMatchStats.exists 불변식. 레거시 partner 대비 시더 백필.
+
+model PartnerMatchStats {
+  partnerId      String   @id @map("partner_id")
+  exposureCount  Int      @default(0) @map("exposure_count")
+  selectedCount  Int      @default(0) @map("selected_count")
+  contactedCount Int      @default(0) @map("contacted_count")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  // 매칭 후보 정렬 — selected_count 적은 순.
+  @@index([selectedCount])
+  @@map("partner_match_stats")
   @@schema("claim")
 }
 
@@ -274,6 +308,13 @@ model PartnerCreditLedger {
 
   /// 외부 요청 단위 멱등키 — UNIQUE 인덱스로 race-safe. NULL 다수 허용.
   idempotencyKey String? @unique @map("idempotency_key")
+
+  /// 결제 제공자 식별자. topup / refund 만 유의미 — "stub" | "portone" | "toss"(추후).
+  /// adjustment / spend 는 null. forensic reconciliation 용 (PG 콘솔 매칭).
+  provider String? @db.VarChar(32)
+  /// PG 측 거래 식별자. topup 은 PortOne transactionId, refund 는 cancellationId.
+  /// adjustment / spend / stub 은 null. PG 콘솔/리포트 join 키.
+  providerRef String? @map("provider_ref")
 
   /// 액터 user.id. 시스템 자동 (웹훅·spend) 은 null. FK 미설정 (audit 보존).
   createdById String?  @map("created_by_id")
@@ -429,6 +470,12 @@ model Proposal {
   /// 시점에 두 컬럼 모두 null 로 초기화.
   analysisError   Json?     @map("analysis_error")
   analysisErrorAt DateTime? @db.Timestamptz(6) @map("analysis_error_at")
+
+  /// 가입자가 결과 페이지에서 이 제안서를 보고 "문자 보내기" 로 설계사에게 연락
+  /// 요청한 시각. requestProposalContact 액션이 한 번만 set (WHERE contactedAt IS
+  /// NULL 로 멱등) + 같은 트랜잭션에서 partner_match_stats.contacted_count +1.
+  /// NULL = 아직 연락 요청 전 (또는 연락 요청 이전에 분석 미완료).
+  contactedAt DateTime? @db.Timestamptz(6) @map("contacted_at")
 
   assignment     MatchAssignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   analysisReport ProposalAnalysisReport?

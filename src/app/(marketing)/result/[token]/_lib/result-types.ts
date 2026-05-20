@@ -62,6 +62,12 @@ export type ProposalData = {
    */
   analyzed: boolean;
 
+  /**
+   * 가입자가 이미 이 제안서에서 "문자 보내기" 를 눌렀는지 (proposal.contactedAt 기반).
+   * SSR 초기 state 로 사용 — 새로고침 / 새 탭에서 button 이 다시 활성되는 것 방지.
+   */
+  contacted: boolean;
+
   // 계약 컨텍스트
   insurer: string;
   maturityAge: number;

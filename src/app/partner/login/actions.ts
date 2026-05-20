@@ -1,9 +1,10 @@
 "use server";
 
 import type { Route } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { safeNextPath } from "@/lib/safe-next-path";
+import { resolveOrigin } from "@/server/origin";
 import { getSupabaseServerClient } from "@/server/supabase";
 
 /**
@@ -13,24 +14,27 @@ import { getSupabaseServerClient } from "@/server/supabase";
  * 반환 — action 이 명시적으로 redirect. PKCE verifier cookie 는 @supabase/ssr 가
  * setAll 로 발급 (server action 은 mutable cookie 컨텍스트라 쓰기 가능).
  *
- * Kakao → /api/auth/callback?code=… 로 돌아오며, 거기서 session 교환 + partner
- * 화이트리스트 검증.
+ * Kakao → /api/auth/callback?code=…&next=… 로 돌아오며, 거기서 session 교환 +
+ * partner 화이트리스트 검증 + next 로 redirect.
+ *
+ * `next` 는 미인증 진입 시 middleware 가 원래 경로를 보존해 login page 까지
+ * 흘려보내는 값. 페이지의 hidden input 으로 formData 에 실려 들어옴. open redirect
+ * 방어는 safeNextPath 가 단일 진입점 — 페이지/액션/콜백 모두 동일 validator 통과.
  */
-export async function signInWithKakao() {
+export async function signInWithKakao(formData: FormData) {
   const supabase = await getSupabaseServerClient();
-  const h = await headers();
-  // reverse proxy (Vercel / ngrok) 환경에서 host 헤더가 internal 로 잡히는 경우 대비.
-  // 우선순위: Origin > x-forwarded-* > host (proto 는 dev http 대응).
-  const forwardedHost = h.get("x-forwarded-host");
-  const forwardedProto = h.get("x-forwarded-proto");
-  const host = forwardedHost ?? h.get("host") ?? "";
-  const proto = forwardedProto ?? (host.startsWith("localhost") ? "http" : "https");
-  const origin = h.get("origin") ?? `${proto}://${host}`;
+  // 헤더 기반 base URL 추론 — Supabase Dashboard 의 Redirect URLs 화이트리스트에
+  // 해당 호스트가 등록돼 있어야 함 (mismatch 시 Site URL 로 fallback).
+  // 결정 로직 단일화 진입점: `server/origin.ts`.
+  const origin = await resolveOrigin();
+  // safeNextPath: 페이지가 이미 화이트리스트 통과시켰지만 action 도 자체 검증.
+  // formData 는 클라이언트가 임의로 보낼 수 있어 server action 자체 진입점에서도 필수.
+  const next = safeNextPath(formData.get("next"));
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "kakao",
     options: {
-      redirectTo: `${origin}/api/auth/callback?next=/partner`,
+      redirectTo: `${origin}/api/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 

@@ -1,22 +1,28 @@
 import type {
   Partner as PrismaPartner,
   PartnerInvitation as PrismaPartnerInvitation,
+  PartnerMatchStats as PrismaPartnerMatchStats,
   User as PrismaUser,
 } from "@prisma/client";
 import { z } from "zod";
 
 /**
- * Partner = User (공통 정보) + Partner (설계사 추가 정보) 의 조인 뷰.
+ * Partner = User (공통 정보) + Partner (설계사 추가 정보) + 매칭 카운터 (1:1) 의 조인 뷰.
  *
  * 가입자 노출: user.name, bio, yearsOfExperience, trustMetric
- * 매칭 사용 : exposureCount, recentSubmissions
+ * 매칭 사용 : matchStats.selectedCount (정렬 키), matchStats.exposureCount (isNew 판정)
  * 운영 사용 : user.email (로그인), user.phone (알림톡), active, licenseNumber
  *
  * Prisma 모델은 1:1 분리 (PK 공유) — 타입은 query 가 include 로 묶어서 노출.
  * 도메인 코드는 항상 이 결합형을 사용 (raw Prisma 모델 노출 X).
+ *
+ * `matchStats` 는 가입 트랜잭션 + 시더 백필이 eager-create 하므로 정상 흐름에서
+ * non-null. 그러나 Prisma 의 1:1 optional 관계 타입은 항상 nullable — 호출자는
+ * `?? 0` 폴백으로 레거시 partner 를 안전하게 처리.
  */
 export type Partner = PrismaPartner & {
   user: Pick<PrismaUser, "id" | "email" | "name" | "phone">;
+  matchStats: PrismaPartnerMatchStats | null;
 };
 
 /**
@@ -51,7 +57,7 @@ export type PartnerInput = z.infer<typeof PartnerInputSchema>;
  * 가입자 카드용 슬림 뷰 — 후보 노출에서 사용.
  * 노출되어선 안 되는 운영 필드(email/phone/active/카운터/license)를 제외.
  *
- * `isNew` 는 derived — exposureCount === 0 인 신규 등록 설계사.
+ * `isNew` 는 derived — matchStats.exposureCount === 0 인 신규 등록 설계사.
  */
 export type PartnerCard = {
   id: string;

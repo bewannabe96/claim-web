@@ -7,7 +7,6 @@ import { AdjustmentForm } from "@/features/credits/ui/adjustment-form";
 import { CreditBalanceCard } from "@/features/credits/ui/credit-balance-card";
 import { LedgerList } from "@/features/credits/ui/ledger-list";
 import { RefundForm } from "@/features/credits/ui/refund-form";
-import { cn } from "@/lib/utils";
 
 import { PartnerForm } from "../../_components/partner-form";
 import {
@@ -30,11 +29,6 @@ export default async function AdminPartnerDetailPage({
 
   const action = updatePartner.bind(null, partner.id);
 
-  const missRate = partner.recentSubmissions.length
-    ? partner.recentSubmissions.filter((s) => !s).length /
-      partner.recentSubmissions.length
-    : 0;
-
   return (
     <div className="flex flex-col gap-8">
       <div>
@@ -49,45 +43,19 @@ export default async function AdminPartnerDetailPage({
       <Card>
         <CardHeader title="운영 지표" />
         <dl className="grid grid-cols-3 gap-6">
-          <Stat label="누적 노출" value={`${partner.exposureCount}회`} />
           <Stat
-            label="최근 제출 이력"
-            value={
-              partner.recentSubmissions.length === 0
-                ? "—"
-                : `${partner.recentSubmissions.filter((s) => s).length}/${partner.recentSubmissions.length}`
-            }
+            label="누적 노출"
+            value={`${partner.matchStats?.exposureCount ?? 0}회`}
           />
           <Stat
-            label="미제출률"
-            value={
-              partner.recentSubmissions.length === 0
-                ? "—"
-                : `${Math.round(missRate * 100)}%`
-            }
-            tone={missRate > 0.3 ? "alert" : "default"}
+            label="제안서 요청"
+            value={`${partner.matchStats?.selectedCount ?? 0}회`}
+          />
+          <Stat
+            label="연락 요청"
+            value={`${partner.matchStats?.contactedCount ?? 0}회`}
           />
         </dl>
-
-        {partner.recentSubmissions.length > 0 && (
-          <div className="mt-5">
-            <p className="text-xs text-[#4b4b4b] mb-2">최근 제출 시퀀스</p>
-            <div className="flex gap-1">
-              {partner.recentSubmissions.map((s, i) => (
-                <span
-                  key={i}
-                  className={cn(
-                    "w-5 h-5 rounded-md text-[10px] flex items-center justify-center font-bold",
-                    s ? "bg-black text-white" : "bg-[#efefef] text-[#afafaf]",
-                  )}
-                  title={s ? "제출" : "미제출"}
-                >
-                  {s ? "○" : "×"}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
       </Card>
 
       {/* 크레딧 */}
@@ -132,26 +100,11 @@ export default async function AdminPartnerDetailPage({
   );
 }
 
-function Stat({
-  label,
-  value,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  tone?: "default" | "alert";
-}) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1">
       <dt className="text-xs text-[#4b4b4b]">{label}</dt>
-      <dd
-        className={cn(
-          "text-2xl font-bold tracking-tight",
-          tone === "alert" ? "text-black" : "text-black",
-        )}
-      >
-        {value}
-      </dd>
+      <dd className="text-2xl font-bold tracking-tight text-black">{value}</dd>
     </div>
   );
 }

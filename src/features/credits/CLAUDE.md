@@ -8,16 +8,18 @@
 credits/
 ├─ schema.ts                  # zod 입력 검증 + CreditType enum + 도메인 타입
 ├─ queries.ts                 # 'server-only' — balance / ledger / listRefundableTopups
-├─ actions.ts                 # 'use server' — adjustCredit / refundTopup / initiateTopup / confirmTopup / spendCredit
+├─ actions.ts                 # 'use server' — adjustCredit / refundTopup / initiateTopup / confirmTopup / acknowledgeTopup / spendCredit
 ├─ lib/apply-ledger.ts        # 'server-only' — 잔액 변동 단일 chokepoint
+├─ payment/types.ts           # client 도 import 가능 — PortOneSdkPayload 타입 (browser-sdk PaymentRequest alias)
 ├─ payment/provider.ts        # 'server-only' — PaymentProvider 추상 + StubPaymentProvider + 충전 stash 헬퍼
-├─ payment/index.ts           # 'server-only' — getPaymentProvider() 팩토리
+├─ payment/portone.ts         # 'server-only' — PortOnePaymentProvider (실 PG)
+├─ payment/index.ts           # 'server-only' — getPaymentProvider() 팩토리 (env 분기)
 └─ ui/
    ├─ credit-balance-card.tsx # Server — 잔액 카드 (어드민/파트너 공용)
    ├─ ledger-list.tsx         # Server — 거래 내역 (compact/full 모드)
    ├─ adjustment-form.tsx     # Client — 어드민 수동 조정 (type='adjustment')
    ├─ refund-form.tsx         # Client — 결제 환불 (type='refund', referenceId=paymentId)
-   ├─ topup-amount-form.tsx   # Client — 파트너 충전 금액 입력
+   ├─ topup-amount-form.tsx   # Client — 파트너 충전 금액 입력 + 동적 SDK import 분기
    └─ topup-button.tsx        # (사용 안 함, dashboard 카드 안에 inline)
 ```
 
@@ -62,9 +64,10 @@ if (!result.ok) {
 
 ### 멱등성 키 정책
 
-- `topup`: `idempotencyKey = paymentId` (PG 웹훅 재전송 대비).
+- `topup`: `idempotencyKey = paymentId` (PG 웹훅 재전송 + client-side acknowledgeTopup 가 같은 키로 충돌해도 한 row 만 통과).
 - `spend`: 호출자가 안정 키 제공 필수 (예: `assignment:${assignmentId}:exposure`).
-- `adjustment` / `refund`: `null` (어드민 수기, 인간이 의도적으로 두 번 누르면 두 row 가 정상 — UNIQUE NULL distinct).
+- `refund`: provider 가 `cancelPayment` 지원하면 `cancellation:${cancellationId}` (어드민 UI 환불과 외부 콘솔 환불의 webhook echo 가 같은 key 로 dedup). 미지원 (stub) 이면 `null`.
+- `adjustment`: `null` (어드민 수기, 인간이 의도적으로 두 번 누르면 두 row 가 정상 — UNIQUE NULL distinct).
 
 같은 키로 두 번째 호출은 `{ ok: true, alreadyApplied: true }` 반환. 사전 lookup + UNIQUE 인덱스 P2002 catch 의 3중 방어.
 
@@ -86,8 +89,9 @@ if (!result.ok) {
 | 경로 | createdById |
 |---|---|
 | `adjustCredit` (어드민) | `adminSession.user.id` |
-| `refundTopup` (어드민) | `adminSession.user.id` |
-| `confirmTopup` (웹훅) | `null` — 시스템; 파트너는 `referenceId=paymentId` 로 역추적 |
+| `refundTopup` (어드민 UI) | `adminSession.user.id` |
+| `confirmTopup` (웹훅 / acknowledgeTopup) | `null` — 시스템; 파트너는 `referenceId=paymentId` 로 역추적 |
+| 외부 PortOne 콘솔 환불 webhook | `null` — 시스템 (actor 없음) |
 | `spendCredit` (시스템) | `null` |
 
 `createdById` 는 **FK 미설정** — user 삭제 시 audit 가 사라지면 안 됨.
@@ -102,19 +106,52 @@ if (!result.ok) {
 
 ## PaymentProvider 추상화
 
-`PaymentProvider` 인터페이스 ([payment/provider.ts](payment/provider.ts)) 는 `initiatePayment` + `verifyWebhook` 두 메서드. action 은 provider 의 stash 메커니즘을 알 필요 없음 — provider 가 자체 책임.
+`PaymentProvider` 인터페이스 ([payment/provider.ts](payment/provider.ts)) 는 4 메서드 — `initiatePayment` + `verifyWebhook` 필수, `fetchPaymentStatus` + `cancelPayment` optional. action 은 provider 의 stash 메커니즘을 알 필요 없음 — provider 가 자체 책임.
+
+선택은 `process.env.CREDIT_PAYMENT_PROVIDER` 가 결정:
+- `"portone"` → PortOnePaymentProvider (4 메서드 모두 구현, env 4종 필수)
+- 그 외 / 미설정 → StubPaymentProvider (2 메서드만 구현, production fail-closed)
+
+### `PaymentInitResult` 의 두 가지 kind
+
+provider 가 두 가지 시작 방식 중 하나 반환:
+
+- `kind: "redirect"` (stub) — client (TopupAmountForm) 가 `window.location.href = redirectUrl`.
+- `kind: "sdk"` (portone) — client 가 동적 import 후 `PortOne.requestPayment(sdkPayload)`.
+
+이 분기는 `topup-amount-form.tsx` 와 [`schema.ts`](schema.ts) 의 `TopupInitMutationState` 만 알면 됨. webhook route / acknowledgeTopup / refundTopup 은 provider name 만 신경.
 
 ### Stub provider (dev 전용)
 
-- `initiatePayment`: paymentId 만 담은 `/api/webhooks/credits/stub?paymentId=...` URL 반환. (`partnerId, amount`) 는 Redis `topup:pending:{paymentId}` 에 1시간 stash.
-- `verifyWebhook`: `process.env.NODE_ENV === "production"` 이면 즉시 fail-closed (`invalid_signature` 반환). dev 에선 stash 조회로 partnerId/amount 정규화.
+- `initiatePayment`: paymentId 만 담은 `/api/webhooks/credits/stub?paymentId=...` URL 반환 (`kind: "redirect"`). (`partnerId, amount`) 는 Redis `topup:pending:{paymentId}` 에 1시간 stash.
+- `verifyWebhook`: `process.env.NODE_ENV === "production"` 이면 즉시 fail-closed (`invalid_signature` 반환). dev 에선 stash 조회 → `kind: "topup_completed"` event 반환.
+- `fetchPaymentStatus` / `cancelPayment`: **미구현** — stub 환경에서 acknowledgeTopup 은 `not_supported` 반환, 환불 UI 는 PG 호출 없이 ledger 만 작성.
 
-### 실 provider 추가 (PortOne / Toss, 후속 PR)
+### PortOne provider
 
-1. `payment/<provider>.ts` 에 `class PortOnePaymentProvider implements PaymentProvider`.
-2. `verifyWebhook` 은 HMAC-SHA256 + `timingSafeEqual` 으로 진정성 검증 — 기존 [src/app/api/webhooks/eightytwo-judge-analysis/route.ts](../../app/api/webhooks/eightytwo-judge-analysis/route.ts) 패턴 재사용.
-3. `getPaymentProvider()` ([payment/index.ts](payment/index.ts)) 가 `process.env.CREDIT_PAYMENT_PROVIDER` 분기.
-4. ENV 추가: `PORTONE_STORE_ID`, `PORTONE_CHANNEL_KEY`, `PORTONE_API_SECRET`, `PORTONE_WEBHOOK_SECRET` 등.
+- `initiatePayment`: Redis stash + `PaymentRequest` 페이로드 반환 (`kind: "sdk"`). `customData` 에 `{ v, partnerId }` 박아 PortOne API 응답으로 회수 가능 (stash 만료 시 fallback). 휴대폰번호 (`customer.phoneNumber`) 필수 — KG이니시스 V2 등.
+- `verifyWebhook`: `@portone/server-sdk` 의 `PortOne.Webhook.verify(secret, body, headers)` 사용 (Standard Webhooks, headers: `webhook-id` / `webhook-signature` / `webhook-timestamp`). **2024-04-25 페이로드 형식 전용** — 운영자가 PortOne 콘솔에서 "결제모듈 V2" 로 등록해야 일치. 다른 버전이면 verify 실패 (`invalid_signature`). Event 분기:
+  - `Transaction.Paid` → `getPayment` 로 금액 + partnerId 재확인 → `kind: "topup_completed"`.
+  - `Transaction.Cancelled` / `Transaction.PartialCancelled` → `getPayment.cancellations[]` 에서 `cancellationId` 매칭 → `kind: "refund"`.
+  - 그 외 (VirtualAccountIssued / Failed / Ready / BillingKey.* / Dispute*) → `kind: "ignored"`.
+- `fetchPaymentStatus`: `getPayment` + `status === "PAID"` 확인 + partnerId 회수 (stash 우선, fallback customData). acknowledgeTopup 진입점.
+- `cancelPayment`: `payment.cancelPayment` 호출 → `cancellation.id` 반환. refundTopup 진입점.
+
+### acknowledgeTopup — client SDK 성공 직후 즉시 ack
+
+PortOne 흐름에서 webhook 도착 대기 없이 잔액 즉시 갱신:
+- 진입: PC → TopupAmountForm 의 `PortOne.requestPayment` Promise resolve 직후 / 모바일 → `/partner/credits/topup/result` 페이지.
+- 인증: `requirePartnerSession()` + PG 응답의 partnerId 와 session.partnerId 교차 검증.
+- 같은 paymentId 의 webhook 가 늦게 도착해도 `idempotencyKey = paymentId` 로 alreadyApplied no-op.
+- stub 환경에선 `fetchPaymentStatus` 미구현 → `not_supported` 반환, webhook (GET redirect) 만으로 잔액 갱신.
+
+### refundTopup ⇄ webhook 의 환불 양쪽 흡수
+
+- 어드민 UI 환불 (`refundTopup`): `cancelPayment` → 성공 시 `applyLedger(idempotencyKey=cancellation:X)` 한 액션. createdById=admin.user.id.
+- 외부 PortOne 콘솔 환불: webhook (Transaction.Cancelled) → 같은 idempotencyKey 로 `applyLedger`. createdById=null.
+- 어드민 UI 가 먼저 작성한 row 가 있으면 webhook 은 alreadyApplied no-op.
+
+⚠️ **트랜잭션 경계 한계**: `cancelPayment` 성공 + `applyLedger` 실패 (conflict 극히 드묾) 시 PG 와 ledger 가 어긋남. 운영 대응을 위해 actions.ts:refundTopup 가 cancellationId + 컨텍스트를 명시 로깅.
 
 ## 안티패턴
 
@@ -125,7 +162,9 @@ if (!result.ok) {
 - ❌ `refundTopup` 을 referenceId 없이 호출 / `adjustCredit` 에 referenceId 채워 호출 — 의미 혼탁. 환불은 결제건 종속, 조정은 무관.
 - ❌ Action 안에서 직접 stash 조작 — provider 가 자체 책임. `initiateTopup` 은 stash 메커니즘을 알지 않음.
 - ❌ webhook route 에서 `requirePartnerSession()` 호출 — 웹훅은 PG 인프라 호출. `PaymentProvider.verifyWebhook` 가 인증.
-- ❌ `confirmTopup` 을 폼에서 호출 — 웹훅 전용. 폼 액션에 노출하면 위조 가능.
+- ❌ `confirmTopup` 을 폼에서 직접 호출 — 폼 액션은 `acknowledgeTopup` 만 호출. `confirmTopup` 은 webhook + acknowledgeTopup 두 경로의 공통 sink.
+- ❌ `acknowledgeTopup` 안에서 partner 본인 검증 우회 — `session.partnerId !== status.partnerId` cross-check 필수 (PG 응답 위조는 어렵지만 defense in depth).
+- ❌ `refundTopup` 가 `cancelPayment` 실패 후 ledger 작성 진행 — PG 가 거부했는데 우리 잔액만 음수로 빠지면 사용자 자산 침해. 반드시 PG 성공 → ledger 순.
 - ❌ `spendCredit` 을 클라이언트나 미인가 액션에서 호출 — 호출처가 자체 인증 필수 (세션 가드 없음).
 - ❌ `'use cache'` 를 `queries.ts` 에 추가 — 모든 호출이 `require*Session()` 트리 하위라 자동 dynamic. 캐싱 추가 시 잔액 stale 위험.
 
