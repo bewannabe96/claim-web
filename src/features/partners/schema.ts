@@ -82,7 +82,13 @@ export type PartnerInvitation = PrismaPartnerInvitation;
  */
 export type PartnerInvitationView = Pick<
   PrismaPartnerInvitation,
-  "id" | "name" | "phone" | "expiresAt" | "consumedAt" | "linkedAuthId"
+  | "id"
+  | "name"
+  | "phone"
+  | "expiresAt"
+  | "consumedAt"
+  | "linkedAuthId"
+  | "existingUserId"
 >;
 
 /**

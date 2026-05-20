@@ -115,6 +115,19 @@ async function handleSignup(
     return NextResponse.redirect(`${errorBase}?error=no_email`);
   }
 
+  // 어드민 본인 겸직 invitation 은 Kakao OAuth 흐름이 아님 — signup 페이지 자체가
+  // 진입 시 verify 로 forward 하므로 정상 흐름에선 도달하지 않음. 사용자가 직접
+  // 콜백 URL 을 위조해 도달한 경우만 가능 — Kakao 세션 청소 후 signup 페이지로
+  // 돌려보내 안내. user/partner 트랜잭션은 일어나지 않음.
+  const meta = await prisma.partnerInvitation.findUnique({
+    where: { token: invitationToken },
+    select: { existingUserId: true },
+  });
+  if (meta?.existingUserId) {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(`${errorBase}?error=admin_required`);
+  }
+
   // 미소비 + 미만료 invitation 만 lock 갱신. consumedAt 조건이 race-safe
   // — 동시 콜백이 들어와도 가입 트랜잭션이 먼저 consumedAt 을 채우면
   // 그 이후 콜백은 WHERE 조건에 안 걸려 no-op.
@@ -123,6 +136,7 @@ async function handleSignup(
       token: invitationToken,
       consumedAt: null,
       expiresAt: { gt: new Date() },
+      existingUserId: null,
     },
     data: {
       // 매 진입마다 최신 Kakao 계정으로 덮어씀. 이전 lock 무시.

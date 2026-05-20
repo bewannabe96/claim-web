@@ -47,19 +47,27 @@ function nextExpiresAt(): Date {
  * 막아주므로, 미소비 invitation 끼리의 충돌은 앱 레이어가 책임.
  *
  * `excludeInvitationId` 는 수정 모드에서 자기 자신을 제외하기 위함.
+ * `existingUserId` 는 어드민 본인 겸직 흐름 — 같은 User 에 Partner extension 만
+ * 추가하는 시나리오. phone 으로 매칭된 user 가 active admin 이면서 partner 가
+ * 없고, id 가 인자와 일치할 때만 phone 충돌 검사를 통과시킴.
  *
  * 동시성: 두 어드민이 같은 phone 으로 동시에 invitation 발급 시 둘 다 통과할 수
  * 있음 — 어드민 only 흐름이라 의도된 trade-off (DB partial unique 미사용 정책).
  */
 async function checkInvitationConflicts(
   input: PartnerInput,
-  excludeInvitationId?: string,
+  options: { excludeInvitationId?: string; existingUserId?: string | null } = {},
 ): Promise<string | null> {
+  const { excludeInvitationId, existingUserId } = options;
   const [userByPhone, partnerByLicense, pendingByPhone, pendingByLicense] =
     await Promise.all([
       prisma.user.findUnique({
         where: { phone: input.phone },
-        select: { id: true },
+        select: {
+          id: true,
+          partner: { select: { id: true } },
+          admin: { select: { active: true } },
+        },
       }),
       prisma.partner.findUnique({
         where: { licenseNumber: input.licenseNumber },
@@ -83,10 +91,94 @@ async function checkInvitationConflicts(
       }),
     ]);
 
-  if (userByPhone) return "이미 가입된 휴대폰 번호입니다.";
+  if (userByPhone) {
+    if (userByPhone.partner) {
+      return "이미 가입된 설계사입니다.";
+    }
+    const isActiveAdmin = userByPhone.admin?.active === true;
+    if (isActiveAdmin && existingUserId === userByPhone.id) {
+      // 겸직 모드 — phone 충돌 통과. 자격번호 / pending 검사는 계속 진행.
+    } else if (isActiveAdmin) {
+      return "이미 가입된 어드민 휴대폰 번호입니다. 어드민 본인 설계사 등록을 선택해주세요.";
+    } else {
+      return "이미 가입된 휴대폰 번호입니다.";
+    }
+  } else if (existingUserId) {
+    // existingUserId 가 set 됐는데 phone 매칭 user 없음 = inconsistent.
+    return "어드민 본인 설계사 등록 정보가 일치하지 않습니다.";
+  }
+
   if (partnerByLicense) return "이미 등록된 자격번호입니다.";
   if (pendingByPhone) return "같은 휴대폰 번호로 발급된 미사용 초청이 있습니다.";
   if (pendingByLicense) return "같은 자격번호로 발급된 미사용 초청이 있습니다.";
+  return null;
+}
+
+/**
+ * UI inline confirm 용 — phone 으로 active admin user 를 찾아 겸직 모드 후보인지
+ * 판정. admin 화이트리스트 진입자만 호출 가능 (enumeration 방어).
+ *
+ * `match: true` 조건: phone 매칭 user 존재 + admin extension active + partner 없음
+ * + 호출자 본인의 admin user.id 와 일치 (다른 어드민의 phone 으로 본인 등록 시도 차단).
+ */
+export async function lookupAdminUserByPhone(
+  phone: string,
+): Promise<
+  | { match: false }
+  | { match: true; userId: string; name: string }
+> {
+  const session = await requireAdminSession();
+
+  // 형식 검증 — 다른 input 과 동일 정규식.
+  if (!/^01[0-9]{8,9}$/.test(phone)) {
+    return { match: false };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { phone },
+    select: {
+      id: true,
+      name: true,
+      partner: { select: { id: true } },
+      admin: { select: { active: true } },
+    },
+  });
+  if (!user) return { match: false };
+  if (user.partner) return { match: false };
+  if (!user.admin?.active) return { match: false };
+  if (user.id !== session.user.id) return { match: false };
+  return { match: true, userId: user.id, name: user.name };
+}
+
+/**
+ * 겸직 흐름 — `existingUserId` 가 set 됐을 때 호출자 admin 본인 + user.phone 일치
+ * 까지 재검증. invitation create / 가입 트랜잭션 진입 전에 한 번 더 강제.
+ */
+async function validateExistingUserAdminLink(
+  existingUserId: string,
+  phone: string,
+): Promise<string | null> {
+  const session = await requireAdminSession();
+  if (session.user.id !== existingUserId) {
+    return "어드민 본인 설계사 등록은 본인 계정으로만 가능합니다.";
+  }
+  const user = await prisma.user.findUnique({
+    where: { id: existingUserId },
+    select: {
+      phone: true,
+      partner: { select: { id: true } },
+      admin: { select: { active: true } },
+    },
+  });
+  if (!user || !user.admin?.active) {
+    return "어드민 본인 정보를 확인할 수 없습니다.";
+  }
+  if (user.partner) {
+    return "이미 설계사로 등록된 어드민입니다.";
+  }
+  if (user.phone !== phone) {
+    return "어드민 등록 휴대폰 번호와 일치하지 않습니다.";
+  }
   return null;
 }
 
@@ -110,7 +202,25 @@ export async function createPartnerInvitation(
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
 
-  const conflict = await checkInvitationConflicts(parsed.data);
+  const rawExistingUserId = formData.get("existingUserId");
+  const existingUserId =
+    typeof rawExistingUserId === "string" && rawExistingUserId.length > 0
+      ? rawExistingUserId
+      : null;
+
+  if (existingUserId) {
+    const linkError = await validateExistingUserAdminLink(
+      existingUserId,
+      parsed.data.phone,
+    );
+    if (linkError) {
+      return { ok: false, errors: { _form: [linkError] } };
+    }
+  }
+
+  const conflict = await checkInvitationConflicts(parsed.data, {
+    existingUserId,
+  });
   if (conflict) {
     return { ok: false, errors: { _form: [conflict] } };
   }
@@ -130,6 +240,7 @@ export async function createPartnerInvitation(
         active: parsed.data.active,
         token: newToken(),
         expiresAt: nextExpiresAt(),
+        existingUserId,
       },
     });
   } catch (err) {
@@ -170,7 +281,7 @@ export async function updatePartnerInvitation(
 
   const existing = await prisma.partnerInvitation.findUnique({
     where: { id: invitationId },
-    select: { consumedAt: true },
+    select: { consumedAt: true, existingUserId: true, phone: true },
   });
   if (!existing) {
     return { ok: false, errors: { _form: ["초청을 찾을 수 없습니다."] } };
@@ -182,7 +293,22 @@ export async function updatePartnerInvitation(
     };
   }
 
-  const conflict = await checkInvitationConflicts(parsed.data, invitationId);
+  // 겸직 invitation 의 phone 변경 금지 — admin user.phone 과 일치 강제.
+  if (existing.existingUserId && existing.phone !== parsed.data.phone) {
+    return {
+      ok: false,
+      errors: {
+        _form: [
+          "어드민 본인 겸직 초청의 휴대폰 번호는 변경할 수 없습니다.",
+        ],
+      },
+    };
+  }
+
+  const conflict = await checkInvitationConflicts(parsed.data, {
+    excludeInvitationId: invitationId,
+    existingUserId: existing.existingUserId,
+  });
   if (conflict) {
     return { ok: false, errors: { _form: [conflict] } };
   }

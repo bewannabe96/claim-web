@@ -340,6 +340,12 @@ model PartnerCreditLedger {
 // 단일 트랜잭션으로 user + partner INSERT + invitation 소비 (consumedAt +
 // consumedUserId + phoneVerifiedAt audit).
 //
+// **분기 — `existingUserId`**: 어드민 본인이 자기 자신을 설계사로도 등록하는
+// 겸직 흐름. set 된 경우 Kakao OAuth 우회 — admin 세션 + OTP 본인인증만으로
+// 진행되어, 가입 트랜잭션이 user.create 대신 그 id 의 User 에 Partner extension
+// 만 추가 (1 User = 1 phone 원칙 유지). 발급은 `/admin/partners/new` 의 phone
+// lookup → "어드민 본인 설계사 등록" 체크박스로만 set, immutable.
+//
 // 한 invitation = 한 row. 재발급은 token + expiresAt 회전 (row 신규 INSERT 아님).
 // 소비된 invitation 은 audit 용으로 남기되 token 으론 더 이상 진입 불가
 // (consumedAt IS NOT NULL 가드).
@@ -384,6 +390,13 @@ model PartnerInvitation {
   /// user 삭제 시 cascade 안 됨. consumedAt IS NOT NULL 일 때만 set.
   consumedUserId String?   @map("consumed_user_id")
 
+  /// 어드민 본인이 자기 자신을 설계사로도 등록하는 "겸직" 흐름의 진입점.
+  /// set 된 경우 가입 트랜잭션은 user.create 대신 이 id 의 User 에 Partner
+  /// extension 만 추가 (1 User = 1 phone 원칙 유지). NULL = 일반 신규 가입.
+  /// Kakao OAuth 우회 — admin 세션 + OTP 본인인증으로만 진행. FK 미설정
+  /// (audit 보존 + cascade 회피). 발급 시 set, immutable.
+  existingUserId String? @map("existing_user_id")
+
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
@@ -392,6 +405,7 @@ model PartnerInvitation {
   @@index([phone])
   @@index([licenseNumber])
   @@index([linkedAuthId])
+  @@index([existingUserId])
   @@map("partner_invitation")
   @@schema("claim")
 }

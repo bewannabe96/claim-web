@@ -17,6 +17,7 @@ export default function AdminPartnerNewPage() {
         action={createPartnerInvitation}
         submitLabel="초청 발급"
         pendingLabel="발급 중..."
+        enableAdminSelfLink
       />
     </div>
   );

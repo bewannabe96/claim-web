@@ -1,10 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type PartnerMutationState } from "@/features/partners/actions";
+import {
+  lookupAdminUserByPhone,
+  type PartnerMutationState,
+} from "@/features/partners/actions";
 import type { PartnerInput } from "@/features/partners/schema";
 import { cn } from "@/lib/utils";
 
@@ -18,17 +21,29 @@ type FormAction = (
  *
  * 상위 페이지가 사용 시점에 맞는 server action 을 `action` prop 으로 주입.
  * 폼 필드 자체는 세 시나리오 모두 동일 (이메일 없음).
+ *
+ * `enableAdminSelfLink` 가 true 인 경우 — 신규 invitation 발급 폼:
+ *   phone 입력 onBlur 에 `lookupAdminUserByPhone` 호출 → 어드민 본인 phone 매칭 시
+ *   "어드민 본인 설계사 등록" checkbox 노출. 체크하면 hidden `existingUserId` 가
+ *   submit 에 포함되어 server 가 겸직 흐름으로 분기. 수정 폼에서는 immutable.
+ *
+ * `lockedExistingUserId` — 수정 모드에서 기존 invitation 의 existingUserId 가
+ *   set 인 경우. 안내 배지만 표시, phone 변경 차단 시각화 (readonly).
  */
 export function PartnerForm({
   action,
   initial,
   submitLabel = "저장",
   pendingLabel = "저장 중...",
+  enableAdminSelfLink = false,
+  lockedExistingUserId = null,
 }: {
   action: FormAction;
   initial?: PartnerInput;
   submitLabel?: string;
   pendingLabel?: string;
+  enableAdminSelfLink?: boolean;
+  lockedExistingUserId?: string | null;
 }) {
   const [state, formAction, pending] = useActionState<
     PartnerMutationState,
@@ -36,6 +51,39 @@ export function PartnerForm({
   >(action, undefined);
 
   const [active, setActive] = useState<boolean>(initial?.active ?? true);
+
+  // 어드민 본인 겸직 lookup 상태 — neutral / matched(체크박스 노출).
+  // 매칭은 onBlur 마다 server action 호출 결과로 결정. 폼 진입 시 initial.phone
+  // 이 있다면 mount 직후 한 번 자동 lookup (수정 모드 진입 시 prior state 복원).
+  type LookupState =
+    | { kind: "idle" }
+    | { kind: "matched"; userId: string; name: string };
+  const [lookup, setLookup] = useState<LookupState>({ kind: "idle" });
+  const [adminSelfChecked, setAdminSelfChecked] = useState(
+    !!lockedExistingUserId,
+  );
+  const [, startLookup] = useTransition();
+  const lastLookedPhone = useRef<string | null>(null);
+
+  const runLookup = (phone: string) => {
+    if (!enableAdminSelfLink) return;
+    if (!/^01[0-9]{8,9}$/.test(phone)) {
+      lastLookedPhone.current = phone;
+      setLookup({ kind: "idle" });
+      return;
+    }
+    if (lastLookedPhone.current === phone) return;
+    lastLookedPhone.current = phone;
+    startLookup(async () => {
+      const result = await lookupAdminUserByPhone(phone);
+      if (result.match) {
+        setLookup({ kind: "matched", userId: result.userId, name: result.name });
+      } else {
+        setLookup({ kind: "idle" });
+        setAdminSelfChecked(false);
+      }
+    });
+  };
 
   const errors = state && "errors" in state ? state.errors : undefined;
   const success = state && "ok" in state && state.ok;
@@ -61,9 +109,46 @@ export function PartnerForm({
               defaultValue={initial?.phone ?? ""}
               placeholder="01012345678"
               className="h-11"
+              readOnly={!!lockedExistingUserId}
+              onBlur={(e) => runLookup(e.target.value.trim())}
             />
           </Field>
         </div>
+
+        {enableAdminSelfLink && lookup.kind === "matched" && (
+          <label className="flex items-start gap-3 rounded-lg border border-[#efefef] bg-[#fafafa] px-4 py-3 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={adminSelfChecked}
+              onChange={(e) => setAdminSelfChecked(e.target.checked)}
+            />
+            <span className="flex-1 text-black">
+              <span className="font-medium">어드민 본인 설계사 등록</span>
+              <span className="block mt-0.5 text-xs text-[#4b4b4b]">
+                {lookup.name} (어드민) 본인 휴대폰 번호로 인식됐어요. 같은
+                계정에 설계사 권한을 추가하려면 체크해주세요. 카카오 가입 없이
+                본인인증만으로 완료됩니다.
+              </span>
+            </span>
+          </label>
+        )}
+        {lockedExistingUserId && (
+          <div className="rounded-lg border border-[#efefef] bg-[#fafafa] px-4 py-3 text-sm text-black">
+            <span className="font-medium">어드민 본인 겸직 초청</span>
+            <span className="block mt-0.5 text-xs text-[#4b4b4b]">
+              어드민 계정에 설계사 권한을 추가하는 초청입니다. 휴대폰 번호는
+              어드민 등록 정보와 일치해야 하므로 변경할 수 없어요.
+            </span>
+          </div>
+        )}
+        {adminSelfChecked && lookup.kind === "matched" && (
+          <input
+            type="hidden"
+            name="existingUserId"
+            value={lookup.userId}
+          />
+        )}
 
         <Field label="한줄 소개" error={errors?.bio?.[0]}>
           <Input

@@ -131,6 +131,7 @@ export async function getPartnerInvitationByToken(
       expiresAt: true,
       consumedAt: true,
       linkedAuthId: true,
+      existingUserId: true,
     },
   });
   if (!invitation) return null;

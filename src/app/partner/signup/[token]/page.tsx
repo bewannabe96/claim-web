@@ -1,4 +1,7 @@
+import { redirect } from "next/navigation";
+
 import { getPartnerInvitationByToken } from "@/features/partners/queries";
+import { getOptionalAdminSession } from "@/server/dal";
 
 import { signUpWithKakao } from "./actions";
 
@@ -8,6 +11,8 @@ const SIGNUP_ERRORS: Record<string, string> = {
   already_registered:
     "이 카카오 계정은 이미 다른 사용자와 연결되어 있습니다. 운영자에게 문의하세요.",
   signup_failed: "가입 처리 중 오류가 발생했습니다. 다시 시도해주세요.",
+  admin_required:
+    "어드민 본인 설계사 등록은 어드민 계정으로 로그인한 상태에서만 가능합니다.",
 };
 
 /**
@@ -49,6 +54,18 @@ export default async function PartnerSignupPage({
         </p>
       </main>
     );
+  }
+
+  // 어드민 본인 겸직 흐름 — Kakao OAuth 우회. 같은 브라우저의 admin 세션이
+  // 가입 트랜잭션의 인증 게이트. admin 세션 없으면 admin 로그인으로 보냄.
+  if (invitation.existingUserId) {
+    const adminSession = await getOptionalAdminSession();
+    if (!adminSession || adminSession.user.id !== invitation.existingUserId) {
+      redirect(
+        `/admin/login?next=${encodeURIComponent(`/partner/signup/${token}`)}`,
+      );
+    }
+    redirect(`/partner/signup/${token}/verify`);
   }
 
   // /verify 로 자동 redirect 하지 않음 — 매 진입마다 새 Kakao OAuth 강제.

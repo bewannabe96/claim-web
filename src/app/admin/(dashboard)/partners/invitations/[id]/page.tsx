@@ -80,8 +80,9 @@ export default async function AdminPartnerInvitationDetailPage({
           <div className="flex flex-col gap-3">
             <CopyLink url={signupUrl} />
             <p className="text-xs text-[#4b4b4b]">
-              이 링크를 카카오톡으로 설계사에게 전달해주세요. 설계사가 링크
-              진입 후 카카오 로그인 + 본인인증을 완료하면 정식 가입됩니다.
+              {invitation.existingUserId
+                ? "어드민 본인 겸직 초청입니다. 같은 브라우저에서 본인이 직접 이 링크를 클릭하면 본인인증만으로 설계사 등록이 완료됩니다."
+                : "이 링크를 카카오톡으로 설계사에게 전달해주세요. 설계사가 링크 진입 후 카카오 로그인 + 본인인증을 완료하면 정식 가입됩니다."}
             </p>
             <dl className="grid grid-cols-2 gap-4 mt-2 pt-4 border-t border-[#efefef]">
               <Meta label="발급일" value={formatDateTime(invitation.createdAt)} />
@@ -106,6 +107,7 @@ export default async function AdminPartnerInvitationDetailPage({
               licenseNumber: invitation.licenseNumber,
               active: invitation.active,
             }}
+            lockedExistingUserId={invitation.existingUserId}
           />
         </section>
       )}

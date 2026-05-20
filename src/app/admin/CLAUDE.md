@@ -111,6 +111,17 @@ partner 는 어드민이 직접 INSERT 하지 않음. 다음 흐름:
 - 토큰 재발급 (만료 임박 / token URL 유출 등 — token 회전 + expiresAt 갱신. 부수적으로 linkedAuthId / phoneVerifiedAt 도 NULL 리셋되지만 어차피 다음 진입이 덮어쓰므로 cleanliness 목적)
 - 초청 삭제 (미소비 invitation 만)
 
+### 어드민 본인 설계사 등록 (겸직)
+
+운영자가 직접 매칭에 참여하는 경우 — 한 User 에 admin + partner extension 동시 보유. 1 User = 1 phone 원칙 유지.
+
+1. `/admin/partners/new` 에서 본인 휴대폰 번호 입력 → 폼이 `lookupAdminUserByPhone` 으로 admin user 자동 감지 → "어드민 본인 설계사 등록" 체크박스 노출
+2. 체크 후 "초청 발급" → invitation row 가 `existingUserId` 셋팅된 채 INSERT (immutable). phone 도 변경 불가 (수정 폼 readonly).
+3. 발급된 URL 을 **본인이 같은 브라우저에서 직접 클릭** → signup 페이지가 admin 세션 확인 후 verify 로 자동 forward (Kakao OAuth 우회). admin 세션 없으면 `/admin/login?next=...` 로 redirect.
+4. 휴대폰 OTP 본인인증 통과 시 트랜잭션이 user.create 대신 **`partner.create` + balance/stats eager-create + invitation 소비**. user row (name/email/authId/phone) 는 그대로. 가입 완료 후 `/admin/partners` 로 redirect.
+
+분기 기준은 `partner_invitation.existingUserId` 한 컬럼 — set 이면 겸직, NULL 이면 일반. OAuth 콜백 (`handleSignup`) 은 existingUserId set invitation 진입을 reject 해 정상 흐름 외 경로를 차단. 자세한 가입 트랜잭션 분기는 [src/app/partner/CLAUDE.md](../partner/CLAUDE.md).
+
 ### 새 admin 계정 추가 (운영 환경)
 
 1. Supabase Dashboard → Authentication → Users → Add user (이메일/비밀번호)

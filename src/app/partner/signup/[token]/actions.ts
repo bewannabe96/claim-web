@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 
 import { newId } from "@/lib/id";
 import { isAligoTestMode, sendOtpSms } from "@/server/aligo";
+import { getOptionalAdminSession } from "@/server/dal";
 import { prisma } from "@/server/db/prisma";
 import { getClientIp } from "@/server/get-client-ip";
 import { resolveOrigin } from "@/server/origin";
@@ -32,6 +33,15 @@ export async function signUpWithKakao(formData: FormData) {
   const token = String(formData.get("token") ?? "");
   if (!token) {
     redirect("/partner/login?error=oauth_failed");
+  }
+
+  // 어드민 본인 겸직 invitation 은 Kakao OAuth 흐름이 아님 — admin 세션 + OTP 로만.
+  const invitationKind = await prisma.partnerInvitation.findUnique({
+    where: { token },
+    select: { existingUserId: true },
+  });
+  if (invitationKind?.existingUserId) {
+    redirect(`/partner/signup/${token}?error=admin_required`);
   }
 
   const supabase = await getSupabaseServerClient();
@@ -100,15 +110,22 @@ type SendOtpResult =
 
 type VerifyResult = { ok: true } | { ok: false; error: string };
 
+type CallerAuth =
+  | { kind: "kakao"; authUserId: string }
+  | { kind: "admin"; adminUserId: string };
+
 /**
- * token 유효성 + caller Kakao session + linkedAuthId 매칭 검증.
- * verify 라우트의 페이지 가드와 중복이지만 server action 은 layout 게이트를
- * 거치지 않으므로 자체 검증 필수.
+ * token 유효성 + caller 세션 매칭 검증.
  *
- * select 는 가입 트랜잭션에 필요한 partner 컬럼 전체를 포함 — caller 가 invitation
- * 을 통째로 받아 INSERT 데이터로 직접 사용.
+ * `kind === "kakao"`: 일반 신규 가입 흐름. invitation.linkedAuthId === authUserId
+ * 매칭 확인 (verify 페이지 가드와 중복이지만 server action 은 layout 게이트 미적용).
+ *
+ * `kind === "admin"`: 어드민 본인 겸직 흐름. invitation.existingUserId === adminUserId
+ * 매칭 확인. Kakao 세션 / linkedAuthId 는 무시.
+ *
+ * select 는 가입 트랜잭션에 필요한 partner 컬럼 전체 + 분기에 필요한 메타 포함.
  */
-async function getInvitationForCaller(token: string, authUserId: string) {
+async function getInvitationForCaller(token: string, caller: CallerAuth) {
   const invitation = await prisma.partnerInvitation.findUnique({
     where: { token },
     select: {
@@ -123,6 +140,7 @@ async function getInvitationForCaller(token: string, authUserId: string) {
       consumedAt: true,
       expiresAt: true,
       linkedAuthId: true,
+      existingUserId: true,
     },
   });
   if (!invitation) {
@@ -134,15 +152,86 @@ async function getInvitationForCaller(token: string, authUserId: string) {
   if (invitation.expiresAt.getTime() < Date.now()) {
     return { ok: false as const, error: "가입 링크가 만료되었습니다." };
   }
-  if (invitation.linkedAuthId !== authUserId) {
-    // 다른 탭/창에서 같은 링크로 새 OAuth 가 들어와 lock 이 옮겨감 (또는 reissue).
-    // 사용자에겐 단순 stale session 안내 — 같은 링크 재진입 시 다시 OAuth 부터 시작.
-    return {
-      ok: false as const,
-      error: "가입 링크 상태가 변경됐어요. 처음부터 다시 시도해주세요.",
-    };
+
+  if (caller.kind === "admin") {
+    if (invitation.existingUserId !== caller.adminUserId) {
+      return {
+        ok: false as const,
+        error: "어드민 본인 설계사 등록 권한이 없습니다.",
+      };
+    }
+  } else {
+    if (invitation.existingUserId) {
+      return {
+        ok: false as const,
+        error: "어드민 계정으로 로그인한 상태에서만 진행할 수 있어요.",
+      };
+    }
+    if (invitation.linkedAuthId !== caller.authUserId) {
+      // 다른 탭/창에서 같은 링크로 새 OAuth 가 들어와 lock 이 옮겨감 (또는 reissue).
+      // 사용자에겐 단순 stale session 안내 — 같은 링크 재진입 시 다시 OAuth 부터 시작.
+      return {
+        ok: false as const,
+        error: "가입 링크 상태가 변경됐어요. 처음부터 다시 시도해주세요.",
+      };
+    }
   }
   return { ok: true as const, invitation };
+}
+
+/**
+ * 호출자 세션 판정 — invitation 의 mode 에 따라 admin / kakao 분기.
+ *
+ * 두 흐름의 진입 게이트가 다르기 때문에 invitation 조회 전에 token 만 보고 mode 를
+ * 한 번 더 lookup (DB 한 번 추가). 비용은 작고, server action 안에서 클라이언트가
+ * 보낸 hidden field 에 의존하지 않게 하기 위한 trade-off.
+ */
+async function resolveCallerAuth(
+  token: string,
+): Promise<
+  | { ok: true; caller: CallerAuth; authUserEmail?: string }
+  | { ok: false; error: string }
+> {
+  const meta = await prisma.partnerInvitation.findUnique({
+    where: { token },
+    select: { existingUserId: true },
+  });
+  if (!meta) {
+    return { ok: false, error: "유효하지 않은 가입 링크입니다." };
+  }
+
+  if (meta.existingUserId) {
+    const adminSession = await getOptionalAdminSession();
+    if (!adminSession || adminSession.user.id !== meta.existingUserId) {
+      return {
+        ok: false,
+        error: "어드민 계정으로 로그인한 상태에서만 진행할 수 있어요.",
+      };
+    }
+    return {
+      ok: true,
+      caller: { kind: "admin", adminUserId: adminSession.user.id },
+    };
+  }
+
+  const supabase = await getSupabaseServerClient();
+  const { data: claimsData, error: claimsError } =
+    await supabase.auth.getClaims();
+  const claims = claimsError ? null : claimsData?.claims;
+  const authUserId = claims?.sub ?? null;
+  const authUserEmail =
+    typeof claims?.email === "string" ? claims.email : undefined;
+  if (!authUserId) {
+    return {
+      ok: false,
+      error: "카카오 세션이 만료됐어요. 처음부터 다시 시도해주세요.",
+    };
+  }
+  return {
+    ok: true,
+    caller: { kind: "kakao", authUserId },
+    authUserEmail,
+  };
 }
 
 /**
@@ -159,18 +248,10 @@ async function getInvitationForCaller(token: string, authUserId: string) {
 export async function requestPartnerSignupOtp(
   token: string,
 ): Promise<SendOtpResult> {
-  const supabase = await getSupabaseServerClient();
-  const { data: claimsData, error: claimsError } =
-    await supabase.auth.getClaims();
-  const authUserId = claimsError ? null : (claimsData?.claims.sub ?? null);
-  if (!authUserId) {
-    return {
-      ok: false,
-      error: "카카오 세션이 만료됐어요. 처음부터 다시 시도해주세요.",
-    };
-  }
+  const callerLookup = await resolveCallerAuth(token);
+  if (!callerLookup.ok) return { ok: false, error: callerLookup.error };
 
-  const lookup = await getInvitationForCaller(token, authUserId);
+  const lookup = await getInvitationForCaller(token, callerLookup.caller);
   if (!lookup.ok) return { ok: false, error: lookup.error };
   const { invitation } = lookup;
 
@@ -246,21 +327,18 @@ export async function verifyPartnerSignupOtp(
     return { ok: false, error: "인증번호 6자리를 입력해주세요." };
   }
 
-  const supabase = await getSupabaseServerClient();
-  const { data: claimsData, error: claimsError } =
-    await supabase.auth.getClaims();
-  const claims = claimsError ? null : claimsData?.claims;
-  const authUserId = claims?.sub ?? null;
-  const authUserEmail =
-    typeof claims?.email === "string" ? claims.email : null;
-  if (!authUserId || !authUserEmail) {
+  const callerLookup = await resolveCallerAuth(token);
+  if (!callerLookup.ok) return { ok: false, error: callerLookup.error };
+  const { caller, authUserEmail } = callerLookup;
+
+  if (caller.kind === "kakao" && !authUserEmail) {
     return {
       ok: false,
       error: "카카오 세션이 만료됐어요. 처음부터 다시 시도해주세요.",
     };
   }
 
-  const lookup = await getInvitationForCaller(token, authUserId);
+  const lookup = await getInvitationForCaller(token, caller);
   if (!lookup.ok) return { ok: false, error: lookup.error };
   const { invitation } = lookup;
 
@@ -280,6 +358,96 @@ export async function verifyPartnerSignupOtp(
   // 코드 일치 — 즉시 무효화. 가입 트랜잭션 실패해도 같은 코드 재사용은 막음.
   await redis.del(key);
 
+  // 어드민 본인 겸직 흐름 — 기존 User row 에 Partner extension 만 추가.
+  if (caller.kind === "admin") {
+    try {
+      await prisma.$transaction(async (tx) => {
+        const reread = await tx.partnerInvitation.findUnique({
+          where: { id: invitation.id },
+          select: {
+            consumedAt: true,
+            expiresAt: true,
+            existingUserId: true,
+            phone: true,
+          },
+        });
+        if (
+          !reread ||
+          reread.consumedAt ||
+          reread.expiresAt.getTime() < Date.now() ||
+          reread.existingUserId !== caller.adminUserId
+        ) {
+          throw new InvitationStaleError();
+        }
+        // user.phone 과 invitation.phone 의 사후 mismatch 차단.
+        const user = await tx.user.findUnique({
+          where: { id: caller.adminUserId },
+          select: {
+            phone: true,
+            partner: { select: { id: true } },
+            admin: { select: { active: true } },
+          },
+        });
+        if (
+          !user ||
+          !user.admin?.active ||
+          user.partner ||
+          user.phone !== reread.phone
+        ) {
+          throw new InvitationStaleError();
+        }
+
+        await tx.partner.create({
+          data: {
+            id: caller.adminUserId,
+            bio: invitation.bio,
+            yearsOfExperience: invitation.yearsOfExperience,
+            trustMetric: invitation.trustMetric,
+            licenseNumber: invitation.licenseNumber,
+            active: invitation.active,
+          },
+        });
+        await tx.partnerCreditBalance.create({
+          data: { partnerId: caller.adminUserId },
+        });
+        await tx.partnerMatchStats.create({
+          data: { partnerId: caller.adminUserId },
+        });
+        await tx.partnerInvitation.update({
+          where: { id: invitation.id },
+          data: {
+            consumedAt: new Date(),
+            consumedUserId: caller.adminUserId,
+            phoneVerifiedAt: new Date(),
+          },
+        });
+      });
+    } catch (err) {
+      if (err instanceof InvitationStaleError) {
+        return {
+          ok: false,
+          error: "어드민 본인 상태가 변경됐어요. 다시 시도해주세요.",
+        };
+      }
+      if (err instanceof Prisma.PrismaClientKnownRequestError) {
+        if (err.code === "P2002") {
+          return {
+            ok: false,
+            error: "이미 등록된 자격번호이거나 충돌이 발생했어요.",
+          };
+        }
+      }
+      console.error("[partner-signup] admin-extension transaction failed", err);
+      return {
+        ok: false,
+        error: "가입 처리 중 오류가 발생했어요. 다시 시도해주세요.",
+      };
+    }
+
+    redirect("/admin/partners");
+  }
+
+  // 일반 신규 가입 흐름 — user + partner 동시 INSERT.
   const userId = newId();
 
   try {
@@ -297,7 +465,7 @@ export async function verifyPartnerSignupOtp(
         !reread ||
         reread.consumedAt ||
         reread.expiresAt.getTime() < Date.now() ||
-        reread.linkedAuthId !== authUserId
+        reread.linkedAuthId !== caller.authUserId
       ) {
         throw new InvitationStaleError();
       }
@@ -305,8 +473,8 @@ export async function verifyPartnerSignupOtp(
       await tx.user.create({
         data: {
           id: userId,
-          authId: authUserId,
-          email: authUserEmail,
+          authId: caller.authUserId,
+          email: authUserEmail!,
           name: invitation.name,
           phone: invitation.phone,
         },
