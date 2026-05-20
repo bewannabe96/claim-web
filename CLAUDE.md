@@ -24,7 +24,7 @@
 - `<Image priority>` → **`preload`**, `quality` 필수, `images.domains` → `remotePatterns`.
 - Parallel route 슬롯에 **`default.tsx` 없으면 빌드 실패**.
 - `<Link href>`는 typedRoutes 검증 — 동적 쿼리는 `href={{ pathname, query }}` 객체 형식.
-- **Client Component `useState` 는 Router Cache 가 보존** — soft nav 후 같은 라우트에 재진입하면 떠날 때 state 그대로 복원됨. fresh state 원하면 navigate 직전 명시적 reset (예: [step1-wizard.tsx](src/app/(marketing)/request/new/_components/step1-wizard.tsx)).
+- **Client Component `useState` 는 Router Cache 가 보존** — soft nav 후 같은 라우트에 재진입하면 떠날 때 state 그대로 복원됨. fresh state 원하면 navigate 직전 명시적 reset (예: [step1-wizard.tsx](src/app/(marketing)/plan-request/new/_components/step1-wizard.tsx)).
 - **`schema.prisma` 변경 후 dev 서버 재시작 필수** — `pnpm db:push` 가 DB + generated client 는 갱신하지만, 실행 중인 next-dev 가 메모리에 OLD client 를 들고 있어 `PrismaClientValidationError: Unknown argument` 발생. Turbopack HMR 가 `node_modules` 의 generated 모듈은 watch 안 함.
 - **PortOne webhook 은 콘솔에서 "결제모듈 V2" 등록 필수** — `@portone/server-sdk` 의 verify 가 2024-04-25 페이로드 전용. V1 또는 다른 버전은 `Unrecognized` 로 분류되어 silent ignored (잔액 누락). 자세한 건 [docs/credits.md §4](docs/credits.md), [features/credits/CLAUDE.md](src/features/credits/CLAUDE.md).
 
@@ -37,12 +37,12 @@ src/
 ├─ app/               # 라우팅 (App Router)
 │  ├─ (marketing)/    # 비인증 영역
 │  ├─ admin/          # 운영자 (Supabase auth + admin 화이트리스트 + knock). partners/ 는 가입 초청 발급
-│  ├─ partner/        # 설계사 (Kakao OAuth + partner 화이트리스트). 알림톡 토큰 진입(assignments/) + 가입 초청(signup/[token])
-│  ├─ request/        # 가입자 (계정 없음 — 휴대폰 번호 식별자)
+│  ├─ partner/        # 설계사 (Kakao OAuth + partner 화이트리스트). 알림톡 토큰 진입(plan-request-assignments/) + 가입 초청(signup/[token])
+│  ├─ plan-request/   # 가입자 (계정 없음 — 휴대폰 번호 식별자)
 │  └─ api/auth/callback/  # Supabase OAuth 콜백 (Kakao → login / signup 분기)
 ├─ components/ui/     # shadcn 프리미티브 (수동 편집 X)
 ├─ features/          # 도메인 모듈 (schema/queries/actions/ui)
-│  ├─ admin/  partners/  proposals/  requests/  credits/
+│  ├─ admin/  partners/  plan-proposals/  plan-requests/  credits/
 ├─ server/            # 'server-only'. DAL, Supabase, prisma, S3
 │  ├─ dal.ts          #   모든 인증 검사 단일 진입점 (User + 역할 extension)
 │  ├─ supabase.ts     #   @supabase/ssr 서버 클라이언트
@@ -63,14 +63,14 @@ pnpm lint      # ESLint
 
 ## 로컬 인프라
 
-worktree 마다 격리된 Docker Postgres + Redis. `schema.prisma` 변경은 `pnpm db:push` 로 로컬에 즉시 sync (migration 안 만듦). Redis 는 OTP 코드 (`features/requests` 본인인증) + IP 레이트리밋 카운터 + 크레딧 충전 pending stash (`features/credits`) 보관처 — TTL 만으로 수명 관리. 전체 흐름: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
+worktree 마다 격리된 Docker Postgres + Redis. `schema.prisma` 변경은 `pnpm db:push` 로 로컬에 즉시 sync (migration 안 만듦). Redis 는 OTP 코드 (`features/plan-requests` 본인인증) + IP 레이트리밋 카운터 + 크레딧 충전 pending stash (`features/credits`) 보관처 — TTL 만으로 수명 관리. 전체 흐름: **[docs/worktree-workflow.md](docs/worktree-workflow.md)**.
 
 ```bash
 pnpm workspace:setup              # 첫 진입: Docker 기동 + migration deploy + seed (멱등)
 pnpm db:push                      # 일상: schema.prisma 변경 후 로컬 격리 DB 즉시 sync
 pnpm db:migrate:deploy            # 기존 migration 을 로컬에 적용
 pnpm db:reset                     # 볼륨 삭제 → 다음 workspace:setup 에서 깨끗하게
-pnpm db:seed                      # app_settings + admin 본인 + dev partner_invitation + partner_credit_balance 백필 (workspace:setup 이 자동 호출)
+pnpm db:seed                      # app_settings + admin 본인 + dev partner_signup_invitation + partner_credit_balance 백필 (workspace:setup 이 자동 호출)
 pnpm cleanup:orphan-db-containers # 사라진 worktree 의 고아 컨테이너 + 볼륨 일괄 삭제 (메인 리포에서 호출)
 ```
 

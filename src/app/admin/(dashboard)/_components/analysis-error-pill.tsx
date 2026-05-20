@@ -1,7 +1,7 @@
 import {
   ANALYSIS_ERROR_GROUP_LABEL,
   type AnalysisErrorGroup,
-} from "@/features/proposals/schema";
+} from "@/features/plan-proposals/schema";
 import { cn } from "@/lib/utils";
 
 /**

@@ -117,19 +117,19 @@ CRON_SECRET=<openssl rand -hex 32>
 
 #### 배경
 
-- `PlanRequest.deadlineAt` 은 `dispatchedAt + AppSettings.submissionDeadlineHours` 로 set ([src/features/requests/actions.ts:331-349](../src/features/requests/actions.ts)).
-- `MatchAssignment.status` 는 `pending → submitted` 또는 `pending → expired` 둘 중 하나로만 종결됨.
+- `PlanRequest.deadlineAt` 은 `dispatchedAt + AppSettings.submissionDeadlineHours` 로 set ([src/features/plan-requests/actions.ts:331-349](../src/features/plan-requests/actions.ts)).
+- `PlanRequestAssignment.status` 는 `pending → submitted` 또는 `pending → expired` 둘 중 하나로만 종결됨.
 - 현재 `expired` 로 마킹하는 코드 경로는 **존재하지 않음**. 마감 후에도 영구 `pending` 으로 남음.
 - 분석 완료 웹훅 ([src/app/api/webhooks/eightytwo-judge-analysis/route.ts:197-220](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts)) 의 `plan_request.status='analyzing' → 'completed'` 전이는 **모든 assignment 가 종결** 됐을 때만 발생 → 1명이라도 `pending` 으로 남으면 영원히 `analyzing` 에 갇힘.
 
 #### 무엇을 한다
 
-1. `MatchAssignment WHERE status='pending' AND request.deadlineAt <= NOW()` 조회 (request 와 join).
+1. `PlanRequestAssignment WHERE status='pending' AND request.deadlineAt <= NOW()` 조회 (request 와 join).
 2. 해당 행을 `status='expired'` 로 일괄 업데이트.
 3. 영향받은 각 `requestId` 에 대해 **상태 전이 함수** 호출:
    - 모든 assignment 가 종결됐고 (`pending=0`)
    - 종결 중 submitted 가 1개 이상이면 `dispatched → analyzing` (이미 그렇지만 멱등).
-   - 모든 submitted assignment 의 proposal 이 analyzed 면 `analyzing → completed` (웹훅과 동일 로직).
+   - 모든 submitted assignment 의 plan_proposal 이 analyzed 면 `analyzing → completed` (웹훅과 동일 로직).
    - submitted 가 0개 (전부 expired) 면 `→ rematching` 또는 `→ failed` (작업 #4 트리거).
 4. `/admin/requests` revalidatePath.
 
@@ -138,24 +138,24 @@ CRON_SECRET=<openssl rand -hex 32>
 웹훅의 [route.ts:197-220](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts) 의 전이 코드를 **공용 함수로 추출**:
 
 ```ts
-// src/features/requests/state-transition.ts (신규)
+// src/features/plan-requests/state-transition.ts (신규)
 import "server-only";
 import { prisma } from "@/server/db/prisma";
 
 /**
- * plan_request 의 모든 match_assignment 가 종결됐을 때 다음 상태로 전이.
+ * plan_request 의 모든 plan_request_assignment 가 종결됐을 때 다음 상태로 전이.
  * 멱등 — WHERE 조건으로 잘못된 시점 호출은 no-op.
  *
  * 호출처:
- *  - 웹훅 (proposal 분석 완료 콜백) — 마지막 analyzed 가 들어왔을 때
+ *  - 웹훅 (plan_proposal 분석 완료 콜백) — 마지막 analyzed 가 들어왔을 때
  *  - cron (assignment-deadline-expiry) — pending 을 expired 로 바꾼 직후
  */
 export async function finalizeRequestStatus(requestId: string): Promise<void> {
   const [total, pending, submitted, analyzed] = await Promise.all([
-    prisma.matchAssignment.count({ where: { requestId } }),
-    prisma.matchAssignment.count({ where: { requestId, status: "pending" } }),
-    prisma.matchAssignment.count({ where: { requestId, status: "submitted" } }),
-    prisma.matchAssignment.count({
+    prisma.planRequestAssignment.count({ where: { requestId } }),
+    prisma.planRequestAssignment.count({ where: { requestId, status: "pending" } }),
+    prisma.planRequestAssignment.count({ where: { requestId, status: "submitted" } }),
+    prisma.planRequestAssignment.count({
       where: {
         requestId,
         status: "submitted",
@@ -195,7 +195,7 @@ export async function finalizeRequestStatus(requestId: string): Promise<void> {
 import "server-only";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/server/db/prisma";
-import { finalizeRequestStatus } from "@/features/requests/state-transition";
+import { finalizeRequestStatus } from "@/features/plan-requests/state-transition";
 
 export const dynamic = "force-dynamic";
 
@@ -206,7 +206,7 @@ export async function GET(req: Request) {
 
   // 마감 지난 pending assignment 의 requestId 수집
   const now = new Date();
-  const stale = await prisma.matchAssignment.findMany({
+  const stale = await prisma.planRequestAssignment.findMany({
     where: {
       status: "pending",
       request: { deadlineAt: { lte: now } },
@@ -218,7 +218,7 @@ export async function GET(req: Request) {
     return Response.json({ ok: true, expired: 0, transitioned: 0 });
   }
 
-  await prisma.matchAssignment.updateMany({
+  await prisma.planRequestAssignment.updateMany({
     where: { id: { in: stale.map((s) => s.id) } },
     data: { status: "expired" },
   });
@@ -239,7 +239,7 @@ export async function GET(req: Request) {
 
 #### 체크리스트
 
-- [ ] `src/features/requests/state-transition.ts` 신규 + 웹훅 리팩토링
+- [ ] `src/features/plan-requests/state-transition.ts` 신규 + 웹훅 리팩토링
 - [ ] `src/app/api/cron/assignment-deadline-expiry/route.ts` 추가
 - [ ] `vercel.json` 에 schedule 등록
 - [ ] `CRON_SECRET` 환경변수 등록 (Vercel + .env.local)
@@ -248,7 +248,7 @@ export async function GET(req: Request) {
 #### 알림 발송 (현황)
 
 - 분석 완료 (`analyzing → completed`) 시 가입자 결과 페이지 링크 LMS — **구현 완료** ([webhook route 의 `notifyAnalysisCompleted`](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts), `server/aligo.ts:sendNotificationLms` 사용).
-- 작업 #1 (deadline 만료) 트리거 시점의 부수 알림은 미구현 — `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4), 그리고 작업 #4 의 `dispatched → rematching` 전이 시 가입자 재매칭 알림 LMS (시점 1-4) 가 함께 발송돼야 함. 두 시점 모두 `proposals/schema.ts` / `requests/schema.ts` 의 status enum 옆에 TODO 주석 표기. 알리고 LMS 모듈은 이미 존재하므로 cron 구현 시 `sendNotificationLms` 호출만 추가.
+- 작업 #1 (deadline 만료) 트리거 시점의 부수 알림은 미구현 — `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4), 그리고 작업 #4 의 `dispatched → rematching` 전이 시 가입자 재매칭 알림 LMS (시점 1-4) 가 함께 발송돼야 함. 두 시점 모두 `plan-proposals/schema.ts` / `plan-requests/schema.ts` 의 status enum 옆에 TODO 주석 표기. 알리고 LMS 모듈은 이미 존재하므로 cron 구현 시 `sendNotificationLms` 호출만 추가.
 
 ---
 
@@ -261,7 +261,7 @@ export async function GET(req: Request) {
 #### 배경
 
 - `AppSettings.resultRetentionDays` (기본 7일) — [prisma/schema.prisma:408](../prisma/schema.prisma).
-- 결과 페이지 [src/app/(marketing)/request/[id]/result/page.tsx](../src/app/(marketing)/request/%5Bid%5D/result/page.tsx) 가 `dispatchedAt + N일` 비교로 차단.
+- 결과 페이지 [src/app/(marketing)/plan-request/result/[token]/page.tsx](../src/app/(marketing)/plan-request/result/%5Btoken%5D/page.tsx) 가 `dispatchedAt + N일` 비교로 차단.
 - DB 행은 무한 적재 → 장기 운영 시 스토리지 + 개인정보 누적.
 
 #### 무엇을 한다
@@ -270,14 +270,14 @@ export async function GET(req: Request) {
 2. `PlanRequest WHERE dispatchedAt IS NOT NULL AND dispatchedAt + N일 < NOW() AND status IN ('completed', 'failed', 'rematching')` 조회.
 3. **정책 결정 필요**:
    - **A안 (권장)**: `resultToken` 만 `null` 로 비우고 `status='ended'` 마킹 (감사 로그용 row 보존).
-   - **B안**: 전체 행 `delete` (proposal + match_assignment + medicalHistory 까지 cascade).
+   - **B안**: 전체 행 `delete` (plan_proposal + plan_request_assignment + medicalHistory 까지 cascade).
 4. revalidatePath('/admin/requests').
 
 > 정책 결정 전까지는 A안 (soft expire) 로 시작.
 
 #### 신규 상태 `ended` 추가
 
-`PLAN_REQUEST_STATUSES` ([src/features/requests/schema.ts:287](../src/features/requests/schema.ts)) 에 이미 정의되어 있는지 확인 — 현재는 없음. 추가 필요:
+`PLAN_REQUEST_STATUSES` ([src/features/plan-requests/schema.ts:287](../src/features/plan-requests/schema.ts)) 에 이미 정의되어 있는지 확인 — 현재는 없음. 추가 필요:
 
 ```ts
 export const PLAN_REQUEST_STATUSES = [
@@ -343,13 +343,13 @@ export async function GET(req: Request) {
 
 #### 배경
 
-- `PartnerInvitation.expiresAt` 기본 TTL = `PARTNER_INVITATION_TTL_DAYS` (기본 7일, env override) — [src/features/partners/schema.ts:85](../src/features/partners/schema.ts).
+- `PartnerSignupInvitation.expiresAt` 기본 TTL = `PARTNER_INVITATION_TTL_DAYS` (기본 7일, env override) — [src/features/partners/schema.ts:85](../src/features/partners/schema.ts).
 - `consumedAt` null 인 행이 만료 후에도 잔존.
 - 가입 흐름은 `expiresAt < NOW()` 를 lazy 검증 ([src/features/partners/queries.ts:139](../src/features/partners/queries.ts)).
 
 #### 무엇을 한다
 
-1. `PartnerInvitation WHERE consumedAt IS NULL AND expiresAt < NOW()` 조회.
+1. `PartnerSignupInvitation WHERE consumedAt IS NULL AND expiresAt < NOW()` 조회.
 2. `prisma.partnerInvitation.deleteMany({ ... })`.
 3. `revalidatePath('/admin/partners')`.
 
@@ -402,7 +402,7 @@ export async function GET(req: Request) {
 
 - PRD §5.7: "1회 자동 재매칭 — 새 N명 후보 추천 → 가입자에게 알림으로 재선택 요청" (현재 알림 채널은 알리고 LMS).
 - `PlanRequest.rematchCount` 필드 존재 ([prisma/schema.prisma:68](../prisma/schema.prisma)), 기본 0.
-- `PlanRequestStatus.rematching` 상태 정의됨 ([src/features/requests/schema.ts:294](../src/features/requests/schema.ts)).
+- `PlanRequestStatus.rematching` 상태 정의됨 ([src/features/plan-requests/schema.ts:294](../src/features/plan-requests/schema.ts)).
 - 재매칭 실행 로직은 **구현 안 됨**.
 
 #### 무엇을 한다
@@ -411,9 +411,9 @@ export async function GET(req: Request) {
 
 1. `PlanRequest WHERE status='rematching' AND rematchCount=0` 조회.
 2. 각 요청에 대해:
-   - 기존 `findMatchCandidates()` 재호출 (이전 후보 제외).
-   - 새 `PlanRequestCandidate` rows insert.
-   - 새 `MatchAssignment` rows 생성 (가입자가 다시 선택해야 하므로 즉시 송부 아님 — UX 결정 필요).
+   - 기존 `findAssignmentCandidates()` 재호출 (이전 후보 제외).
+   - 새 `PlanRequestAssignmentCandidate` rows insert.
+   - 새 `PlanRequestAssignment` rows 생성 (가입자가 다시 선택해야 하므로 즉시 송부 아님 — UX 결정 필요).
    - **UX 분기 결정 필요**:
      - 옵션 A: 가입자에게 "재선택" 알림 (LMS) → 가입자가 새 후보 중 K명 다시 골라야 함.
      - 옵션 B: 시스템이 자동으로 상위 K명 선택 → 즉시 송부 (UX 단순, 가입자 의사 무시).
@@ -423,7 +423,7 @@ export async function GET(req: Request) {
 #### 의존성
 
 - [ ] **UX 결정**: 옵션 A vs B
-- [ ] `findMatchCandidates()` 의 "이전 후보 제외" 옵션 — 현재 시그니처 확인 필요
+- [ ] `findAssignmentCandidates()` 의 "이전 후보 제외" 옵션 — 현재 시그니처 확인 필요
 
 (알림 발송 인프라는 `server/aligo.ts:sendNotificationLms` 로 이미 제공됨 — cron 구현 시 호출만 추가.)
 
@@ -441,20 +441,20 @@ export async function GET(req: Request) {
 
 #### 배경
 
-- 외부 분석 파이프라인 (eightytwo_judge) 일시 장애 → `proposal.analysisError + analysisErrorAt` 마킹.
-- 어드민이 `/admin/analysis-failures` 에서 수동 "재시도" 클릭 — [src/features/proposals/actions.ts:204](../src/features/proposals/actions.ts) 의 `retryProposalAnalysis()`.
+- 외부 분석 파이프라인 (eightytwo_judge) 일시 장애 → `plan_proposal.analysisError + analysisErrorAt` 마킹.
+- 어드민이 `/admin/analysis-failures` 에서 수동 "재시도" 클릭 — [src/features/plan-proposals/actions.ts:204](../src/features/plan-proposals/actions.ts) 의 `retryPlanProposalAnalysis()`.
 - 일시 장애의 경우 사람 개입 없이 자동 재시도가 충분.
 
 #### 무엇을 한다
 
-1. `Proposal WHERE analyzedAt IS NULL AND analysisErrorAt IS NOT NULL AND analysisErrorAt < NOW() - 30분` 조회.
-2. 각 proposal 에 대해 `retryProposalAnalysis()` 의 코어 로직 호출 (admin 검증 제외 → 함수 분리 필요).
+1. `PlanProposal WHERE analyzedAt IS NULL AND analysisErrorAt IS NOT NULL AND analysisErrorAt < NOW() - 30분` 조회.
+2. 각 plan_proposal 에 대해 `retryPlanProposalAnalysis()` 의 코어 로직 호출 (admin 검증 제외 → 함수 분리 필요).
 3. 최대 재시도 횟수 추적 — **schema 확장 필요**.
 
-#### Schema 확장 (`Proposal` 모델)
+#### Schema 확장 (`PlanProposal` 모델)
 
 ```prisma
-model Proposal {
+model PlanProposal {
   // 기존 필드 ...
 
   /// 자동 재시도 횟수. cron 이 증가시키며, 최대 3 회까지.
@@ -480,19 +480,19 @@ model Proposal {
 #### 구현 골격
 
 ```ts
-// src/features/proposals/actions.ts — 함수 분리
-export async function _retryProposalAnalysisCore(proposalId: string) {
+// src/features/plan-proposals/actions.ts — 함수 분리
+export async function _retryPlanProposalAnalysisCore(proposalId: string) {
   // requireAdminSession() 제외, 본 로직만
   // ...
 }
 
-export async function retryProposalAnalysis(proposalId: string) {
+export async function retryPlanProposalAnalysis(proposalId: string) {
   await requireAdminSession();
-  return _retryProposalAnalysisCore(proposalId);
+  return _retryPlanProposalAnalysisCore(proposalId);
 }
 
 // src/app/api/cron/retry-failed-analysis/route.ts
-import { _retryProposalAnalysisCore } from "@/features/proposals/actions";
+import { _retryPlanProposalAnalysisCore } from "@/features/plan-proposals/actions";
 
 export async function GET(req: Request) {
   if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -502,7 +502,7 @@ export async function GET(req: Request) {
   const MAX_RETRIES = 3;
   const cutoff = new Date(Date.now() - 30 * 60 * 1000);
 
-  const candidates = await prisma.proposal.findMany({
+  const candidates = await prisma.plan_proposal.findMany({
     where: {
       analyzedAt: null,
       analysisErrorAt: { lt: cutoff },
@@ -514,11 +514,11 @@ export async function GET(req: Request) {
   });
 
   for (const { id } of candidates) {
-    await prisma.proposal.update({
+    await prisma.plan_proposal.update({
       where: { id },
       data: { retryCount: { increment: 1 } },
     });
-    await _retryProposalAnalysisCore(id);
+    await _retryPlanProposalAnalysisCore(id);
   }
 
   return Response.json({ ok: true, retried: candidates.length });
@@ -527,8 +527,8 @@ export async function GET(req: Request) {
 
 #### 체크리스트
 
-- [ ] `Proposal.retryCount` schema 추가 + `pnpm db:push` (worktree 한정)
-- [ ] `retryProposalAnalysis` 를 `_retryProposalAnalysisCore` 로 분리
+- [ ] `PlanProposal.retryCount` schema 추가 + `pnpm db:push` (worktree 한정)
+- [ ] `retryPlanProposalAnalysis` 를 `_retryPlanProposalAnalysisCore` 로 분리
 - [ ] 어드민 수동 재시도 시 `retryCount = 0` 으로 리셋 (admin override)
 - [ ] cron 라우트 추가
 - [ ] vercel.json 등록
@@ -542,7 +542,7 @@ export async function GET(req: Request) {
 #### 현재 구현
 
 - 알리고 SMS / LMS 게이트웨이 통합 완료: [src/server/aligo.ts](../src/server/aligo.ts) (`sendOtpSms` + `sendNotificationLms`).
-- 가입자 본인인증 OTP 발송: [src/features/requests/actions.ts](../src/features/requests/actions.ts) `sendOtp`.
+- 가입자 본인인증 OTP 발송: [src/features/plan-requests/actions.ts](../src/features/plan-requests/actions.ts) `sendOtp`.
 - 설계사 가입 OTP 발송: [src/app/partner/signup/[token]/actions.ts](../src/app/partner/signup/[token]/actions.ts).
 - 코드 저장: Redis 키 `otp:code:{requestId}:{phone}`, TTL = **180초** (`OTP_TTL_SECONDS`). TTL 이 곧 재전송 쿨다운 + 만료.
 - `ALIGO_TEST_MODE=Y` 일 때만 코드 `"000000"` 고정 + 알리고 호출 생략 (dev/test 편의).

@@ -2,8 +2,6 @@
 
 이 문서는 프로젝트의 **도메인 엔티티 이름 / 어휘 / 명명 컨벤션** 의 단일 진실 공급원이다. 새 코드 / 문서 / 알림 문구를 작성할 때 여기 정의된 이름과 어휘를 따른다.
 
-> ⚠️ **현재 상태**: 이 문서가 정의하는 캐노니컬 이름은 **목표 상태**다. 코드/DB/라우트 일부는 옛 이름으로 남아 있으며 후속 PR 로 정렬 중. 매핑은 각 섹션의 "현재 코드 → 캐노니컬" 표 참조.
-
 ---
 
 ## 1. 핵심 엔티티 사전
@@ -16,37 +14,33 @@
 - **정의**: 가입자가 만든 보험 설계 요청서 본체. 5-phase wizard (basic / coverage / budget / medical / notes) 의 종착점.
 - **DB**: `plan_request`
 - **수명**: 한 번 INSERT 후 status 만 전이 (`draft → selecting → confirming → dispatched → analyzing → completed`).
-- **위치**: features/plan-requests/ (현재 `features/requests/`)
-- **소유 라우트** (가입자): `/plan-request/*` (현재 `/request/*`)
+- **위치**: features/plan-requests/
+- **소유 라우트** (가입자): `/plan-request/*`
 
 #### `PlanRequestAssignmentCandidate` (배정 후보)
-- **정의**: 매칭 알고리즘이 산출한 `(PlanRequest × Partner)` 후보 슬롯. N명 산출 후 가입자가 K명 선택. selected=true 인 row 가 실제 배정 대상.
-- **DB**: `plan_request_assignment_candidate` (현재 `plan_request_candidate`)
+- **정의**: 알고리즘이 산출한 `(PlanRequest × Partner)` 후보 슬롯. N명 산출 후 가입자가 K명 선택. selected=true 인 row 가 실제 배정 대상.
+- **DB**: `plan_request_assignment_candidate`
 - **수명**: PlanRequest 작성 트랜잭션 안에서 N개 동시 INSERT. 가입자 선택 시 selected 토글.
 - **위치**: features/plan-requests/
-- **현재 코드명**: `PlanRequestCandidate` → **캐노니컬: `PlanRequestAssignmentCandidate`**
 
 #### `PlanRequestAssignment` (배정)
 - **정의**: 가입자가 선택한 K명 설계사 각각에 대해 1 row. 알림톡 일회용 토큰 보유 — 설계사가 토큰으로 진입해 제안서 제출. status: `pending → submitted/expired`.
-- **DB**: `plan_request_assignment` (현재 `match_assignment`)
+- **DB**: `plan_request_assignment`
 - **수명**: PlanRequest finalize 트랜잭션 안에서 K개 동시 INSERT.
 - **위치**: 생성은 features/plan-requests/, 토큰 조회 + 제출은 features/plan-proposals/
-- **소유 라우트** (설계사): `/partner/plan-request-assignments/*` (현재 `/partner/assignments/*`)
-- **현재 코드명**: `MatchAssignment` → **캐노니컬: `PlanRequestAssignment`**
+- **소유 라우트** (설계사): `/partner/plan-request-assignments/*`
 
 #### `PlanProposal` (제안서)
 - **정의**: 설계사가 `PlanRequestAssignment` 에 제출한 진설계 PDF + 100자 한줄 요약. assignment 와 1:1.
-- **DB**: `plan_proposal` (현재 `proposal`)
+- **DB**: `plan_proposal`
 - **수명**: 설계사 토큰 진입 → PDF 업로드 → submit 시 INSERT (1회). assignment.status='submitted' 와 같은 트랜잭션.
-- **위치**: features/plan-proposals/ (현재 `features/proposals/`)
-- **현재 코드명**: `Proposal` → **캐노니컬: `PlanProposal`**
+- **위치**: features/plan-proposals/
 
 #### `PlanProposalAnalysisReport` (제안서 분석 리포트)
 - **정의**: AI 분석 파이프라인 (`eightytwo_judge`) 이 `PlanProposal` PDF 를 분석한 결과. proposal 과 1:1.
-- **DB**: `plan_proposal_analysis_report` (현재 `proposal_analysis_report`)
+- **DB**: `plan_proposal_analysis_report`
 - **schemaVersion v5** — 진화 시 row 교체 + `analysis-schema.ts` 의 `CURRENT_REPORT_VERSION` 갱신.
 - **위치**: features/plan-proposals/
-- **현재 코드명**: `ProposalAnalysisReport` → **캐노니컬: `PlanProposalAnalysisReport`**
 
 ---
 
@@ -69,17 +63,15 @@
 
 #### `PartnerSignupInvitation` (설계사 가입 초청)
 - **정의**: 어드민이 발급한 일회용 가입 토큰. 카카오 OAuth + 휴대폰 OTP 본인인증 두 단계 통과 시 소비되어 user + partner row 가 동시 INSERT 됨.
-- **DB**: `partner_signup_invitation` (현재 `partner_invitation`)
+- **DB**: `partner_signup_invitation`
 - **수명**: 발급 → 토큰 URL 전달 → 가입 트랜잭션 시 `consumedAt` 마킹 (audit 보존).
 - **위치**: features/partners/
-- **현재 코드명**: `PartnerInvitation` → **캐노니컬: `PartnerSignupInvitation`**
-  - 향후 다른 종류 초청 (그룹 초청, 추천 초청 등) 추가 시 충돌 회피.
+- **Signup prefix 의 의미**: 향후 다른 종류 초청 (그룹 초청, 추천 초청 등) 추가 시 충돌 회피.
 
 #### `PartnerAssignmentStats` (설계사 배정 통계)
 - **정의**: Partner 와 1:1. 배정 funnel 카운터 (`exposureCount` / `selectedCount` / `contactedCount`). 정렬 키 + 운영 지표.
-- **DB**: `partner_assignment_stats` (현재 `partner_match_stats`)
+- **DB**: `partner_assignment_stats`
 - **위치**: features/partners/
-- **현재 코드명**: `PartnerMatchStats` → **캐노니컬: `PartnerAssignmentStats`**
 - **카운터 정의** (퍼널 단계 순):
   - `exposureCount`: `PlanRequestAssignmentCandidate` INSERT (= 후보 카드 등장)
   - `selectedCount`: `PlanRequestAssignment` INSERT (= 알림톡 발송 대상으로 배정)
@@ -219,18 +211,18 @@ model Partner {
 
 ## 4. 라우트 ↔ 엔티티 매핑
 
-| 라우트 | 주 엔티티 | 역할 | 현재 → 캐노니컬 |
-|---|---|---|---|
-| `/plan-request/new` | PlanRequest | 5-phase wizard | `/request/new` → `/plan-request/new` |
-| `/plan-request/[id]/candidates` | PlanRequestAssignmentCandidate | 후보 노출 + 선택 | `/request/[id]/candidates` → `/plan-request/[id]/candidates` |
-| `/plan-request/[id]/confirm` | PlanRequest | 본인 인증 + 동의 | `/request/[id]/confirm` → `/plan-request/[id]/confirm` |
-| `/plan-request/[id]/dispatched` | PlanRequest | 송부 완료 | `/request/[id]/dispatched` → `/plan-request/[id]/dispatched` |
-| `/plan-request/result/[token]` | PlanProposal × N | 제안서 비교 | `/result/[token]` → `/plan-request/result/[token]` |
-| `/partner/plan-request-assignments/[token]` | PlanRequestAssignment | 토큰 진입 + 제안서 제출 | `/partner/assignments/[token]` → `/partner/plan-request-assignments/[token]` |
-| `/partner/plan-request-assignments/done` | — | 제출 완료 안내 | `/partner/assignments/done` → `/partner/plan-request-assignments/done` |
-| `/partner/signup/[token]` | PartnerSignupInvitation | 가입 흐름 Step 1 | 그대로 |
-| `/partner/signup/[token]/verify` | PartnerSignupInvitation | 가입 흐름 Step 2 | 그대로 |
-| `/admin/requests/[id]` | PlanRequest | 운영자 요청 상세 | 그대로 (어드민 라우트는 별 도메인) |
+| 라우트 | 주 엔티티 | 역할 |
+|---|---|---|
+| `/plan-request/new` | PlanRequest | 5-phase wizard |
+| `/plan-request/[id]/candidates` | PlanRequestAssignmentCandidate | 후보 노출 + 선택 |
+| `/plan-request/[id]/confirm` | PlanRequest | 본인 인증 + 동의 |
+| `/plan-request/[id]/dispatched` | PlanRequest | 송부 완료 |
+| `/plan-request/result/[token]` | PlanProposal × N | 제안서 비교 |
+| `/partner/plan-request-assignments/[token]` | PlanRequestAssignment | 토큰 진입 + 제안서 제출 |
+| `/partner/plan-request-assignments/done` | — | 제출 완료 안내 |
+| `/partner/signup/[token]` | PartnerSignupInvitation | 가입 흐름 Step 1 |
+| `/partner/signup/[token]/verify` | PartnerSignupInvitation | 가입 흐름 Step 2 |
+| `/admin/requests/[id]` | PlanRequest | 운영자 요청 상세 (어드민 라우트는 별 도메인) |
 
 ### 4.1 라우트 명명 결정 근거
 
@@ -267,12 +259,11 @@ src/features/
 
 ---
 
-## 6. 부록 — 마이그레이션 진행 상황
+## 6. 부록 — 캐노니컬 정착 이력
 
-| 단계 | 상태 | PR |
+| 단계 | PR | 내용 |
 |---|---|---|
-| **PR 1** — 본 문서 작성 + 참조 링크 | 진행 중 | — |
-| **PR 2** — Prisma 모델 + features 폴더 rename (manual-migration) | 미진행 | — |
-| **PR 3** — 라우트 rename (`/request/*` 등) | 미진행 | — |
+| 1 | [#44](https://github.com/bewannabe96/claim-web/pull/44) | 본 문서 작성 + 주요 CLAUDE.md / architecture.md 에 참조 링크 추가 |
+| 2 | [#45](https://github.com/bewannabe96/claim-web/pull/45) | Prisma 모델 6개 rename + features 폴더 rename + 라우트 7개 rename (모든 코드/문서 일괄 정렬). manual migration SQL 은 별도 작업. |
 
 PR 머지가 끝나면 본 문서의 "(현재 …)" 주석을 제거하고 캐노니컬 이름만 남긴다.

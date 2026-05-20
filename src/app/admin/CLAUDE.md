@@ -69,7 +69,7 @@ admin/
    ├─ analysis-failures/page.tsx # 미해결 분석 실패 모니터링 + 재시도
    ├─ partners/...               # 설계사 풀 관리 (가입 초청 발급 + 등록된 partner 편집)
    │  ├─ page.tsx                # 가입 대기 (invitation) + 등록 완료 (partner) 2-섹션 리스트
-   │  ├─ new/page.tsx            # 신규 초청 발급 (createPartnerInvitation 액션)
+   │  ├─ new/page.tsx            # 신규 초청 발급 (createPartnerSignupInvitation 액션)
    │  ├─ invitations/[id]/...    # 초청 상세 — 가입 URL 복사 + 재발급/삭제/정보수정
    │  └─ [id]/page.tsx           # 등록 완료된 partner 편집 (updatePartner) + 크레딧 수동 조정 (adjustCredit, [features/credits](../../features/credits/CLAUDE.md))
    ├─ settings/...               # 시스템 설정
@@ -78,7 +78,7 @@ admin/
       ├─ admin-nav.tsx
       ├─ analysis-error-pill.tsx # 분석 실패 group 색상/라벨 단일화 — pill 직접 정의 금지
       ├─ page-shell.tsx
-      └─ retry-analysis-button.tsx  # 분석 재시도 client 버튼 (useTransition + retryProposalAnalysis)
+      └─ retry-analysis-button.tsx  # 분석 재시도 client 버튼 (useTransition + retryPlanProposalAnalysis)
 ```
 
 ## ENV
@@ -101,7 +101,7 @@ admin/
 partner 는 어드민이 직접 INSERT 하지 않음. 다음 흐름:
 
 1. `/admin/partners/new` 에서 이름/휴대폰 + partner 정보 입력 → "초청 발급"
-2. `createPartnerInvitation` 액션이 partner_invitation row + token + expiresAt 생성, `/admin/partners/invitations/<id>` 로 자동 이동
+2. `createPartnerSignupInvitation` 액션이 partner_signup_invitation row + token + expiresAt 생성, `/admin/partners/invitations/<id>` 로 자동 이동
 3. 발급된 가입 URL (`/partner/signup/<token>`) 복사 → 메신저로 설계사에게 전달
 4. 설계사가 **카카오 OAuth → 본인인증** 두 단계 완료 시점에 verify 액션이 user + partner 트랜잭션 INSERT + invitation 소비. 매 진입마다 새 OAuth 가 강제되며 콜백은 invitation 의 linkedAuthId 를 최신 계정으로 덮어씀 — 다른 카카오 계정으로 재시도 가능 (횡령 방지는 본인인증의 phone 매칭이 책임).
 5. 자세한 흐름은 [src/app/partner/CLAUDE.md](../partner/CLAUDE.md) 참조
@@ -120,7 +120,7 @@ partner 는 어드민이 직접 INSERT 하지 않음. 다음 흐름:
 3. 발급된 URL 을 **본인이 같은 브라우저에서 직접 클릭** → signup 페이지가 admin 세션 확인 후 verify 로 자동 forward (Kakao OAuth 우회). admin 세션 없으면 `/admin/login?next=...` 로 redirect.
 4. 휴대폰 OTP 본인인증 통과 시 트랜잭션이 user.create 대신 **`partner.create` + balance/stats eager-create + invitation 소비**. user row (name/email/authId/phone) 는 그대로. 가입 완료 후 `/admin/partners` 로 redirect.
 
-분기 기준은 `partner_invitation.existingUserId` 한 컬럼 — set 이면 겸직, NULL 이면 일반. OAuth 콜백 (`handleSignup`) 은 existingUserId set invitation 진입을 reject 해 정상 흐름 외 경로를 차단. 자세한 가입 트랜잭션 분기는 [src/app/partner/CLAUDE.md](../partner/CLAUDE.md).
+분기 기준은 `partner_signup_invitation.existingUserId` 한 컬럼 — set 이면 겸직, NULL 이면 일반. OAuth 콜백 (`handleSignup`) 은 existingUserId set invitation 진입을 reject 해 정상 흐름 외 경로를 차단. 자세한 가입 트랜잭션 분기는 [src/app/partner/CLAUDE.md](../partner/CLAUDE.md).
 
 ### 새 admin 계정 추가 (운영 환경)
 
@@ -159,4 +159,4 @@ DAL 이 매 요청마다 확인하므로 next 요청부터 차단.
 - ❌ `ADMIN_KNOCK_PATH` 를 평문 코드/git 에 커밋 — env 로만 관리
 - ❌ MFA 없이 obscurity (knock) 에만 의존 — 코드 한 번 새면 끝
 - ❌ User row 만 만들고 Admin row 누락 — admin extension row 자체가 권한. 누락 시 DAL 통과 안 됨
-- ❌ partner 를 어드민에서 직접 INSERT 하는 액션 부활 — `createPartner` 없음. 반드시 `createPartnerInvitation` → 콜백 흐름으로만 생성
+- ❌ partner 를 어드민에서 직접 INSERT 하는 액션 부활 — `createPartner` 없음. 반드시 `createPartnerSignupInvitation` → 콜백 흐름으로만 생성

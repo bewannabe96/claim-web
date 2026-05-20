@@ -2,13 +2,13 @@
 
 import { useState, useTransition } from "react";
 
-import { retryProposalAnalysis } from "@/features/proposals/actions";
+import { retryPlanProposalAnalysis } from "@/features/plan-proposals/actions";
 import { cn } from "@/lib/utils";
 
 /**
  * 분석 재시도 버튼 — 어드민 "분석 실패" 페이지 + 요청 상세에서 공유.
  *
- * 클릭 → `retryProposalAnalysis(proposalId)` 호출 → 결과를 인라인 텍스트로 표시
+ * 클릭 → `retryPlanProposalAnalysis(proposalId)` 호출 → 결과를 인라인 텍스트로 표시
  * (성공 시 "재요청됨", 실패 시 사유). 서버가 `revalidatePath` 를 부르므로 위 row
  * 는 곧 사라지지만, 1) 네비게이션 race, 2) 동시 다른 row 처리 가능성 때문에 버튼
  * 자체는 결과 메시지를 자신의 상태로 들고 있음.
@@ -37,7 +37,7 @@ export function RetryAnalysisButton({
         onClick={() =>
           startTransition(async () => {
             try {
-              const res = await retryProposalAnalysis(proposalId);
+              const res = await retryPlanProposalAnalysis(proposalId);
               if (res.ok) {
                 setResult({ kind: "success" });
               } else {

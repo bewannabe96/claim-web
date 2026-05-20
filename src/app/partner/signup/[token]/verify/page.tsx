@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getPartnerInvitationByToken } from "@/features/partners/queries";
+import { getPartnerSignupInvitationByToken } from "@/features/partners/queries";
 import { getOptionalAdminSession } from "@/server/dal";
 import { getSupabaseServerClient } from "@/server/supabase";
 
@@ -35,7 +35,7 @@ export default async function PartnerSignupVerifyPage({
   const { token } = await params;
   const { error } = await searchParams;
 
-  const invitation = await getPartnerInvitationByToken(token);
+  const invitation = await getPartnerSignupInvitationByToken(token);
   if (!invitation) {
     return (
       <main className="flex flex-col flex-1 px-6 pt-10 pb-8 bg-white">

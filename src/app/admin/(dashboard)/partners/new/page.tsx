@@ -1,4 +1,4 @@
-import { createPartnerInvitation } from "@/features/partners/actions";
+import { createPartnerSignupInvitation } from "@/features/partners/actions";
 
 import { PartnerForm } from "../../_components/partner-form";
 import { BackLink, PageHeader } from "../../_components/page-shell";
@@ -14,7 +14,7 @@ export default function AdminPartnerNewPage() {
         />
       </div>
       <PartnerForm
-        action={createPartnerInvitation}
+        action={createPartnerSignupInvitation}
         submitLabel="초청 발급"
         pendingLabel="발급 중..."
         enableAdminSelfLink

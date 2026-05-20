@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getPartnerInvitationByToken } from "@/features/partners/queries";
+import { getPartnerSignupInvitationByToken } from "@/features/partners/queries";
 import { getOptionalAdminSession } from "@/server/dal";
 
 import { signUpWithKakao } from "./actions";
@@ -40,7 +40,7 @@ export default async function PartnerSignupPage({
   const { token } = await params;
   const { error } = await searchParams;
 
-  const invitation = await getPartnerInvitationByToken(token);
+  const invitation = await getPartnerSignupInvitationByToken(token);
 
   if (!invitation) {
     return (

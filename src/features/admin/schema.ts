@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { KNOWN_CATEGORIES } from "@/features/proposals/category-labels";
+import { KNOWN_CATEGORIES } from "@/features/plan-proposals/category-labels";
 
 /**
  * 시스템 설정값 검증 스키마 — PRD §5.8.

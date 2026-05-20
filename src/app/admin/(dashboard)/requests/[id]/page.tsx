@@ -2,19 +2,19 @@ import { notFound } from "next/navigation";
 
 import { getPartnerCardsByIds } from "@/features/partners/queries";
 import type { PartnerCard } from "@/features/partners/schema";
-import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
+import { listAssignmentDetailsForRequest } from "@/features/plan-proposals/queries";
 import {
   type AnalysisError,
   type AssignmentStatus,
-  type Proposal,
-} from "@/features/proposals/schema";
-import { getRequestById } from "@/features/requests/queries";
+  type PlanProposal,
+} from "@/features/plan-proposals/schema";
+import { getRequestById } from "@/features/plan-requests/queries";
 import {
   TREATMENT_PERIOD_LABEL,
   coverageRequestToText,
   type MedicalHistoryEntry,
-} from "@/features/requests/schema";
-import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
+} from "@/features/plan-requests/schema";
+import { RequestStatusBadge } from "@/features/plan-requests/ui/status-badge";
 import { cn } from "@/lib/utils";
 import { GENDER_LABEL } from "@/types";
 
@@ -217,13 +217,13 @@ export default async function AdminRequestDetailPage({
             가입자가 알림톡으로 받는 결과 화면 (운영자도 동일 URL 로 검토 가능):
           </p>
           <a
-            href={`/result/${request.resultToken}`}
+            href={`/plan-request/result/${request.resultToken}`}
             target="_blank"
             rel="noopener noreferrer"
             title="새 탭에서 열기 — 가입자 POV"
             className="mt-2 block px-3 py-2 rounded-lg bg-[#fafafa] text-xs text-black break-all hover:bg-[#efefef] transition-colors"
           >
-            /result/{request.resultToken}
+            /plan-request/result/{request.resultToken}
           </a>
         </Card>
       )}
@@ -367,13 +367,13 @@ function AssignmentItem({
         )}
 
         <a
-          href={`/partner/assignments/${assignment.token}`}
+          href={`/partner/plan-request-assignments/${assignment.token}`}
           target="_blank"
           rel="noopener noreferrer"
           title="새 탭에서 열기 — 설계사 POV"
           className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs text-black break-all hover:bg-[#efefef] transition-colors"
         >
-          /partner/assignments/{assignment.token}
+          /partner/plan-request-assignments/{assignment.token}
         </a>
       </div>
 
@@ -399,7 +399,7 @@ function AssignmentItem({
  *   - analysisError 있음         → group 별 색상의 실패 pill
  *   - 둘 다 없음                 → "분석 중" (회색 + pulse)
  */
-function AnalysisStatusPill({ proposal }: { proposal: Proposal }) {
+function AnalysisStatusPill({ proposal }: { proposal: PlanProposal }) {
   if (proposal.analyzedAt) {
     return (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-black text-white">

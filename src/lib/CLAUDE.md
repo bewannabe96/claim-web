@@ -9,7 +9,7 @@
 ## 무엇이 안 들어가나
 
 - **서버 전용 코드** (DB, 세션 등) → `server/`
-- **도메인 로직** (proposals/partners 관련) → `features/<x>/`
+- **도메인 로직** (plan-proposals/partners 관련) → `features/<x>/`
 - **React 컴포넌트** → `components/` 또는 `features/<x>/ui/`
 
 ## ❌ 흔한 실수

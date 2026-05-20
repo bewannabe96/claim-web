@@ -9,7 +9,7 @@
  *      findUniqueOrThrow 가 admin UI 첫 진입에서 throw.
  *   2. claim.user + claim.admin — 본인 화이트리스트 (env 기반). 미설정 시 warn 만 하고 계속.
  *      /admin 안 들어가는 작업에는 무관.
- *   3. claim.partner_invitation — `/partner/signup/<token>` 흐름 dev 테스트용 1건.
+ *   3. claim.partner_signup_invitation — `/partner/signup/<token>` 흐름 dev 테스트용 1건.
  *      이미 존재하면 skip (consume 후 재시드 시 상태 충돌 방지). 새로 시작하려면
  *      admin UI 에서 삭제 후 재시드.
  *   4. claim.user + claim.partner (+ claim.partner_credit_balance) — 예시 partner
@@ -37,10 +37,10 @@ async function main() {
   console.log("[seed] app_settings('app') ready");
 
   await seedAdmin();
-  await seedDevPartnerInvitation();
+  await seedDevPartnerSignupInvitation();
   await seedExamplePartners();
   await seedPartnerCreditBalances();
-  await seedPartnerMatchStats();
+  await seedPartnerAssignmentStats();
 }
 
 async function seedAdmin() {
@@ -85,7 +85,7 @@ async function seedAdmin() {
 }
 
 /**
- * Dev 용 sample partner_invitation — `/partner/signup/<token>` UI 테스트용.
+ * Dev 용 sample partner_signup_invitation — `/partner/signup/<token>` UI 테스트용.
  *
  * **id 와 token 은 고정 문자열** — dev 가 매번 같은 URL 로 진입 가능:
  *   http://localhost:3000/partner/signup/{DEV_INVITATION_TOKEN}
@@ -103,18 +103,18 @@ async function seedAdmin() {
  * admin UI 에서 초청 + 파생된 partner 를 수동 삭제. 만료 임박 / token 회전이
  * 필요하면 admin UI 의 reissue.
  */
-async function seedDevPartnerInvitation() {
+async function seedDevPartnerSignupInvitation() {
   const DEV_INVITATION_ID = "local_dev_inv001";
   const DEV_INVITATION_TOKEN = "local_dev_signup_token_for_testing";
 
-  const existing = await prisma.partnerInvitation.findUnique({
+  const existing = await prisma.partnerSignupInvitation.findUnique({
     where: { id: DEV_INVITATION_ID },
     select: { id: true, consumedAt: true },
   });
   if (existing) {
     const state = existing.consumedAt ? "consumed" : "pending";
     console.log(
-      `[seed] partner_invitation (${DEV_INVITATION_ID}) already exists [${state}], skipping`,
+      `[seed] partner_signup_invitation (${DEV_INVITATION_ID}) already exists [${state}], skipping`,
     );
     return;
   }
@@ -122,7 +122,7 @@ async function seedDevPartnerInvitation() {
   const phone = process.env.LOCAL_DEV_PARTNER_PHONE ?? "01000000000";
   const name = process.env.LOCAL_DEV_PARTNER_NAME ?? "Dev Partner";
 
-  await prisma.partnerInvitation.create({
+  await prisma.partnerSignupInvitation.create({
     data: {
       id: DEV_INVITATION_ID,
       name,
@@ -138,7 +138,7 @@ async function seedDevPartnerInvitation() {
     },
   });
   console.log(
-    `[seed] partner_invitation ready — /partner/signup/${DEV_INVITATION_TOKEN}`,
+    `[seed] partner_signup_invitation ready — /partner/signup/${DEV_INVITATION_TOKEN}`,
   );
 }
 
@@ -148,7 +148,7 @@ async function seedDevPartnerInvitation() {
  * `verifyPartnerSignupOtp` 와 동일 패턴 — user / partner / partnerCreditBalance 를 단일
  * 트랜잭션으로 INSERT 해 `Partner.exists ⇔ PartnerCreditBalance.exists` 불변식을 만족.
  * invitation+OAuth+OTP 가입 흐름을 우회하므로 **dev seed 전용**: authId 미연결이라
- * `/partner` 대시보드 로그인 불가. 로그인 흐름 테스트는 `seedDevPartnerInvitation` 의
+ * `/partner` 대시보드 로그인 불가. 로그인 흐름 테스트는 `seedDevPartnerSignupInvitation` 의
  * invitation 으로 진행할 것.
  *
  * 멱등성: user.id 존재 시 skip. 픽스처 데이터 변경 후 재반영하려면 admin UI 에서 해당
@@ -226,7 +226,7 @@ async function seedExamplePartners() {
       await tx.partnerCreditBalance.create({
         data: { partnerId: p.id },
       });
-      await tx.partnerMatchStats.create({
+      await tx.partnerAssignmentStats.create({
         data: { partnerId: p.id },
       });
     });
@@ -265,9 +265,9 @@ async function seedPartnerCreditBalances() {
 }
 
 /**
- * `Partner.exists ⇔ PartnerMatchStats.exists` 불변식 유지.
+ * `Partner.exists ⇔ PartnerAssignmentStats.exists` 불변식 유지.
  *
- * 매칭 후보 정렬 (`findMatchCandidates`) + `isNew` 판정이 모든 partner 에 stats row
+ * 매칭 후보 정렬 (`findAssignmentCandidates`) + `isNew` 판정이 모든 partner 에 stats row
  * 존재를 전제. 정상 가입 트랜잭션 (verifyPartnerSignupOtp) 과 예시 픽스처
  * (seedExamplePartners) 는 자체 tx 에서 eager-create 하므로, 시더는 그 외 경로
  * (eager-create 도입 이전 레거시 partner / 수동 SQL) 의 누락을 메우는 catch-all.
@@ -276,16 +276,16 @@ async function seedPartnerCreditBalances() {
  * (docs/cron-jobs.md #8) 의 대상이지만 본 seed 는 신규 row 의 초기값만 책임 —
  * 기존 row 는 그대로.
  */
-async function seedPartnerMatchStats() {
+async function seedPartnerAssignmentStats() {
   const partners = await prisma.partner.findMany({ select: { id: true } });
   if (partners.length === 0) return;
 
-  const result = await prisma.partnerMatchStats.createMany({
+  const result = await prisma.partnerAssignmentStats.createMany({
     data: partners.map((p) => ({ partnerId: p.id })),
     skipDuplicates: true,
   });
   console.log(
-    `[seed] partner_match_stats — ${partners.length} partner(s) checked, ${result.count} new row(s) created`,
+    `[seed] partner_assignment_stats — ${partners.length} partner(s) checked, ${result.count} new row(s) created`,
   );
 }
 

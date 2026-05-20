@@ -22,7 +22,7 @@
 ## 어디에 새 코드를 둘까 — 의사결정 트리
 
 1. **특정 라우트에서만 쓰는 컴포넌트?** → 그 라우트 폴더 안 `_components/` (private folder)
-2. **여러 라우트에서 쓰는 도메인 로직(예: proposal 검증/조회)?** → `features/<도메인>/`
+2. **여러 라우트에서 쓰는 도메인 로직(예: plan_proposal 검증/조회)?** → `features/<도메인>/`
 3. **서버에서만 실행되는 데이터 접근?** → `server/` 또는 `features/<x>/queries.ts`, 첫 줄 `import 'server-only'`
 4. **여러 도메인이 공유하는 UI 프리미티브?** → `components/ui/` (shadcn) 또는 `components/`
 5. **어디에도 안 맞는 순수 함수?** → `lib/`

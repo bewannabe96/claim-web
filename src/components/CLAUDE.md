@@ -8,7 +8,7 @@
 ## 무엇이 안 들어가나
 
 - **특정 라우트에서만 쓰는 컴포넌트** → `app/<route>/_components/`로.
-- **도메인 로직이 묶인 컴포넌트** (예: `<ProposalCard>`) → `features/proposals/ui/`로.
+- **도메인 로직이 묶인 컴포넌트** (예: `<ProposalCard>`) → `features/plan-proposals/ui/`로.
 - **서버 전용 로직** → 절대 여기 두지 말 것 (`server/` 또는 `features/<x>/queries.ts`).
 
 ## shadcn Nova 주의

@@ -8,7 +8,7 @@ import { signOutPartner } from "./_actions/logout";
  * `partner/layout.tsx` 셸 (480px + 브랜드 헤더) 안에 nested. 로그인이 필요한 페이지
  * (`/partner` 대시보드 등) 만 이 (dashboard) 라우트 그룹으로 들여 가드.
  *
- * 알림톡 토큰 진입 (`/partner/assignments/[token]`) 과 로그인 페이지는 이 그룹 밖에
+ * 알림톡 토큰 진입 (`/partner/plan-request-assignments/[token]`) 과 로그인 페이지는 이 그룹 밖에
  * 배치 — 로그인 없이도 접근 가능해야 함.
  *
  * `requirePartnerSession()` = single source of truth (Supabase + partner 화이트리스트).

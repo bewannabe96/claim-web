@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { updatePartnerInvitation } from "@/features/partners/actions";
-import { getPartnerInvitationById } from "@/features/partners/queries";
+import { updatePartnerSignupInvitation } from "@/features/partners/actions";
+import { getPartnerSignupInvitationById } from "@/features/partners/queries";
 import { nowMs } from "@/lib/wall-clock";
 import { resolveOrigin } from "@/server/origin";
 
@@ -16,13 +16,13 @@ import {
 import { CopyLink } from "./_components/copy-link";
 import { InvitationActions } from "./_components/invitation-actions";
 
-export default async function AdminPartnerInvitationDetailPage({
+export default async function AdminPartnerSignupInvitationDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const invitation = await getPartnerInvitationById(id);
+  const invitation = await getPartnerSignupInvitationById(id);
   if (!invitation) notFound();
 
   // 가입 절대 URL 구성 — Kakao OAuth redirectTo 와 동일한 헤더 기반 base URL 추론.
@@ -32,7 +32,7 @@ export default async function AdminPartnerInvitationDetailPage({
   const expired = invitation.expiresAt.getTime() < now;
   const consumed = !!invitation.consumedAt;
 
-  const action = updatePartnerInvitation.bind(null, invitation.id);
+  const action = updatePartnerSignupInvitation.bind(null, invitation.id);
 
   return (
     <div className="flex flex-col gap-8">

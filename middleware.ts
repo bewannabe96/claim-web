@@ -46,9 +46,9 @@ import { NextResponse, type NextRequest } from "next/server";
  * Partner 영역의 carve-out:
  *
  * - `/partner/login` — 비인증 진입이 정상.
- * - `/partner/assignments/*` — 알림톡 일회용 토큰 진입 (PRD §5.4). 토큰 자체가
- *   인증이므로 Supabase 세션 없어도 통과. `done` 페이지도 토큰 흐름 후속이라
- *   동일 carve-out.
+ * - `/partner/plan-request-assignments/*` — 알림톡 일회용 토큰 진입 (PRD §5.4).
+ *   토큰 자체가 인증이므로 Supabase 세션 없어도 통과. `done` 페이지도 토큰
+ *   흐름 후속이라 동일 carve-out.
  * - `/partner/signup/*` — 어드민이 발급한 가입 초청 token 진입 (docs/architecture.md
  *   §7.4). token 자체가 1차 인증.
  *
@@ -72,8 +72,8 @@ function isPartnerPublicPath(pathname: string): boolean {
   // signup 은 어드민이 발급한 초청 token 으로 진입 — token 자체가 1차 인증.
   return (
     pathname === "/partner/login" ||
-    pathname.startsWith("/partner/assignments/") ||
-    pathname === "/partner/assignments" ||
+    pathname.startsWith("/partner/plan-request-assignments/") ||
+    pathname === "/partner/plan-request-assignments" ||
     pathname.startsWith("/partner/signup/")
   );
 }

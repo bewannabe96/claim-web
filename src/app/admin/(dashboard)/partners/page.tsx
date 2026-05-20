@@ -4,7 +4,7 @@ import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import {
   listAllPartners,
-  listPartnerInvitations,
+  listPartnerSignupInvitations,
 } from "@/features/partners/queries";
 import { cn } from "@/lib/utils";
 import { nowMs } from "@/lib/wall-clock";
@@ -41,7 +41,7 @@ export default async function AdminPartnersPage() {
 
   const [partners, invitations] = await Promise.all([
     listAllPartners(),
-    listPartnerInvitations(),
+    listPartnerSignupInvitations(),
   ]);
   const active = partners.filter((a) => a.active).length;
   const now = nowMs();
@@ -152,17 +152,17 @@ export default async function AdminPartnersPage() {
             </Td>
             <Td align="right">
               <span className="text-sm text-black">
-                {a.matchStats?.exposureCount ?? 0}회
+                {a.assignmentStats?.exposureCount ?? 0}회
               </span>
             </Td>
             <Td align="right">
               <span className="text-sm text-black">
-                {a.matchStats?.selectedCount ?? 0}회
+                {a.assignmentStats?.selectedCount ?? 0}회
               </span>
             </Td>
             <Td align="right">
               <span className="text-sm text-black">
-                {a.matchStats?.contactedCount ?? 0}회
+                {a.assignmentStats?.contactedCount ?? 0}회
               </span>
             </Td>
             <Td align="center">
