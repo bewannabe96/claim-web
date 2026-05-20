@@ -285,11 +285,12 @@ function buildRowLabel(
     return minManwon === 0 ? "전체 구간" : `${minManwon}만원 이상`;
   }
   if (maxManwon === null || maxManwon === 0) {
-    return minManwon === 0 ? "—" : `${minManwon}만원 ~ ?`;
+    return minManwon === 0 ? "—" : `${minManwon}만원 이상 ~ ?`;
   }
-  if (maxManwon <= minManwon) return `${minManwon}만원 ~ ${maxManwon}만원`;
+  if (maxManwon <= minManwon)
+    return `${minManwon}만원 이상 ~ ${maxManwon}만원 미만`;
   if (minManwon === 0) return `${maxManwon}만원 미만`;
-  return `${minManwon}~${maxManwon}만원`;
+  return `${minManwon}만원 이상 ~ ${maxManwon}만원 미만`;
 }
 
 function numericOr<T>(s: string, fallback: T): number | T {
