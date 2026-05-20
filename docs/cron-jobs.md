@@ -595,26 +595,26 @@ model DailyMetrics {
 
 ---
 
-### 4.2 🟢 작업 #8: 설계사 노출 카운트 리셋
+### 4.2 🟢 작업 #8: 설계사 선택 카운트 리셋
 
 **상태**: ❌ 미구현
 **주기**: 매주 일요일 자정 OR 매월 1일
 
 #### 동기
 
-- PRD §5.2: "누적 노출 횟수 적은 순 — 형평성 핵심".
-- 시간이 흐르면 누적이 커져 신규 설계사가 영구히 뒤로 밀림.
+- PRD §5.2: "누적 선택 횟수 적은 순 — 형평성 핵심".
+- 시간이 흐르면 누적이 커져 한 번 선택을 받은 설계사가 영구히 뒤로 밀림.
 - 정책 결정 필요: 주간 / 월간 / 분기.
 
 #### 무엇을 한다
 
 ```ts
 await prisma.partnerMatchStats.updateMany({
-  data: { exposureCount: 0 },
+  data: { selectedCount: 0 },
 });
 ```
 
-**주의**: 노출 카운트는 매칭 알고리즘 ([src/features/partners/queries.ts](../src/features/partners/queries.ts)) 의 핵심 — 운영 정책 검토 후 시행. 단순 리셋 대신 "decay" (예: 매주 50% 감산) 가 더 적절할 수도 있음.
+**주의**: 선택 카운트는 매칭 알고리즘 ([src/features/partners/queries.ts](../src/features/partners/queries.ts)) 의 핵심 — 운영 정책 검토 후 시행. 단순 리셋 대신 "decay" (예: 매주 50% 감산) 가 더 적절할 수도 있음. `exposureCount` 는 운영 지표로 누적 유지 (리셋 대상 아님).
 
 ---
 
