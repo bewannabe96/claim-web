@@ -11,7 +11,7 @@ import { isAligoTestMode, sendOtpSms } from "@/server/aligo";
 import { getOptionalAdminSession } from "@/server/dal";
 import { prisma } from "@/server/db/prisma";
 import { getClientIp } from "@/server/get-client-ip";
-import { resolveOrigin } from "@/server/origin";
+import { getPublicBaseUrl } from "@/server/origin";
 import { getRedis } from "@/server/redis";
 import { getSupabaseServerClient } from "@/server/supabase";
 
@@ -50,9 +50,7 @@ export async function signUpWithKakao(formData: FormData) {
   // 컨텍스트라 setAll 가 실제로 cookie 를 지움. 세션이 없을 땐 no-op.
   await supabase.auth.signOut();
 
-  // 헤더 기반 base URL 추론 — 결정 로직 단일화 진입점은 `server/origin.ts`
-  // (login action 과 공유). Supabase Redirect URLs 화이트리스트 등록 필수.
-  const origin = await resolveOrigin();
+  const origin = await getPublicBaseUrl();
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "kakao",

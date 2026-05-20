@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { sendNotificationLms } from "@/server/aligo";
 import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
-import { resolveOrigin } from "@/server/origin";
+import { getPublicBaseUrl } from "@/server/origin";
 
 /**
  * plan_request 의 모든 plan_request_assignment 가 종결됐을 때 다음 상태로 전이.
@@ -90,7 +90,7 @@ async function notifyAnalysisCompleted(planRequestId: string): Promise<void> {
     return;
   }
 
-  const origin = await resolveOrigin();
+  const origin = await getPublicBaseUrl();
   const url = `${origin}/plan-request/result/${request.resultToken}`;
   const customerName = request.name ?? "고객";
   const msg = [

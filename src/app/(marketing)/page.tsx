@@ -321,7 +321,7 @@ function Footer() {
   const agentSignupUrl = process.env.AGENT_SIGNUP_URL;
 
   return (
-    <footer className="border-t border-[#1a1a1a] bg-black px-6 py-8">
+    <footer className="border-t border-[#1a1a1a] bg-black px-6 py-10">
       <div className="flex items-center justify-between">
         <p className="text-xs font-bold tracking-wide text-white">CLAIM</p>
         {agentSignupUrl && (
@@ -335,10 +335,50 @@ function Footer() {
           </a>
         )}
       </div>
-      <p className="mt-4 text-[0.7rem] text-[#6a6a6a]">
+
+      <div className="mt-6 border-t border-[#1a1a1a] pt-6">
+        <p className="text-[0.8125rem] font-semibold text-white">
+          인슈파이어(주)
+        </p>
+        <dl className="mt-3 flex flex-col gap-1.5 text-[0.7rem] leading-relaxed text-[#8a8a8a]">
+          <FooterMetaRow label="대표" value="한성재, 김민준" />
+          <FooterMetaRow label="사업자등록번호" value="313-87-03205" />
+          <FooterMetaRow label="통신판매번호" value="제2025-경기파주-0329" />
+          <FooterMetaRow label="주소" value="경기도 파주시 경의로 1024, 918호" />
+          <FooterMetaRow label="연락처" value="070-8879-1018" />
+          <FooterMetaRow
+            label="이메일"
+            value={
+              <a
+                href="mailto:insupire@naver.com"
+                className="hover:text-white hover:underline"
+              >
+                insupire@naver.com
+              </a>
+            }
+          />
+        </dl>
+      </div>
+
+      <p className="mt-6 text-[0.7rem] text-[#6a6a6a]">
         © 2026 Insupire Co., Ltd. All rights reserved.
       </p>
     </footer>
+  );
+}
+
+function FooterMetaRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-[5.5rem] shrink-0 text-[#6a6a6a]">{label}</dt>
+      <dd className="flex-1 break-keep text-[#a8a8a8]">{value}</dd>
+    </div>
   );
 }
 

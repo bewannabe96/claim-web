@@ -63,13 +63,10 @@ export function RoiChart({
   // 좌표가 NaN 으로 깨지는 걸 방지. 시뮬레이션 가정 도입 후엔 자연스럽게 채워짐.
   if (allValues.length === 0) return null;
 
-  // y 축 = log10 scale. ROI 의 동적 범위가 매우 넓음 (예: 가입 직후 100x+ →
-  // 만기 직전 6x 평탄). linear 면 후반 데이터가 baseline 에 깔려 정보 손실 큼.
-  // log 면 "x10 배 차이" 가 일정 시각 간격이 되어 비교 직관 ↑.
-  const EPSILON = 0.01; // log(0) 방지 — 0 ROI 시리즈는 baseline 으로 clamp.
-  const yMaxRaw = Math.max(...allValues, EPSILON);
-  const yMinLog = 0; // log10(1) = 0. 1배가 baseline. 1 미만은 plot 밖으로 clamp.
-  const yMaxLog = Math.log10(yMaxRaw * 1.1);
+  // y 축 = log1p (log10(x+1)) scale. baseline = 0 (f(0)=0), 큰 값은 log 처럼
+  // 압축. 순수 log 와 달리 0 ROI 시리즈를 plot 밖으로 clamp 할 필요 없음.
+  const yMaxRaw = Math.max(...allValues, 1);
+  const yMaxLog = Math.log10(yMaxRaw + 1);
 
   const ages = (proposals[0].roi[scenario.id] ?? []).map((p) => p.age);
   const minAge = ages[0] ?? 0;
@@ -85,13 +82,9 @@ export function RoiChart({
 
   const xOf = (age: number) =>
     padding.left + ((age - minAge) / (maxAge - minAge)) * plotW;
-  // log scale + plot 도메인 클램프 (1 미만 또는 yMax 초과는 plot 안에 가둠).
   const yOf = (roi: number) => {
-    const logVal = Math.log10(Math.max(EPSILON, roi));
-    const ratio = Math.max(
-      0,
-      Math.min(1, (logVal - yMinLog) / (yMaxLog - yMinLog)),
-    );
+    const logVal = Math.log10(Math.max(0, roi) + 1);
+    const ratio = Math.max(0, Math.min(1, logVal / yMaxLog));
     return padding.top + (1 - ratio) * plotH;
   };
 
@@ -135,9 +128,9 @@ export function RoiChart({
     maxAge,
   ];
 
-  // y 축 tick — log10 power 만 (1, 10, 100...). yMaxRaw 보다 ≤ 한 cycle 까지.
-  // yMaxRaw < 10 의 좁은 범위는 5 minor 도 같이 추가해 sparse 회피.
-  const yTicks: number[] = [];
+  // y 축 tick — 0 baseline + log10 power (1, 10, 100...) yMaxRaw 까지.
+  // yMaxRaw < 10 의 좁은 범위는 5 minor 도 추가해 sparse 회피.
+  const yTicks: number[] = [0];
   for (let exp = 0; Math.pow(10, exp) <= yMaxRaw; exp++) {
     yTicks.push(Math.pow(10, exp));
   }
