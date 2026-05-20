@@ -302,8 +302,10 @@ export const PLAN_REQUEST_STATUSES = [
   "completed",    // 결과 알림톡 발송 완료
   // TODO: 알림 발송 (1-4) — `dispatched → rematching` 전이 시점에 가입자 LMS
   // ("처음 보내드린 설계사들의 응답이 늦어졌어요. 새 설계사들에게 다시 요청…").
-  // 결과 페이지 `rematching-state.tsx` 가 이미 약속한 문구. 전이 자체가 deadline
-  // cron 으로 발동 — cron 미구현이라 알림 트리거도 같은 시점에 추가 필요.
+  // 결과 페이지 `rematching-state.tsx` 가 이미 약속한 문구. 전이 자체는 deadline
+  // cron (`/api/cron/assignment-deadline-expiry`) 에서 발동되지만, 실제 새 후보 산출 +
+  // 재송부 로직 (cron-jobs.md 작업 #4) 미구현이라 LMS 만 먼저 보내면 misleading.
+  // 작업 #4 와 함께 LMS 트리거 추가.
   "rematching",   // 0명 제출 → 자동 재매칭
   "failed",       // 재매칭도 실패
 ] as const;

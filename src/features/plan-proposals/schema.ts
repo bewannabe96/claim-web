@@ -8,9 +8,9 @@ export const ASSIGNMENT_STATUSES = [
   "pending",   // 설계사에게 송부됨, 미제출
   "submitted", // 제출 완료
   // TODO: 알림 발송 (2-4) — `deadlineAt` 임박 (예: T-1h) + status='pending' 인 설계사
-  // 에게 리마인더 LMS, 그리고 deadline 도과 시 `pending → expired` 전이와 함께 마감
-  // 안내 LMS. 둘 다 deadline cron 발동 — cron 자체 미구현. 전이 트리거 자리에서
-  // sendNotificationLms 호출 추가 예정.
+  // 에게 리마인더 LMS. deadline 도과 시 `pending → expired` 전이 + 마감 안내 LMS 는
+  // `/api/cron/assignment-deadline-expiry` 에서 구현 완료. T-1h 리마인더는 별도 cron
+  // 으로 미구현.
   "expired",   // 시간 초과 미제출
 ] as const;
 

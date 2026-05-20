@@ -3,7 +3,7 @@
 > 이 프로젝트의 시간 기반 상태 전이는 현재 **lazy evaluation** (페이지 접근/요청 시점 검증)으로만 처리되고 있습니다. 이 문서는 백그라운드 cron 으로 옮겨야 하는 기능을 한눈에 보고 진행 상황을 추적하기 위한 단일 진실 공급원입니다.
 >
 > - 작성일: 2026-05-19
-> - 상태: 분석 완료, **구현 0건**
+> - 상태: 분석 완료, **구현 1건** (작업 #1)
 > - 관련 문서: [prd.md](./prd.md), [architecture.md](./architecture.md)
 
 ---
@@ -12,7 +12,7 @@
 
 | # | 작업 | 우선순위 | 주기 | 구현 상태 |
 |---|------|---------|------|-----------|
-| 1 | 제출 마감 자동 처리 + 요청 상태 전이 | 🔴 필수 | 1~5분 | ❌ |
+| 1 | 제출 마감 자동 처리 + 요청 상태 전이 | 🔴 필수 | 1~5분 | ✅ |
 | 2 | 결과 토큰(resultToken) 만료 정리 | 🔴 필수 | 6~24시간 | ❌ |
 | 3 | Partner Invitation 미사용 초청 정리 | 🔴 필수 | 12~24시간 | ❌ |
 | 4 | 0건 제출 시 자동 재매칭 | 🟡 권장 | 마감 직후 이벤트 | ❌ |
@@ -109,18 +109,18 @@ CRON_SECRET=<openssl rand -hex 32>
 
 ## 2. Phase 1 — 필수 (즉시 착수)
 
-### 2.1 🔴 작업 #1: 제출 마감 자동 처리 + 요청 상태 전이
+### 2.1 ✅ 작업 #1: 제출 마감 자동 처리 + 요청 상태 전이
 
-**상태**: ❌ 미구현
-**주기**: `*/5 * * * *` (5분 권장; 마감 정밀도가 필요하면 `*/1 * * * *`)
-**라우트**: `src/app/api/cron/assignment-deadline-expiry/route.ts`
+**상태**: ✅ 구현 완료 (2026-05-20)
+**주기**: `*/5 * * * *` (5분) — `vercel.json` 등록 완료
+**라우트**: [src/app/api/cron/assignment-deadline-expiry/route.ts](../src/app/api/cron/assignment-deadline-expiry/route.ts)
 
 #### 배경
 
 - `PlanRequest.deadlineAt` 은 `dispatchedAt + AppSettings.submissionDeadlineHours` 로 set ([src/features/plan-requests/actions.ts:331-349](../src/features/plan-requests/actions.ts)).
 - `PlanRequestAssignment.status` 는 `pending → submitted` 또는 `pending → expired` 둘 중 하나로만 종결됨.
 - 현재 `expired` 로 마킹하는 코드 경로는 **존재하지 않음**. 마감 후에도 영구 `pending` 으로 남음.
-- 분석 완료 웹훅 ([src/app/api/webhooks/eightytwo-judge-analysis/route.ts:197-220](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts)) 의 `plan_request.status='analyzing' → 'completed'` 전이는 **모든 assignment 가 종결** 됐을 때만 발생 → 1명이라도 `pending` 으로 남으면 영원히 `analyzing` 에 갇힘.
+- 분석 완료 웹훅 ([src/app/api/webhooks/eightytwo-judge-analysis/route.ts](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts)) → `finalizeRequestStatus()` 의 `plan_request.status='analyzing' → 'completed'` 전이는 **모든 assignment 가 종결** 됐을 때만 발생 → 1명이라도 `pending` 으로 남으면 영원히 `analyzing` 에 갇힘.
 
 #### 무엇을 한다
 
@@ -135,7 +135,7 @@ CRON_SECRET=<openssl rand -hex 32>
 
 #### 사전 작업: 상태 전이 로직 추출
 
-웹훅의 [route.ts:197-220](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts) 의 전이 코드를 **공용 함수로 추출**:
+웹훅의 [route.ts](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts) 의 전이 코드를 **공용 함수로 추출** (구현됨):
 
 ```ts
 // src/features/plan-requests/state-transition.ts (신규)
@@ -239,16 +239,17 @@ export async function GET(req: Request) {
 
 #### 체크리스트
 
-- [ ] `src/features/plan-requests/state-transition.ts` 신규 + 웹훅 리팩토링
-- [ ] `src/app/api/cron/assignment-deadline-expiry/route.ts` 추가
-- [ ] `vercel.json` 에 schedule 등록
-- [ ] `CRON_SECRET` 환경변수 등록 (Vercel + .env.local)
+- [x] `src/features/plan-requests/state-transition.ts` 신규 + 웹훅 리팩토링
+- [x] `src/app/api/cron/assignment-deadline-expiry/route.ts` 추가
+- [x] `vercel.json` 에 schedule 등록
+- [x] `CRON_SECRET` 환경변수 .env.example 등록 (Vercel project env 는 배포 시 등록)
 - [ ] 로컬 테스트: `deadlineAt` 을 과거로 수동 set → curl 로 호출 → DB 확인
 
 #### 알림 발송 (현황)
 
-- 분석 완료 (`analyzing → completed`) 시 가입자 결과 페이지 링크 LMS — **구현 완료** ([webhook route 의 `notifyAnalysisCompleted`](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts), `server/aligo.ts:sendNotificationLms` 사용).
-- 작업 #1 (deadline 만료) 트리거 시점의 부수 알림은 미구현 — `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4), 그리고 작업 #4 의 `dispatched → rematching` 전이 시 가입자 재매칭 알림 LMS (시점 1-4) 가 함께 발송돼야 함. 두 시점 모두 `plan-proposals/schema.ts` / `plan-requests/schema.ts` 의 status enum 옆에 TODO 주석 표기. 알리고 LMS 모듈은 이미 존재하므로 cron 구현 시 `sendNotificationLms` 호출만 추가.
+- 분석 완료 (`analyzing → completed`) 시 가입자 결과 페이지 링크 LMS — **구현 완료**. 책임 위치는 `state-transition.ts:notifyAnalysisCompleted` 로 이동 (cron / 웹훅 양쪽 진입 통합).
+- `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4) — **구현 완료** (cron route 의 `notifyPartnersOfExpiry`).
+- `dispatched → rematching` 전이 시 가입자 재매칭 알림 LMS (시점 1-4) — **미구현**. 실제 새 후보 산출 + 재송부 로직 (작업 #4) 미구현이라 "다시 요청드릴게요" LMS 만 먼저 보내면 misleading. 작업 #4 와 함께 추가. `plan-requests/schema.ts` 의 status enum 옆 TODO 주석으로 마킹.
 
 ---
 
@@ -692,3 +693,4 @@ Phase 3 (필요 시)
 |------|------|------|------|
 | 2026-05-19 | 문서 | 초안 작성 | - |
 | 2026-05-20 | #6 | OTP 는 알리고 + Redis TTL 로 이미 구현 — cron 불필요로 보류 처리 | - |
+| 2026-05-20 | #1 | 구현 완료. `state-transition.ts` 신규 (웹훅 + cron 공유), `/api/cron/assignment-deadline-expiry` 라우트 + 설계사 마감 안내 LMS, `vercel.json` schedule 등록, `CRON_SECRET` env 등록. 가입자 재매칭 LMS 는 작업 #4 와 함께 처리 예정 (실제 재매칭 미구현 상태에서 알림만 보내면 misleading). | - |

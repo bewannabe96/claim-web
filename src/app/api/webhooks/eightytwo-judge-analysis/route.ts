@@ -9,10 +9,8 @@ import {
   CURRENT_REPORT_VERSION,
 } from "@/features/plan-proposals/analysis-schema";
 import { AnalysisErrorSchema } from "@/features/plan-proposals/schema";
-import { sendNotificationLms } from "@/server/aligo";
-import { getServiceName } from "@/server/branding";
+import { finalizeRequestStatus } from "@/features/plan-requests/state-transition";
 import { prisma } from "@/server/db/prisma";
-import { getPublicBaseUrl } from "@/server/origin";
 
 /**
  * 분석 완료 웹훅 — eightytwo_judge 가 한 proposal 분석 종료 시 POST.
@@ -44,9 +42,10 @@ import { getPublicBaseUrl } from "@/server/origin";
  *       1. proposal.analyzedAt = now() (첫 콜백만, WHERE id + assignment.requestId
  *          매치 + analyzedAt IS NULL — plan_request_id cross-check 로 페이로드 위조 차단)
  *       2. updated.count===1 이면 plan_proposal_analysis_report INSERT (proposalId 1:1)
- *     그 후 plan_request 의 **모든 plan_request_assignment** 가 submitted + 그 proposal 이
- *     analyzed 인 경우에만 plan_request.status='analyzing' → 'completed'
- *     (pending/expired assignment 가 하나라도 있으면 전이 안 함).
+ *     그 후 `finalizeRequestStatus(plan_request_id)` 호출 — plan_request 의 모든
+ *     plan_request_assignment 가 submitted + 그 proposal 이 analyzed 인 경우에만
+ *     `analyzing → completed` + 가입자 LMS. 전이 책임은 cron (deadline 만료) 과
+ *     공유하므로 `features/plan-requests/state-transition.ts` 단일 진입점에 통합.
  *
  * 발신측 재시도 안전: 첫 콜백이 transition 직전에 끊겨도 retry 가 pending 을
  * 재평가해서 전이 마무리.
@@ -198,76 +197,12 @@ export async function POST(req: Request) {
   });
 
   // 멱등 전이 — plan_request 의 **모든** plan_request_assignment 가 submitted + proposal 이
-  // analyzed 인 경우에만 completed. proposal.count 만 보면 pending/expired assignment
-  // 가 제외돼 1개만 분석돼도 전이되는 버그가 있어서, assignment 총수 vs fully-analyzed
-  // 수를 직접 비교.
-  const [total, fullyAnalyzed] = await Promise.all([
-    prisma.planRequestAssignment.count({
-      where: { requestId: plan_request_id },
-    }),
-    prisma.planRequestAssignment.count({
-      where: {
-        requestId: plan_request_id,
-        status: "submitted",
-        proposal: { analyzedAt: { not: null } },
-      },
-    }),
-  ]);
-
-  if (total > 0 && total === fullyAnalyzed) {
-    // 첫 전이만 알림 발송 — count===1 인 호출만 이후 LMS 까지 진행 (race-safe 멱등).
-    // updateMany WHERE status='analyzing' 가 0 row 면 다른 콜백이 이미 transition 한 것.
-    const transitioned = await prisma.planRequest.updateMany({
-      where: { id: plan_request_id, status: "analyzing" },
-      data: { status: "completed" },
-    });
-    revalidatePath("/admin/requests");
-
-    if (transitioned.count === 1) {
-      await notifyAnalysisCompleted(plan_request_id);
-    }
-  }
+  // analyzed 인 경우에만 completed. cron (assignment-deadline-expiry) 가 pending →
+  // expired 후 호출하는 경로와 공유. submitted=0 (전부 expired) 인 경우 rematching 으로
+  // 분기되지만, 분석 완료 콜백은 submitted >= 1 보장하므로 사실상 completed 분기만 진입.
+  await finalizeRequestStatus(plan_request_id);
 
   return Response.json({ ok: true });
-}
-
-/**
- * 분석 완료 알림 — 가입자 휴대폰으로 결과 페이지 링크 LMS 발송.
- *
- * finalizeRequest 가 consentMessaging=true 를 강제하므로 dispatched 까지 간 모든
- * request 는 수신 동의 완료 상태. phone/resultToken 은 finalize 트랜잭션이 함께 set.
- * 실패는 log 만 — 분석 완료 transition 은 이미 됐으므로 webhook 응답엔 영향 없음.
- */
-async function notifyAnalysisCompleted(planRequestId: string): Promise<void> {
-  const request = await prisma.planRequest.findUnique({
-    where: { id: planRequestId },
-    select: { name: true, phone: true, resultToken: true },
-  });
-  if (!request?.phone || !request.resultToken) {
-    console.warn(
-      "[webhook/analysis] completed notification skipped — missing phone or resultToken",
-      { planRequestId },
-    );
-    return;
-  }
-
-  const origin = await getPublicBaseUrl();
-  const url = `${origin}/plan-request/result/${request.resultToken}`;
-  const customerName = request.name ?? "고객";
-  const msg = [
-    `[${getServiceName()}] ${customerName}님께서 선택하신 파트너님들의 제안서를 Claim AI가 분석했어요:)`,
-    `지금 바로 분석 결과를 확인해보시고 마음에 드는 파트너님께 연락을 요청해보세요!`,
-    ``,
-    url,
-  ].join("\n");
-  try {
-    await sendNotificationLms(request.phone, msg);
-  } catch (err) {
-    console.error("[webhook/analysis] completed notification LMS failed", {
-      planRequestId,
-      error: err instanceof Error ? err.message : err,
-    });
-  }
 }
 
 /**
