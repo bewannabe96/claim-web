@@ -18,7 +18,7 @@ function isPaymentNotFoundError(e: unknown): boolean {
   );
 }
 
-import { resolveOrigin } from "@/server/origin";
+import { getPublicBaseUrl } from "@/server/origin";
 import {
   getPortOneChannelKey,
   getPortOneClient,
@@ -96,7 +96,7 @@ export class PortOnePaymentProvider implements PaymentProvider {
     // redirectUrl 은 사용자 브라우저가 deep-link 후 navigate 할 곳 — 같은 host 라 OK.
     // noticeUrls 는 PortOne 서버 → 우리 서버 호출 — localhost 면 PortOne 도달 불가라
     // 의도적으로 미지정. 콘솔에 등록된 webhook URL 만 사용 (환경별 분리는 콘솔 multi-webhook).
-    const origin = await resolveOrigin();
+    const origin = await getPublicBaseUrl();
 
     return {
       kind: "sdk",

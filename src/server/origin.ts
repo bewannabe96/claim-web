@@ -5,22 +5,33 @@ import { headers } from "next/headers";
 /**
  * 사용자 노출 base URL (scheme + host[:port], trailing slash 없음) 단일 진입점.
  *
- * Kakao OAuth `redirectTo` / 어드민의 가입 URL 안내 / 기타 외부 발송 URL 생성 시
- * 모두 이걸 사용. 같은 결정 로직이 여러 곳에 흩어지면 한 곳만 고쳐 다른 곳에서
- * Supabase 화이트리스트 mismatch (→ Site URL fallback) 같은 사고가 재발.
+ * Kakao OAuth `redirectTo` / 어드민의 가입 URL 안내 / SMS LMS 본문 링크 / PG redirect
+ * URL 등 외부 노출 절대 URL 생성에 모두 이걸 사용. 같은 결정 로직이 여러 곳에 흩어지면
+ * 한 곳만 고쳐 다른 곳에서 Supabase 화이트리스트 mismatch (→ Site URL fallback) 같은
+ * 사고가 재발.
  *
  * 우선순위:
- *   1. 요청 `Origin` 헤더 — 브라우저가 채우는 표준 값. 서버 액션 / 콜백 흐름
- *      에선 항상 set 되므로 1순위. 로컬 dev / LAN IP / ngrok 모두 정확.
- *   2. `x-forwarded-host` / `x-forwarded-proto` — reverse proxy (Vercel / ngrok)
- *      에서 원본 host 가 internal 로 가려졌고 Origin 도 없는 드문 경우.
- *   3. `host` 헤더 + proto 추정 (localhost → http, 그 외 → https) — 최종 폴백.
+ *   1. `PUBLIC_BASE_URL` env — Vercel/staging/prod 의 canonical 도메인. branch deployment
+ *      에 custom alias (예: dev.claim.ac → claim-web-env-staging-*.vercel.app) 를 붙인
+ *      경우, 사용자가 vercel.app URL 로 들어왔거나 webhook 이 vercel.app 로 도착해도
+ *      모든 외부 노출 URL 이 alias 로 통일됨. 단일 진실 공급원.
+ *   2. 요청 헤더 (`Origin` > `x-forwarded-host` > `host`) — env 미설정 시 로컬 dev /
+ *      LAN IP / ngrok 편의용 폴백. 매번 env 박는 부담 회피.
  *
- * 운영 측 책임: 사용자가 접근하는 모든 호스트 (prod / staging / LAN IP / ngrok) 가
- * Supabase Dashboard 의 **Redirect URLs** 화이트리스트에 등록돼 있어야 함.
- * 화이트리스트 누락 시 Supabase 가 redirectTo 무시하고 Site URL 로 fallback.
+ * 운영 측 책임:
+ * - 사용자가 접근하는 canonical 도메인을 `PUBLIC_BASE_URL` 에 박을 것 (Vercel 대시보드
+ *   환경변수, 예: `https://dev.claim.ac`).
+ * - Supabase Dashboard 의 **Redirect URLs** 화이트리스트에 그 도메인 + `/api/auth/callback`
+ *   조합이 등록돼 있어야 함. 누락 시 Supabase 가 redirectTo 무시하고 Site URL 로 fallback.
  */
-export async function resolveOrigin(): Promise<string> {
+export async function getPublicBaseUrl(): Promise<string> {
+  const envUrl = process.env.PUBLIC_BASE_URL?.trim();
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+
+  return resolveOriginFromHeaders();
+}
+
+async function resolveOriginFromHeaders(): Promise<string> {
   const h = await headers();
   const originHeader = h.get("origin");
   if (originHeader) return originHeader;

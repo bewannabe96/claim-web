@@ -48,11 +48,13 @@
 - `get-client-ip.ts` — `headers()` 기반 client IP 추출 (`x-forwarded-for` → `x-real-ip` → fallback).
   IP 기반 레이트리밋의 best-effort 입력. 강한 보장은 reverse proxy (Vercel/Cloudflare) 단의
   헤더로 격상 가능.
-- `origin.ts` — 사용자 노출 base URL (`resolveOrigin()`) 단일 진입점. Kakao OAuth `redirectTo`,
-  어드민 가입 안내 URL 등 외부 노출 절대 URL 생성에 모두 사용. 우선순위: `Origin` 헤더 →
-  `x-forwarded-*` → `host`. 사용자가 접근하는 모든 호스트 (prod / staging / LAN IP / ngrok) 가
-  **Supabase Dashboard 의 Redirect URLs 화이트리스트**에 등록돼 있어야 함. 누락 시 Supabase 가
-  redirectTo 무시하고 Site URL (보통 localhost) 로 fallback.
+- `origin.ts` — 사용자 노출 base URL (`getPublicBaseUrl()`) 단일 진입점. Kakao OAuth `redirectTo`,
+  SMS LMS 본문 링크, PortOne redirect URL, 어드민 가입 안내 URL 등 외부 노출 절대 URL 생성에
+  모두 사용. 우선순위: `PUBLIC_BASE_URL` env → 요청 헤더 (`Origin` > `x-forwarded-*` > `host`) 폴백.
+  prod / staging 에선 반드시 env 박을 것 (Vercel branch deployment 의 vercel.app URL 누출 방지).
+  로컬 dev 는 env 미설정 시 헤더 폴백으로 LAN IP / ngrok 모두 자동 대응. **Supabase Dashboard 의
+  Redirect URLs 화이트리스트**에 해당 호스트 등록 필수 — 누락 시 Supabase 가 redirectTo 무시하고
+  Site URL (보통 localhost) 로 fallback.
 - `portone.ts` — PortOne v2 API 클라이언트 (`getPortOneClient()`) + 4종 env (`STORE_ID` / `CHANNEL_KEY`
   / `API_SECRET` / `WEBHOOK_SECRET`) 단일 진입점. env 검증을 첫 호출 시점으로 지연 — `CREDIT_PAYMENT_PROVIDER=stub`
   인 dev 환경에선 PortOne env 미설정이어도 모듈 로드 자체는 통과 (s3.ts 패턴). HMR 안전 (globalThis 캐싱).
