@@ -2,11 +2,11 @@
 
 import { useState, useTransition } from "react";
 
-import { requestProposalContact } from "@/features/proposals/actions";
-import type { AnalysisReportV5 } from "@/features/proposals/analysis-schema";
+import { requestProposalContact } from "@/features/plan-proposals/actions";
+import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import { cn } from "@/lib/utils";
 
-import { type ProposalData } from "../_lib/result-types";
+import { type PlanProposalData } from "../_lib/result-types";
 import { SurrenderLossChart } from "./charts/surrender-loss-chart";
 import { ScenarioPickerRoiChart } from "./scenario-picker-roi-chart";
 
@@ -34,7 +34,7 @@ export function ResultView({
 }: {
   /** 결과 페이지 진입 토큰 — server action 호출 시 인증 키. */
   resultToken: string;
-  proposals: ProposalData[];
+  proposals: PlanProposalData[];
   /** 제안서별 분석 리포트. 키는 proposal.id. 분석 미완료 proposal 은 entry 없음. */
   reportsById?: Record<string, AnalysisReportV5>;
   /** admin 이 설정한 시나리오 우선순위 (app_settings.scenarioPriority). */
@@ -52,7 +52,7 @@ export function ResultView({
   if (!active) return null;
 
   // 모든 제안서의 분석 리포트 — chip union/intersection 계산용.
-  // ProposalBody 가 reuse 되므로 ScenarioPickerRoiChart 의 recent/active state 는
+  // PlanProposalBody 가 reuse 되므로 ScenarioPickerRoiChart 의 recent/active state 는
   // 제안서 chip 탭 전환에도 유지됨.
   const reports: AnalysisReportV5[] = reportsById
     ? proposals
@@ -123,7 +123,7 @@ export function ResultView({
       </nav>
 
       {/* 선택된 제안서 본문 */}
-      <ProposalBody
+      <PlanProposalBody
         proposal={active}
         proposals={proposals}
         reports={reports}
@@ -140,7 +140,7 @@ export function ResultView({
  * 제안서 본문 — chip 탭으로 전환 시 통째 교체
  * ============================================================ */
 
-function ProposalBody({
+function PlanProposalBody({
   proposal,
   proposals,
   reports,
@@ -149,8 +149,8 @@ function ProposalBody({
   contacted,
   onContact,
 }: {
-  proposal: ProposalData;
-  proposals: ProposalData[];
+  proposal: PlanProposalData;
+  proposals: PlanProposalData[];
   reports: AnalysisReportV5[];
   scenarioPriority: readonly string[];
   resultRetentionDays: number;

@@ -16,7 +16,7 @@ import {
 import { CopyLink } from "./_components/copy-link";
 import { InvitationActions } from "./_components/invitation-actions";
 
-export default async function AdminPartnerInvitationDetailPage({
+export default async function AdminPartnerSignupInvitationDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;

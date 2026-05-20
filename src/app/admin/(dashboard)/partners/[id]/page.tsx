@@ -45,15 +45,15 @@ export default async function AdminPartnerDetailPage({
         <dl className="grid grid-cols-3 gap-6">
           <Stat
             label="누적 노출"
-            value={`${partner.matchStats?.exposureCount ?? 0}회`}
+            value={`${partner.assignmentStats?.exposureCount ?? 0}회`}
           />
           <Stat
             label="제안서 요청"
-            value={`${partner.matchStats?.selectedCount ?? 0}회`}
+            value={`${partner.assignmentStats?.selectedCount ?? 0}회`}
           />
           <Stat
             label="연락 요청"
-            value={`${partner.matchStats?.contactedCount ?? 0}회`}
+            value={`${partner.assignmentStats?.contactedCount ?? 0}회`}
           />
         </dl>
       </Card>

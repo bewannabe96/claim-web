@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 
 import { getPartnerCardsByIds } from "@/features/partners/queries";
-import { getRequestById } from "@/features/requests/queries";
+import { getRequestById } from "@/features/plan-requests/queries";
 import {
   FOCUSED_CONCERN_LABEL,
   type CoverageRequest,
-} from "@/features/requests/schema";
+} from "@/features/plan-requests/schema";
 import { getSettings } from "@/server/settings";
 
 import { CandidatesSelector } from "./_components/candidates-selector";

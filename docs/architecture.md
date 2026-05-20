@@ -152,7 +152,7 @@ export default async function Page({
 ```tsx
 // app/(app)/dashboard/page.tsx — Server Component
 import { listProposalsForUser } from '@/server/dal'
-import { ProposalListInteractive } from './_components/proposal-list-interactive'
+import { ProposalListInteractive } from './_components/plan_proposal-list-interactive'
 
 export default async function DashboardPage() {
   const proposals = await listProposalsForUser()
@@ -161,11 +161,11 @@ export default async function DashboardPage() {
 ```
 
 ```tsx
-// app/(app)/dashboard/_components/proposal-list-interactive.tsx
+// app/(app)/dashboard/_components/plan_proposal-list-interactive.tsx
 'use client'
 import { useState } from 'react'
 
-export function ProposalListInteractive({ initial }: { initial: Proposal[] }) {
+export function ProposalListInteractive({ initial }: { initial: PlanProposal[] }) {
   const [filter, setFilter] = useState('')
   // ...필터 UI만 클라이언트
 }
@@ -241,7 +241,7 @@ export async function getPartner(id: string) {
 전체 패턴 — zod 검증 + read-your-writes + 점진적 향상(JS 없이도 동작):
 
 ```ts
-// src/features/proposals/schema.ts
+// src/features/plan-proposals/schema.ts
 import { z } from 'zod'
 
 export const RequestProposalSchema = z.object({
@@ -255,7 +255,7 @@ export type RequestProposalState =
 ```
 
 ```ts
-// src/features/proposals/actions.ts
+// src/features/plan-proposals/actions.ts
 'use server'
 import { updateTag } from 'next/cache'
 import { redirect } from 'next/navigation'
@@ -274,13 +274,13 @@ export async function requestProposal(
   })
   if (!parsed.success) return { errors: parsed.error.flatten().fieldErrors }
 
-  const proposal = await db.proposals.create({
+  const plan_proposal = await db.proposals.create({
     customerId: session.userId,
     ...parsed.data,
   })
 
   updateTag(`user-${session.userId}-proposals`) // read-your-writes
-  redirect(`/proposals/${proposal.id}`)
+  redirect(`/proposals/${plan_proposal.id}`)
 }
 ```
 
@@ -288,7 +288,7 @@ export async function requestProposal(
 // src/app/(app)/partners/[id]/_components/request-form.tsx
 'use client'
 import { useActionState } from 'react'
-import { requestProposal } from '@/features/proposals/actions'
+import { requestProposal } from '@/features/plan-proposals/actions'
 
 export function RequestProposalForm({ partnerId }: { partnerId: string }) {
   const [state, action, pending] = useActionState(requestProposal, undefined)
@@ -354,16 +354,16 @@ claim.user (id=nanoid, email/name/phone[UNIQUE])
    ├──▶ claim.partner (bio, yearsOfExperience, trustMetric, licenseNumber, active)
    │       │ 1:1 (PK 공유)
    │       ├──▶ claim.partner_credit_balance  (잔액 + version)
-   │       └──▶ claim.partner_match_stats     (exposure / selected / contacted 카운터)
+   │       └──▶ claim.partner_assignment_stats     (exposure / selected / contacted 카운터)
    └──▶ claim.admin   (active, 추후 permissions)
 
-claim.partner_invitation (임시) — partner 가입 진행 중 임시 보관
+claim.partner_signup_invitation (임시) — partner 가입 진행 중 임시 보관
    ↓ 가입 완료 시 → user + partner 트랜잭션 INSERT + consumed 마킹
 ```
 
 User 에는 role discriminator 컬럼이 없음 — 역할은 partner / admin extension row 존재(+active) 자체로 판정. 한 사용자가 partner + admin 둘 다 가질 수 있고, 각 require\*Session() 은 자신이 필요로 하는 extension 만 확인.
 
-`User.authId` 가 nullable 인 이유 — admin 은 운영자가 Supabase 에서 직접 생성 + SQL 로 user/admin row 사전 등록 (authId=null) → 첫 비번 로그인 시 `signInAdmin` 이 email 로 매칭해 authId 채움. partner 는 그 사전 등록 단계를 거치지 않고, **`partner_invitation` → Kakao 가입 + 본인인증 통과 시점에 user/partner row 와 authId 가 단일 트랜잭션으로 INSERT** 되므로 authId 가 nullable 인 채로 유지되는 케이스가 거의 없음. authId mismatch (이미 다른 auth.users 와 매핑된 user 의 email 로 다른 Supabase 계정 로그인) 는 거부 — 운영자가 수동 정정.
+`User.authId` 가 nullable 인 이유 — admin 은 운영자가 Supabase 에서 직접 생성 + SQL 로 user/admin row 사전 등록 (authId=null) → 첫 비번 로그인 시 `signInAdmin` 이 email 로 매칭해 authId 채움. partner 는 그 사전 등록 단계를 거치지 않고, **`partner_signup_invitation` → Kakao 가입 + 본인인증 통과 시점에 user/partner row 와 authId 가 단일 트랜잭션으로 INSERT** 되므로 authId 가 nullable 인 채로 유지되는 케이스가 거의 없음. authId mismatch (이미 다른 auth.users 와 매핑된 user 의 email 로 다른 Supabase 계정 로그인) 는 거부 — 운영자가 수동 정정.
 
 **구조 (3단계 인증/권한):**
 
@@ -384,7 +384,7 @@ partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일
 
 **흐름 (2단계, Kakao 먼저 → 본인인증) — 매 진입마다 새 OAuth:**
 
-1. 어드민 `/admin/partners/new` 입력 → `createPartnerInvitation` 이 `claim.partner_invitation` row INSERT (name/phone/bio/.../active + token + expiresAt = now + `PARTNER_INVITATION_TTL_DAYS`). `linkedAuthId` 와 `phoneVerifiedAt` 은 NULL. user/partner row 없음.
+1. 어드민 `/admin/partners/new` 입력 → `createPartnerInvitation` 이 `claim.partner_signup_invitation` row INSERT (name/phone/bio/.../active + token + expiresAt = now + `PARTNER_INVITATION_TTL_DAYS`). `linkedAuthId` 와 `phoneVerifiedAt` 은 NULL. user/partner row 없음.
 2. 어드민이 `/admin/partners/invitations/<id>` 에서 가입 URL (`/partner/signup/<token>`) 복사 → 메신저로 설계사에게 전달.
 3. 설계사가 링크 진입 → invitation 유효성 (미소비 + 미만료) 확인. **페이지는 `linkedAuthId` 보지 않고 항상 Step 1 ("카카오톡으로 시작") 노출** — 다른 카카오 계정으로 재시도해도 동일하게 시작.
 4. `signUpWithKakao` action: 현재 Supabase 세션 `signOut()` (이전 진입의 잔여 세션 청소) → `signInWithOAuth` 에 `redirectTo=…?signup=<token>` + `queryParams.prompt=login` (Kakao SSO 우회 → 계정 선택 강제).
@@ -611,7 +611,7 @@ MVP 단계에서 바로 잡고 갈 결정:
 1. **`next.config.ts`에 `cacheComponents: true`, `typedRoutes: true` 추가.**
 2. **`src/server/dal.ts`** 만들어서 mock 데이터 접근도 DAL 시그니처로 통일 (DB 붙이면 구현만 교체).
 3. **route group 도입**: `(marketing)` (랜딩/설계사 둘러보기) vs `(app)` (제안서 관리).
-4. **`features/proposals/` + `features/partners/`** 분리, 각 폴더에 `schema.ts` (zod) / `actions.ts` (`'use server'`) / `queries.ts` (`'server-only'`).
+4. **`features/plan-proposals/` + `features/partners/`** 분리, 각 폴더에 `schema.ts` (zod) / `actions.ts` (`'use server'`) / `queries.ts` (`'server-only'`).
 5. **shadcn 사용 시 `render` prop 패턴** 통일 (이미 [src/app/page.tsx](../src/app/page.tsx)에서 `buttonVariants()` 사용 중).
 6. **검색/필터는 `nuqs`** 도입 검토. Zustand는 보류.
 7. **`@t3-oss/env-nextjs`** 도입 — env 검증을 처음부터 강제.

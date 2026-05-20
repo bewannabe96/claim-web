@@ -1,7 +1,7 @@
 /**
  * 결과 페이지 컴포넌트들이 공유하는 데이터 shape 정의.
  *
- * adapt-proposal.ts 가 실 데이터 (Proposal + 분석 리포트) → ProposalData 로
+ * adapt-proposal.ts 가 실 데이터 (PlanProposal + 분석 리포트) → PlanProposalData 로
  * 변환하면, 차트/카드 컴포넌트가 이 type 기준으로 그림. 차트 컴포넌트의 prop
  * 시그니처가 이 타입에 강결합돼 있어 별도 type 모듈로 추출.
  */
@@ -48,7 +48,7 @@ export type CoverageItem = {
 /**
  * 결과 페이지 한 제안서 카드의 전체 shape. adapt-proposal 이 채움.
  */
-export type ProposalData = {
+export type PlanProposalData = {
   id: string;
   partner: {
     name: string;

@@ -5,25 +5,25 @@ import { prisma } from "@/server/db/prisma";
 import type {
   Partner,
   PartnerCard,
-  PartnerInvitation,
-  PartnerInvitationView,
+  PartnerSignupInvitation,
+  PartnerSignupInvitationView,
 } from "./schema";
 
 const PARTNER_INCLUDE = {
   user: { select: { id: true, email: true, name: true, phone: true } },
-  matchStats: true,
+  assignmentStats: true,
 } as const;
 
 /**
- * 매칭 후보 추출 — PRD §5.2.
+ * 배정 후보 산출 — PRD §5.2.
  *
  * 필터: active=true.
- * 정렬: matchStats.selectedCount 적은 순 → 랜덤 (tiebreak).
+ * 정렬: assignmentStats.selectedCount 적은 순 → 랜덤 (tiebreak).
  *   가입자에게 적게 선택된 설계사를 우선 노출해 선택수가 평준화되도록 self-balancing.
  *
  * 풀이 작아 app-side ranking. 풀이 커지면 SQL window function 으로 이주.
  * stats row 누락된 레거시 partner 는 `?? 0` 폴백 — 가장 우선 순위가 되어 다음
- * 매칭에서 다시 선택됨 (시더 catch-all 이 도달 전 임시 안전망).
+ * 후보 산출에서 다시 선택됨 (시더 catch-all 이 도달 전 임시 안전망).
  */
 export async function findMatchCandidates(
   limit: number,
@@ -31,14 +31,14 @@ export async function findMatchCandidates(
   const eligible = await prisma.partner.findMany({
     where: { active: true },
     include: PARTNER_INCLUDE,
-    orderBy: { matchStats: { selectedCount: "asc" } },
+    orderBy: { assignmentStats: { selectedCount: "asc" } },
   });
 
   return eligible
     .map((p) => ({ partner: p, jitter: Math.random() }))
     .sort((x, y) => {
-      const xc = x.partner.matchStats?.selectedCount ?? 0;
-      const yc = y.partner.matchStats?.selectedCount ?? 0;
+      const xc = x.partner.assignmentStats?.selectedCount ?? 0;
+      const yc = y.partner.assignmentStats?.selectedCount ?? 0;
       if (xc !== yc) return xc - yc;
       return x.jitter - y.jitter;
     })
@@ -63,7 +63,7 @@ export async function getPartnerCardById(
   return partner ? toCard(partner) : null;
 }
 
-/** ids 입력 순서 보존 — 매칭 정렬 결과가 그대로 노출되어야 함. */
+/** ids 입력 순서 보존 — 후보 산출 정렬 결과가 그대로 노출되어야 함. */
 export async function getPartnerCardsByIds(
   ids: readonly string[],
 ): Promise<PartnerCard[]> {
@@ -93,8 +93,8 @@ export async function listAllPartners(): Promise<Partner[]> {
  * consumedAt IS NOT NULL 은 audit 용도로 row 자체는 남지만 어드민 화면엔 노출 X
  * — 가입 완료된 설계사는 partner 리스트로 이동했으므로.
  */
-export async function listPartnerInvitations(): Promise<PartnerInvitation[]> {
-  return prisma.partnerInvitation.findMany({
+export async function listPartnerInvitations(): Promise<PartnerSignupInvitation[]> {
+  return prisma.partnerSignupInvitation.findMany({
     where: { consumedAt: null },
     orderBy: { createdAt: "desc" },
   });
@@ -102,8 +102,8 @@ export async function listPartnerInvitations(): Promise<PartnerInvitation[]> {
 
 export async function getPartnerInvitationById(
   id: string,
-): Promise<PartnerInvitation | null> {
-  return prisma.partnerInvitation.findUnique({ where: { id } });
+): Promise<PartnerSignupInvitation | null> {
+  return prisma.partnerSignupInvitation.findUnique({ where: { id } });
 }
 
 /**
@@ -121,8 +121,8 @@ export async function getPartnerInvitationById(
  */
 export async function getPartnerInvitationByToken(
   token: string,
-): Promise<PartnerInvitationView | null> {
-  const invitation = await prisma.partnerInvitation.findUnique({
+): Promise<PartnerSignupInvitationView | null> {
+  const invitation = await prisma.partnerSignupInvitation.findUnique({
     where: { token },
     select: {
       id: true,
@@ -147,6 +147,6 @@ function toCard(p: Partner): PartnerCard {
     bio: p.bio,
     yearsOfExperience: p.yearsOfExperience,
     trustMetric: p.trustMetric,
-    isNew: (p.matchStats?.exposureCount ?? 0) === 0,
+    isNew: (p.assignmentStats?.exposureCount ?? 0) === 0,
   };
 }

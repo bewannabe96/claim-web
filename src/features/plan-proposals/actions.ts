@@ -18,10 +18,10 @@ import {
 import { publishAnalysisJob } from "@/server/sqs";
 
 import {
-  ProposalSubmissionSchema,
+  PlanProposalSubmissionSchema,
   type PresignUploadState,
-  type ProposalSubmissionInput,
-  type ProposalSubmissionState,
+  type PlanProposalSubmissionInput,
+  type PlanProposalSubmissionState,
 } from "./schema";
 
 /**
@@ -36,7 +36,7 @@ import {
 export async function requestPdfUpload(
   token: string,
 ): Promise<PresignUploadState> {
-  const assignment = await prisma.matchAssignment.findUnique({
+  const assignment = await prisma.planRequestAssignment.findUnique({
     where: { token },
     select: { id: true, status: true },
   });
@@ -76,9 +76,9 @@ export async function requestPdfUpload(
  */
 export async function submitProposal(
   token: string,
-  input: ProposalSubmissionInput,
-): Promise<ProposalSubmissionState> {
-  const assignment = await prisma.matchAssignment.findUnique({
+  input: PlanProposalSubmissionInput,
+): Promise<PlanProposalSubmissionState> {
+  const assignment = await prisma.planRequestAssignment.findUnique({
     where: { token },
     select: { id: true, status: true, requestId: true },
   });
@@ -93,7 +93,7 @@ export async function submitProposal(
     };
   }
 
-  const parsed = ProposalSubmissionSchema.safeParse(input);
+  const parsed = PlanProposalSubmissionSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
@@ -141,7 +141,7 @@ export async function submitProposal(
   //      updateMany + WHERE status='dispatched' 로 조건부 → 이미 analyzing/completed
   //      면 no-op (idempotent, race-safe).
   await prisma.$transaction([
-    prisma.proposal.create({
+    prisma.planProposal.create({
       data: {
         id: proposalId,
         assignmentId: assignment.id,
@@ -151,7 +151,7 @@ export async function submitProposal(
         note: parsed.data.note,
       },
     }),
-    prisma.matchAssignment.update({
+    prisma.planRequestAssignment.update({
       where: { id: assignment.id },
       data: { status: "submitted", submittedAt: new Date() },
     }),
@@ -223,7 +223,7 @@ export async function requestProposalContact(
 
   // partner.user.name/phone + request.name/phone 까지 join — 마킹 성공 분기에서
   // 설계사 알림 LMS 본문에 양측 이름 + 가입자 연락처를 박는다 (DB 재조회 회피).
-  const proposal = await prisma.proposal.findUnique({
+  const proposal = await prisma.planProposal.findUnique({
     where: { id: proposalId },
     select: {
       id: true,
@@ -254,12 +254,12 @@ export async function requestProposalContact(
   // race-safe 마킹 + 카운터 증가. updateMany WHERE contactedAt IS NULL 의 count 가
   // 0 이면 다른 호출이 먼저 마킹한 것 — 그 경우 카운터 트랜잭션 + 알림 발송을 모두
   // 건너뛰어 중복 +1 / 중복 LMS 방지.
-  const marked = await prisma.proposal.updateMany({
+  const marked = await prisma.planProposal.updateMany({
     where: { id: proposalId, contactedAt: null },
     data: { contactedAt: new Date() },
   });
   if (marked.count > 0) {
-    await prisma.partnerMatchStats.updateMany({
+    await prisma.partnerAssignmentStats.updateMany({
       where: { partnerId: proposal.assignment.partnerId },
       data: { contactedCount: { increment: 1 } },
     });
@@ -352,7 +352,7 @@ export async function retryProposalAnalysis(
 ): Promise<RetryAnalysisResult> {
   await requireAdminSession();
 
-  const proposal = await prisma.proposal.findUnique({
+  const proposal = await prisma.planProposal.findUnique({
     where: { id: proposalId },
     select: {
       id: true,
@@ -369,7 +369,7 @@ export async function retryProposalAnalysis(
   // 채워지면서 이 update 가 0 row 가 되고, 그 경우 success 가 이미 들어왔단 뜻이라
   // 재시도 자체가 무의미. 그래도 publish 는 멱등 (webhook 이 또 다른 success 받아도
   // updateMany WHERE analyzedAt IS NULL 로 no-op) 이므로 그대로 진행.
-  await prisma.proposal.updateMany({
+  await prisma.planProposal.updateMany({
     where: { id: proposalId, analyzedAt: null },
     // nullable Json 컬럼을 명시적으로 비우려면 sentinel `Prisma.JsonNull` 사용
     // (raw `null` 은 "필드 자체를 건드리지 말라"는 의미라 컴파일 거부).

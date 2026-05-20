@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { labelForCategory } from "@/features/proposals/category-labels";
-import type { ScenarioCard } from "@/features/proposals/select-scenarios";
+import { labelForCategory } from "@/features/plan-proposals/category-labels";
+import type { ScenarioCard } from "@/features/plan-proposals/select-scenarios";
 import { cn } from "@/lib/utils";
 
 /* ============================================================

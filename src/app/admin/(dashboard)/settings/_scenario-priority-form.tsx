@@ -9,7 +9,7 @@ import {
   KNOWN_CATEGORIES,
   type KnownCategory,
   labelForCategory,
-} from "@/features/proposals/category-labels";
+} from "@/features/plan-proposals/category-labels";
 import { cn } from "@/lib/utils";
 
 /**

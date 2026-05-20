@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/button";
 import {
   requestPdfUpload,
   submitProposal,
-} from "@/features/proposals/actions";
+} from "@/features/plan-proposals/actions";
 import {
   FOCUSED_CONCERN_LABEL,
   TREATMENT_PERIOD_LABEL,
   type CoverageRequest,
   type PlanRequest,
   type MedicalHistoryEntry,
-} from "@/features/requests/schema";
+} from "@/features/plan-requests/schema";
 import { cn } from "@/lib/utils";
 import { GENDER_LABEL } from "@/types";
 
@@ -42,7 +42,7 @@ type FieldErrors = {
  *
  * 휴대폰 번호는 노출하지 않음 — 가입자 PII 는 결과 화면의 "문자 받기" 통해 platform 이 relay.
  */
-export function ProposalForm({
+export function PlanProposalForm({
   token,
   partnerName,
   remainingMs,

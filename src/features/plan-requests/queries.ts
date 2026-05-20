@@ -2,7 +2,7 @@ import "server-only";
 
 import type {
   PlanRequest as PrismaPlanRequest,
-  PlanRequestCandidate,
+  PlanRequestAssignmentCandidate,
   PlanRequestMedicalHistory,
 } from "@prisma/client";
 
@@ -28,7 +28,7 @@ const PLAN_REQUEST_INCLUDE = {
 
 type PlanRequestRow = PrismaPlanRequest & {
   medicalHistory: PlanRequestMedicalHistory[];
-  candidates: PlanRequestCandidate[];
+  candidates: PlanRequestAssignmentCandidate[];
 };
 
 export async function getRequestById(id: string): Promise<PlanRequest | null> {

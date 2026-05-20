@@ -48,7 +48,7 @@ export type MedicalHistoryEntry = z.infer<typeof MedicalHistoryEntrySchema>;
  * Coverage — 가입자 의도 + (focused 시) 대비하고 싶은 질병/상황
  *
  * "보장을 어떻게 알아보고 있나" 를 정형화한 입력. 자유 텍스트 단일 필드 대신
- * 분기형 구조로 두어 매칭 / AI 비교 단계에서 활용 가능하게 함.
+ * 분기형 구조로 두어 후보 산출 / AI 비교 단계에서 활용 가능하게 함.
  *
  * - broad:   특정 보장에 매이지 않고 종합적으로 검토 중
  * - focused: 대비하고 싶은 구체적 질병/상황이 있음 (preset chips 다중 선택, 최소 1개)
@@ -113,7 +113,7 @@ export function coverageRequestToText(coverage: CoverageRequest): string {
 }
 
 /* ============================================================
- * Step 1 — 요청서 본문 (전화번호·성별 제외, 매칭 및 제안서 작성에 필요한 모든 정보)
+ * Step 1 — 요청서 본문 (전화번호·성별 제외, 후보 산출 및 제안서 작성에 필요한 모든 정보)
  *
  * 성별은 Step3 의 주민번호에서 derive — Step1 에서는 받지 않음.
  * ============================================================ */

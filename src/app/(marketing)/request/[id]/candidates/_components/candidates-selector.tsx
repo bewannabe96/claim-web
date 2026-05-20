@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
-import { submitStep2 } from "@/features/requests/actions";
+import { submitStep2 } from "@/features/plan-requests/actions";
 import type { PartnerCard } from "@/features/partners/schema";
 import { cn } from "@/lib/utils";
 

@@ -2,13 +2,13 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { listAllPartners } from "@/features/partners/queries";
-import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
-import { listAllRequests } from "@/features/requests/queries";
+import { listAssignmentDetailsForRequest } from "@/features/plan-proposals/queries";
+import { listAllRequests } from "@/features/plan-requests/queries";
 import {
   ACTIVE_STATUSES,
   type PlanRequest,
-} from "@/features/requests/schema";
-import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
+} from "@/features/plan-requests/schema";
+import { RequestStatusBadge } from "@/features/plan-requests/ui/status-badge";
 import { nowMs } from "@/lib/wall-clock";
 import { getSettings } from "@/server/settings";
 import { GENDER_LABEL } from "@/types";

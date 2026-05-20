@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { retryProposalAnalysis } from "@/features/proposals/actions";
+import { retryProposalAnalysis } from "@/features/plan-proposals/actions";
 import { cn } from "@/lib/utils";
 
 /**

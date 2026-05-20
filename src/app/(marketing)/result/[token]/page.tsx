@@ -2,13 +2,13 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { BrandMark } from "@/components/brand-mark";
-import type { AnalysisReportV5 } from "@/features/proposals/analysis-schema";
+import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import {
   getAnalysisReport,
   listProposalCardsForRequest,
-  type ProposalCard,
-} from "@/features/proposals/queries";
-import { getRequestByResultToken } from "@/features/requests/queries";
+  type PlanProposalCard,
+} from "@/features/plan-proposals/queries";
+import { getRequestByResultToken } from "@/features/plan-requests/queries";
 import { nowMs } from "@/lib/wall-clock";
 import { getSettings } from "@/server/settings";
 
@@ -30,7 +30,7 @@ const MS_PER_DAY = 86_400_000;
  * 데이터 흐름:
  *   token → plan_request → submitted assignments + proposals + partners
  *        ↓
- *   각 proposal.id → claim.proposal_analysis_report (1:1, Prisma 모델)
+ *   각 proposal.id → claim.plan_proposal_analysis_report (1:1, Prisma 모델)
  *        ↓
  *   adaptProposal(card, report) → 결과 페이지 컴포넌트가 기대하는 shape
  *
@@ -85,7 +85,7 @@ export default async function ResultPage({
     ),
   );
 
-  // 실 데이터 → 결과 페이지 컴포넌트가 기대하는 ProposalData shape 으로 변환.
+  // 실 데이터 → 결과 페이지 컴포넌트가 기대하는 PlanProposalData shape 으로 변환.
   const proposals = cards.map((card) =>
     adaptProposal(card, reportsById[card.proposal.id] ?? null),
   );
@@ -145,7 +145,7 @@ export default async function ResultPage({
  * — UI 는 빈 상태로 graceful 렌더.
  */
 async function loadReportForCard(
-  card: ProposalCard,
+  card: PlanProposalCard,
 ): Promise<AnalysisReportV5 | null> {
   return getAnalysisReport(card.proposal.id);
 }

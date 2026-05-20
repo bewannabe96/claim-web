@@ -7,8 +7,8 @@ import { z } from "zod";
 import {
   AnalysisReportV5Schema,
   CURRENT_REPORT_VERSION,
-} from "@/features/proposals/analysis-schema";
-import { AnalysisErrorSchema } from "@/features/proposals/schema";
+} from "@/features/plan-proposals/analysis-schema";
+import { AnalysisErrorSchema } from "@/features/plan-proposals/schema";
 import { sendNotificationLms } from "@/server/aligo";
 import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
@@ -43,8 +43,8 @@ import { resolveOrigin } from "@/server/origin";
  *   - `succeeded` → 트랜잭션:
  *       1. proposal.analyzedAt = now() (첫 콜백만, WHERE id + assignment.requestId
  *          매치 + analyzedAt IS NULL — plan_request_id cross-check 로 페이로드 위조 차단)
- *       2. updated.count===1 이면 proposal_analysis_report INSERT (proposalId 1:1)
- *     그 후 plan_request 의 **모든 match_assignment** 가 submitted + 그 proposal 이
+ *       2. updated.count===1 이면 plan_proposal_analysis_report INSERT (proposalId 1:1)
+ *     그 후 plan_request 의 **모든 plan_request_assignment** 가 submitted + 그 proposal 이
  *     analyzed 인 경우에만 plan_request.status='analyzing' → 'completed'
  *     (pending/expired assignment 가 하나라도 있으면 전이 안 함).
  *
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
     //   - analyzedAt IS NULL → 성공 분석이 이미 들어와 있으면 덮어쓰기 금지.
     //     (외부 파이프라인이 success 후 failed 재전송하는 비정상 케이스 방어.)
     //   - assignment.requestId 매치 → succeeded 분기와 동일한 cross-validation.
-    const updated = await prisma.proposal.updateMany({
+    const updated = await prisma.planProposal.updateMany({
       where: {
         id: proposal_id,
         analyzedAt: null,
@@ -169,7 +169,7 @@ export async function POST(req: Request) {
   await prisma.$transaction(async (tx) => {
     // WHERE 에 assignment.requestId 매치까지 포함 — 페이로드 위조/혼선 (다른
     // plan_request 의 proposal_id 가 와도) 차단. assignment relation 으로 join.
-    const updated = await tx.proposal.updateMany({
+    const updated = await tx.planProposal.updateMany({
       where: {
         id: proposal_id,
         analyzedAt: null,
@@ -181,7 +181,7 @@ export async function POST(req: Request) {
     if (updated.count === 1) {
       // schema_version 은 컬럼으로 분리, 본문 (report) 엔 안 들어감.
       const { schema_version, ...reportBody } = result!;
-      await tx.proposalAnalysisReport.create({
+      await tx.planProposalAnalysisReport.create({
         data: {
           proposalId: proposal_id,
           schemaVersion: schema_version,
@@ -197,15 +197,15 @@ export async function POST(req: Request) {
     }
   });
 
-  // 멱등 전이 — plan_request 의 **모든** match_assignment 가 submitted + proposal 이
+  // 멱등 전이 — plan_request 의 **모든** plan_request_assignment 가 submitted + proposal 이
   // analyzed 인 경우에만 completed. proposal.count 만 보면 pending/expired assignment
   // 가 제외돼 1개만 분석돼도 전이되는 버그가 있어서, assignment 총수 vs fully-analyzed
   // 수를 직접 비교.
   const [total, fullyAnalyzed] = await Promise.all([
-    prisma.matchAssignment.count({
+    prisma.planRequestAssignment.count({
       where: { requestId: plan_request_id },
     }),
-    prisma.matchAssignment.count({
+    prisma.planRequestAssignment.count({
       where: {
         requestId: plan_request_id,
         status: "submitted",

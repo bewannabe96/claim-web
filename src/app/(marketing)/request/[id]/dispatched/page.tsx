@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { MailIcon, StatusScreen } from "@/components/status-screen";
-import { getRequestById } from "@/features/requests/queries";
+import { getRequestById } from "@/features/plan-requests/queries";
 import { nowMs } from "@/lib/wall-clock";
 
 /**

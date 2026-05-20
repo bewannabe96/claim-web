@@ -17,8 +17,8 @@
   - `운영자` — DAL `requireSession()`
 - **DB 컬럼 R/W**
   - 표 안 약어: `plan_request` → `pr`, `plan_request_medical_history` → `pr_mh`,
-    `plan_request_candidate` → `pr_cand`, `match_assignment` → `assign`,
-    `proposal` → `prop`, `partner` → `pt`, `app_settings` → `cfg`
+    `plan_request_assignment_candidate` → `pr_cand`, `plan_request_assignment` → `assign`,
+    `plan_proposal` → `prop`, `partner` → `pt`, `app_settings` → `cfg`
 
 ---
 
@@ -33,7 +33,7 @@
 | `/request/[id]/candidates` | 매칭된 설계사 후보 카드 + 선택 (최대 selectLimit) | 가입자 | **W**: pr_cand.selected, pr.status=confirming · **R**: pr, pt, cfg | §5.2 | ✅ |
 | `/request/[id]/confirm` | 본인 인증 (이름·휴대폰·OTP) + 동의 + 요청 내용 검토 | 가입자 | **W**: pr.{name,phone,consent,status=dispatched,...}, assign(K개 생성) — 트랜잭션 · **R**: pr, cfg | §5.3 | ✅ (OTP는 demo `000000`) |
 | `/request/[id]/dispatched` | 송부 완료 안내 + 마감 시간 노출 | 누구나 (id 안다면) | **R**: pr | §5.3 | ✅ |
-| `/result/[token]` | 제안서 비교 — 설계사 chip 탭 / 시나리오 chip(top-3 + 검색) + ROI(log) 차트 + 해지 시 월부담 차트 + 보장 패널 | 가입자(token) | **R**: pr, assignment + proposal(+pdfHash) + partner, `eightytwo_judge.proposal_analysis_reports` (raw SQL), app_settings.scenario_priority | §5.6 | ✅ 분석 리포트 v4 연동 완료 (Proposal.pdfHash 매칭) |
+| `/result/[token]` | 제안서 비교 — 설계사 chip 탭 / 시나리오 chip(top-3 + 검색) + ROI(log) 차트 + 해지 시 월부담 차트 + 보장 패널 | 가입자(token) | **R**: pr, assignment + plan_proposal(+pdfHash) + partner, `eightytwo_judge.proposal_analysis_reports` (raw SQL), app_settings.scenario_priority | §5.6 | ✅ 분석 리포트 v4 연동 완료 (PlanProposal.pdfHash 매칭) |
 
 ---
 
@@ -62,7 +62,7 @@
 | `/admin/login` | 운영자 로그인 | 누구나 | — | — | ✅ (dev mock 세션) |
 | `/admin` | 대시보드 — KPI (진행/완료/재매칭/활성설계사) + 최근 요청 + 마감 임박 + 시스템 설정 요약 | 운영자 | **R**: pr (전체), pt, cfg | §5.8 | ✅ |
 | `/admin/requests` | 요청 모니터링 — 전체 요청 목록 + 상태 필터 | 운영자 | **R**: pr | §5.8 | ✅ |
-| `/admin/requests/[id]` | 요청 상세 — Step1/3 전체 + assignment 목록 (partner + proposal join) | 운영자 | **R**: pr, assign, prop, pt | §5.8 | ✅ |
+| `/admin/requests/[id]` | 요청 상세 — Step1/3 전체 + assignment 목록 (partner + plan_proposal join) | 운영자 | **R**: pr, assign, prop, pt | §5.8 | ✅ |
 | `/admin/partners` | 설계사 풀 목록 | 운영자 | **R**: pt | §5.8 | ✅ |
 | `/admin/partners/new` | 신규 설계사 등록 폼 | 운영자 | **W**: pt | §5.8 | ✅ |
 | `/admin/partners/[id]` | 설계사 수정 폼 + 크레딧 수동 조정 (adjustCredit) + 최근 거래 내역 | 운영자 | **R/W**: pt, partner_credit_balance, partner_credit_ledger (applyLedger) | §5.8 | ✅ |
@@ -109,7 +109,7 @@
   /admin/login
     └─► /admin                       (KPI 대시보드)
         ├─► /admin/requests          (요청 모니터링)
-        │   └─► /admin/requests/<id> (요청 상세 — assignment / proposal 확인)
+        │   └─► /admin/requests/<id> (요청 상세 — assignment / plan_proposal 확인)
         ├─► /admin/partners          (설계사 풀)
         │   ├─► /admin/partners/new
         │   └─► /admin/partners/<id>

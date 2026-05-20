@@ -36,7 +36,7 @@ export async function signUpWithKakao(formData: FormData) {
   }
 
   // 어드민 본인 겸직 invitation 은 Kakao OAuth 흐름이 아님 — admin 세션 + OTP 로만.
-  const invitationKind = await prisma.partnerInvitation.findUnique({
+  const invitationKind = await prisma.partnerSignupInvitation.findUnique({
     where: { token },
     select: { existingUserId: true },
   });
@@ -126,7 +126,7 @@ type CallerAuth =
  * select 는 가입 트랜잭션에 필요한 partner 컬럼 전체 + 분기에 필요한 메타 포함.
  */
 async function getInvitationForCaller(token: string, caller: CallerAuth) {
-  const invitation = await prisma.partnerInvitation.findUnique({
+  const invitation = await prisma.partnerSignupInvitation.findUnique({
     where: { token },
     select: {
       id: true,
@@ -192,7 +192,7 @@ async function resolveCallerAuth(
   | { ok: true; caller: CallerAuth; authUserEmail?: string }
   | { ok: false; error: string }
 > {
-  const meta = await prisma.partnerInvitation.findUnique({
+  const meta = await prisma.partnerSignupInvitation.findUnique({
     where: { token },
     select: { existingUserId: true },
   });
@@ -362,7 +362,7 @@ export async function verifyPartnerSignupOtp(
   if (caller.kind === "admin") {
     try {
       await prisma.$transaction(async (tx) => {
-        const reread = await tx.partnerInvitation.findUnique({
+        const reread = await tx.partnerSignupInvitation.findUnique({
           where: { id: invitation.id },
           select: {
             consumedAt: true,
@@ -410,10 +410,10 @@ export async function verifyPartnerSignupOtp(
         await tx.partnerCreditBalance.create({
           data: { partnerId: caller.adminUserId },
         });
-        await tx.partnerMatchStats.create({
+        await tx.partnerAssignmentStats.create({
           data: { partnerId: caller.adminUserId },
         });
-        await tx.partnerInvitation.update({
+        await tx.partnerSignupInvitation.update({
           where: { id: invitation.id },
           data: {
             consumedAt: new Date(),
@@ -453,7 +453,7 @@ export async function verifyPartnerSignupOtp(
   try {
     await prisma.$transaction(async (tx) => {
       // tx 안에서 invitation 재확인 (동시 소비 + linkedAuthId 변경 race 차단).
-      const reread = await tx.partnerInvitation.findUnique({
+      const reread = await tx.partnerSignupInvitation.findUnique({
         where: { id: invitation.id },
         select: {
           consumedAt: true,
@@ -494,11 +494,11 @@ export async function verifyPartnerSignupOtp(
       await tx.partnerCreditBalance.create({
         data: { partnerId: userId },
       });
-      // 매칭 카운터 row eager-create — Partner.exists ⇔ PartnerMatchStats.exists 불변식.
-      await tx.partnerMatchStats.create({
+      // 배정 카운터 row eager-create — Partner.exists ⇔ PartnerAssignmentStats.exists 불변식.
+      await tx.partnerAssignmentStats.create({
         data: { partnerId: userId },
       });
-      await tx.partnerInvitation.update({
+      await tx.partnerSignupInvitation.update({
         where: { id: invitation.id },
         data: {
           consumedAt: new Date(),

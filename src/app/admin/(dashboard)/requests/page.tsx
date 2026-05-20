@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-import { listAssignmentDetailsForRequest } from "@/features/proposals/queries";
-import { listAllRequests } from "@/features/requests/queries";
-import { RequestStatusBadge } from "@/features/requests/ui/status-badge";
+import { listAssignmentDetailsForRequest } from "@/features/plan-proposals/queries";
+import { listAllRequests } from "@/features/plan-requests/queries";
+import { RequestStatusBadge } from "@/features/plan-requests/ui/status-badge";
 
 import {
   DataTable,

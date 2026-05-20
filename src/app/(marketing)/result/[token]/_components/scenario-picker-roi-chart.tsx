@@ -2,14 +2,14 @@
 
 import { useMemo, useState } from "react";
 
-import type { AnalysisReportV5 } from "@/features/proposals/analysis-schema";
-import { labelForCategory } from "@/features/proposals/category-labels";
+import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
+import { labelForCategory } from "@/features/plan-proposals/category-labels";
 import {
   intersectionTopCategories,
   unionCategoryScenarios,
-} from "@/features/proposals/select-scenarios";
+} from "@/features/plan-proposals/select-scenarios";
 
-import type { ProposalData } from "../_lib/result-types";
+import type { PlanProposalData } from "../_lib/result-types";
 import { RoiChart, type RoiChartChip } from "./charts/roi-chart";
 import { ScenarioModal } from "./scenario-modal";
 
@@ -34,7 +34,7 @@ const MAX_RECENT = 3;
  * ROI 시계열은 adapter 가 모든 category_payouts 카테고리에 대해 미리 채워둠
  * (proposal.roi[category]). 차트는 active category 로 lookup.
  *
- * 제안서 chip 탭 (활성 proposal) 전환에도 state 는 유지 — ProposalBody 가 React
+ * 제안서 chip 탭 (활성 proposal) 전환에도 state 는 유지 — PlanProposalBody 가 React
  * 의 same-type-same-position reuse 규칙에 따라 remount 되지 않기 때문.
  */
 
@@ -44,8 +44,8 @@ export function ScenarioPickerRoiChart({
   reports,
   scenarioPriority,
 }: {
-  proposal: ProposalData;
-  proposals: ProposalData[];
+  proposal: PlanProposalData;
+  proposals: PlanProposalData[];
   reports: AnalysisReportV5[];
   scenarioPriority: readonly string[];
 }) {

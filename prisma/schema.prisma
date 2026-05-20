@@ -75,8 +75,8 @@ model PlanRequest {
   updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   medicalHistory PlanRequestMedicalHistory[]
-  candidates     PlanRequestCandidate[]
-  assignments    MatchAssignment[]
+  candidates     PlanRequestAssignmentCandidate[]
+  assignments    PlanRequestAssignment[]
 
   @@index([status, createdAt(sort: Desc)])
   @@map("plan_request")
@@ -110,10 +110,13 @@ model PlanRequestMedicalHistory {
 }
 
 // ============================================================
-// plan_request_candidate — 후보/선택 (M:N junction)
+// plan_request_assignment_candidate — 배정 후보 (M:N junction)
 // ============================================================
+// 알고리즘이 산출한 (PlanRequest × Partner) 후보 슬롯. 가입자가 K명 선택
+// (selected=true) 시점에 plan_request_assignment 로 실체화. 자세한 어휘/모델
+// 정의는 docs/domain-glossary.md.
 
-model PlanRequestCandidate {
+model PlanRequestAssignmentCandidate {
   requestId      String   @map("request_id")
   partnerId      String   @map("partner_id")
   candidateRank  Int      @map("candidate_rank")
@@ -127,7 +130,7 @@ model PlanRequestCandidate {
   @@unique([requestId, candidateRank])
   @@index([requestId])
   @@index([partnerId])
-  @@map("plan_request_candidate")
+  @@map("plan_request_assignment_candidate")
   @@schema("claim")
 }
 
@@ -169,10 +172,10 @@ model User {
 // ============================================================
 // 가입자 노출:  user.name, bio, yearsOfExperience, trustMetric
 // 운영:        user.email (로그인), user.phone (알림톡), active
-// 매칭 카운터: partner_match_stats 가 1:1 로 보유 (본체 hot row 와 분리).
+// 배정 카운터: partner_assignment_stats 가 1:1 로 보유 (본체 hot row 와 분리).
 //
-// id 는 User.id 와 동일 — 1:1 extension. match_assignment / plan_request_candidate
-// 의 partnerId 는 이 id (= User.id) 를 참조.
+// id 는 User.id 와 동일 — 1:1 extension. plan_request_assignment /
+// plan_request_assignment_candidate 의 partnerId 는 이 id (= User.id) 를 참조.
 
 model Partner {
   id                 String   @id                          // = User.id (공유 nanoid)
@@ -187,42 +190,43 @@ model Partner {
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
-  user          User                   @relation(fields: [id], references: [id], onDelete: Cascade)
-  candidates    PlanRequestCandidate[]
-  assignments   MatchAssignment[]
-  matchStats    PartnerMatchStats?
-  creditBalance PartnerCreditBalance?
-  creditLedger  PartnerCreditLedger[]
+  user             User                              @relation(fields: [id], references: [id], onDelete: Cascade)
+  candidates       PlanRequestAssignmentCandidate[]
+  assignments      PlanRequestAssignment[]
+  assignmentStats  PartnerAssignmentStats?
+  creditBalance    PartnerCreditBalance?
+  creditLedger     PartnerCreditLedger[]
 
   @@map("partner")
   @@schema("claim")
 }
 
 // ============================================================
-// partner_match_stats — 설계사 매칭 카운터 (Partner 와 1:1, PK 공유)
+// partner_assignment_stats — 설계사 배정 카운터 (Partner 와 1:1, PK 공유)
 // ============================================================
-// 매칭의 형평성 정렬 키 + 운영 지표. 본체 Partner 의 read-heavy 경로
+// 배정 형평성 정렬 키 + 운영 지표. 본체 Partner 의 read-heavy 경로
 // (어드민 편집/카드 노출)에서 분리해 hot row 의 width 를 줄임.
 //
 // 각 카운터 정의 (퍼널 단계 순):
-//   - exposureCount: plan_request_candidate INSERT (= 후보 카드 등장).
-//     가입자가 선택하지 않아도 카운트 +1. submitStep1 트랜잭션 안에서 candidate
-//     row 와 같은 트랜잭션으로 증가.
-//   - selectedCount: match_assignment INSERT (= 가입자가 Step3 finalize 까지
-//     완료해 알림톡 발송 대상이 됨, 즉 "제안서 요청"). finalizeRequest 트랜잭션
-//     안에서 assignment 와 같이 증가.
-//   - contactedCount: 결과 페이지에서 제안서 비교 후 가입자가 "문자 보내기" 액션
-//     으로 연락을 요청한 횟수. proposal.contactedAt IS NULL 인 경우에만 +1
-//     (멱등) — requestProposalContact 액션 트랜잭션 안에서 proposal 마킹과 함께.
+//   - exposureCount: plan_request_assignment_candidate INSERT (= 후보 카드
+//     등장). 가입자가 선택하지 않아도 카운트 +1. submitStep1 트랜잭션 안에서
+//     candidate row 와 같은 트랜잭션으로 증가.
+//   - selectedCount: plan_request_assignment INSERT (= 가입자가 Step3
+//     finalize 까지 완료해 알림톡 발송 대상으로 배정됨). finalizeRequest
+//     트랜잭션 안에서 assignment 와 같이 증가.
+//   - contactedCount: 결과 페이지에서 제안서 비교 후 가입자가 "문자 보내기"
+//     액션으로 연락을 요청한 횟수. proposal.contactedAt IS NULL 인 경우에만
+//     +1 (멱등) — requestProposalContact 액션 트랜잭션 안에서 proposal
+//     마킹과 함께.
 //
 // 항상 exposureCount >= selectedCount >= contactedCount (퍼널의 부분집합 관계).
 // DB CHECK 미사용 정책이라 앱 레이어가 정의로 보장.
 //
 // 1:1 보장: partnerId = PK 이자 FK. 빈 row 는 가입 트랜잭션
 // (verifyPartnerSignupOtp) 안에서 함께 INSERT — Partner.exists ⇔
-// PartnerMatchStats.exists 불변식. 레거시 partner 대비 시더 백필.
+// PartnerAssignmentStats.exists 불변식. 레거시 partner 대비 시더 백필.
 
-model PartnerMatchStats {
+model PartnerAssignmentStats {
   partnerId      String   @id @map("partner_id")
   exposureCount  Int      @default(0) @map("exposure_count")
   selectedCount  Int      @default(0) @map("selected_count")
@@ -233,9 +237,9 @@ model PartnerMatchStats {
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 
-  // 매칭 후보 정렬 — selected_count 적은 순.
+  // 배정 후보 정렬 — selected_count 적은 순.
   @@index([selectedCount])
-  @@map("partner_match_stats")
+  @@map("partner_assignment_stats")
   @@schema("claim")
 }
 
@@ -332,7 +336,7 @@ model PartnerCreditLedger {
 }
 
 // ============================================================
-// partner_invitation — 운영자가 발행한 설계사 가입 초청 (임시)
+// partner_signup_invitation — 운영자가 발행한 설계사 가입 초청 (임시)
 // ============================================================
 // 운영자가 신규 설계사 등록 시 user/partner row 를 즉시 만들지 않고 이 테이블에만
 // INSERT. 설계사가 발급된 일회용 가입 링크 (`/partner/signup/[token]`) 로 진입 →
@@ -353,7 +357,7 @@ model PartnerCreditLedger {
 // 동일 phone / licenseNumber 의 미소비 invitation 중복 차단은 앱 레이어 (zod +
 // actions 의 사전 lookup) 가 책임 — partial unique index 사용 안 함.
 
-model PartnerInvitation {
+model PartnerSignupInvitation {
   id String @id                                            // nanoid(16)
 
   // 가입 시 user / partner 로 옮겨질 정보. partner.* 컬럼과 1:1 대응.
@@ -406,20 +410,20 @@ model PartnerInvitation {
   @@index([licenseNumber])
   @@index([linkedAuthId])
   @@index([existingUserId])
-  @@map("partner_invitation")
+  @@map("partner_signup_invitation")
   @@schema("claim")
 }
 
 // ============================================================
-// match_assignment — 요청 × 설계사 1:1 슬롯
+// plan_request_assignment — PlanRequest × Partner 1:1 배정 슬롯
 // ============================================================
 // 가입자가 선택한 설계사 K명 각각에 대해 1 row. 알림톡 진입 시 일회용 token 으로
-// 인증. 설계사가 폼 제출하면 status='submitted' + proposal 1:1 생성.
+// 인증. 설계사가 폼 제출하면 status='submitted' + plan_proposal 1:1 생성.
 //
-// (request_id, partner_id) UNIQUE — 한 요청은 한 설계사에게 한 번만 송부.
+// (request_id, partner_id) UNIQUE — 한 요청은 한 설계사에게 한 번만 배정.
 // status 는 enum 대신 text — PRD 에서 상태 추가 가능성 (`declined` 등) 대비.
 
-model MatchAssignment {
+model PlanRequestAssignment {
   id        String @id
 
   requestId String @map("request_id")
@@ -433,24 +437,24 @@ model MatchAssignment {
   createdAt   DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
   submittedAt DateTime? @db.Timestamptz(6) @map("submitted_at")
 
-  request  PlanRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  partner  Partner     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
-  proposal Proposal?
+  request  PlanRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  partner  Partner      @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  proposal PlanProposal?
 
   @@unique([requestId, partnerId])
   @@index([requestId])
   @@index([partnerId, status])
-  @@map("match_assignment")
+  @@map("plan_request_assignment")
   @@schema("claim")
 }
 
 // ============================================================
-// proposal — 설계사 제출 제안서 (assignment 와 1:1)
+// plan_proposal — 설계사 제출 제안서 (plan_request_assignment 와 1:1)
 // ============================================================
 // 정형 필드 (보험료, 담보, 갱신/환급) 는 AI 가 PDF 에서 파싱하므로 입력 받지 않음.
 // 설계사는 진설계 PDF (S3 저장) + 100자 한줄 요약만 작성.
 
-model Proposal {
+model PlanProposal {
   id           String @id
   assignmentId String @unique @map("assignment_id")
 
@@ -460,7 +464,7 @@ model Proposal {
   pdfSizeBytes BigInt? @map("pdf_size_bytes")
 
   /// PDF 본문의 SHA-256 (hex, 64자). 업로드 직후 항상 채워짐. 동일 PDF 식별/audit
-  /// 용도 — 분석 리포트 join 키는 proposal.id 사용 (`ProposalAnalysisReport` 1:1).
+  /// 용도 — 분석 리포트 join 키는 plan_proposal.id 사용 (`PlanProposalAnalysisReport` 1:1).
   pdfHash      String  @map("pdf_hash")
 
   /// 100자 한줄 요약 — 가입자 결과 페이지 말풍선에 그대로 노출 (verbatim).
@@ -469,11 +473,11 @@ model Proposal {
   submittedAt DateTime  @default(now()) @db.Timestamptz(6) @map("submitted_at")
   /// 외부 분석 파이프라인 (eightytwo_judge) 콜백 수신 시각.
   /// 첫 콜백 시점만 기록 (WHERE analyzed_at IS NULL 로 update 한정 → 재시도 시 no-op).
-  /// plan_request 의 모든 match_assignment 가 submitted + 그 proposal 이
+  /// plan_request 의 모든 plan_request_assignment 가 submitted + 그 plan_proposal 이
   /// analyzed_at IS NOT NULL 인 경우에만 plan_request.status='completed'
   /// (pending/expired assignment 가 하나라도 있으면 전이 안 함).
-  /// SQS 메시지 metadata 에 proposal.id + plan_request.id 를 실어보내고, 콜백이 그
-  /// 두 id 로 직접 식별 + 마킹 (cross-validation 으로 페이로드 위조 차단).
+  /// SQS 메시지 metadata 에 plan_proposal.id + plan_request.id 를 실어보내고, 콜백이
+  /// 그 두 id 로 직접 식별 + 마킹 (cross-validation 으로 페이로드 위조 차단).
   analyzedAt  DateTime? @db.Timestamptz(6) @map("analyzed_at")
 
   /// 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 payload.
@@ -487,33 +491,33 @@ model Proposal {
 
   /// 가입자가 결과 페이지에서 이 제안서를 보고 "문자 보내기" 로 설계사에게 연락
   /// 요청한 시각. requestProposalContact 액션이 한 번만 set (WHERE contactedAt IS
-  /// NULL 로 멱등) + 같은 트랜잭션에서 partner_match_stats.contacted_count +1.
+  /// NULL 로 멱등) + 같은 트랜잭션에서 partner_assignment_stats.contacted_count +1.
   /// NULL = 아직 연락 요청 전 (또는 연락 요청 이전에 분석 미완료).
   contactedAt DateTime? @db.Timestamptz(6) @map("contacted_at")
 
-  assignment     MatchAssignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  analysisReport ProposalAnalysisReport?
+  assignment     PlanRequestAssignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  analysisReport PlanProposalAnalysisReport?
 
   @@index([pdfHash])
   /// 어드민 "분석 실패" 뷰 — analyzedAt IS NULL AND analysisErrorAt IS NOT NULL
   /// 조건 스캔이 작은 테이블이지만 자주 호출되므로 보조 인덱스.
   @@index([analysisErrorAt])
-  @@map("proposal")
+  @@map("plan_proposal")
   @@schema("claim")
 }
 
 // ============================================================
-// proposal_analysis_report — 외부 분석 파이프라인 (eightytwo_judge) 결과
+// plan_proposal_analysis_report — 외부 분석 파이프라인 (eightytwo_judge) 결과
 // ============================================================
 // 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 분석 완료 콜백 수신 시 INSERT.
-// proposal 과 1:1 (`proposal_id` PK + FK). SQS metadata 로 보낸 proposal.id 가
+// plan_proposal 과 1:1 (`proposal_id` PK + FK). SQS metadata 로 보낸 plan_proposal.id 가
 // 콜백에 그대로 passthrough 되어 식별 키로 사용됨.
 //
 // 버전 정책: 매 schema 진화 시 row 교체 운영 (`schemaVersion` 컬럼 + 읽을 때
 // `CURRENT_REPORT_VERSION` 필터). v6 도입 시 새 row 가 v6 로 들어오고, 코드의
 // `analysis-schema.ts` zod + `CURRENT_REPORT_VERSION` 갱신.
 
-model ProposalAnalysisReport {
+model PlanProposalAnalysisReport {
   proposalId    String @id @map("proposal_id")
 
   /// 리포트 schema 버전 (현재 5). 읽을 때 `WHERE schema_version = CURRENT_REPORT_VERSION` 로 gate.
@@ -528,10 +532,10 @@ model ProposalAnalysisReport {
 
   createdAt     DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
 
-  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  proposal PlanProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
   @@index([schemaVersion])
-  @@map("proposal_analysis_report")
+  @@map("plan_proposal_analysis_report")
   @@schema("claim")
 }
 
@@ -539,7 +543,7 @@ model ProposalAnalysisReport {
 // app_settings — 운영 튜닝 값 (single row)
 // ============================================================
 // id 는 항상 'app' 한 row 만. CHECK constraint 로 single-row 강제 (migration SQL).
-// admin 화면이 mutation → 모든 매칭 흐름이 이 값을 함수로 읽음 (cache 금지).
+// admin 화면이 mutation → 모든 후보 산출 / 배정 흐름이 이 값을 함수로 읽음 (cache 금지).
 
 model AppSettings {
   id String @id @default("app")

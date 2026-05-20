@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /* ============================================================
- * MatchAssignment — (Request × Partner) 1대1 슬롯
+ * PlanRequestAssignment — (Request × Partner) 1대1 슬롯
  * ============================================================ */
 
 export const ASSIGNMENT_STATUSES = [
@@ -16,7 +16,7 @@ export const ASSIGNMENT_STATUSES = [
 
 export type AssignmentStatus = (typeof ASSIGNMENT_STATUSES)[number];
 
-export type MatchAssignment = {
+export type PlanRequestAssignment = {
   id: string;
   requestId: string;
   partnerId: string;
@@ -29,7 +29,7 @@ export type MatchAssignment = {
 };
 
 /* ============================================================
- * Proposal — 제안서 (S3 PDF + 한줄 설계 요약)
+ * PlanProposal — 제안서 (S3 PDF + 한줄 설계 요약)
  *
  * 정형 필드 (보험료, 담보, 갱신/환급 등) 는 AI 가 PDF 에서 추출하므로 설계사
  * 입력에서 받지 않음. 설계사는 진설계 PDF (S3 저장) + "어떤 점에 집중했는지"
@@ -45,7 +45,7 @@ export type MatchAssignment = {
  * 폼 검증 schema — `pdfS3Key` 는 step (1) 에서 발급된 키, `note` 는 사용자 입력.
  * 키 패턴 검증은 server-side (`isProposalKeyForAssignment`) 가 추가로 수행.
  */
-export const ProposalSubmissionSchema = z.object({
+export const PlanProposalSubmissionSchema = z.object({
   pdfS3Key: z.string().min(1, "제안서 PDF를 첨부해주세요."),
   note: z
     .string()
@@ -53,14 +53,14 @@ export const ProposalSubmissionSchema = z.object({
     .max(100, "한줄 요약은 100자 이내로 작성해주세요."),
 });
 
-export type ProposalSubmissionInput = z.infer<typeof ProposalSubmissionSchema>;
+export type PlanProposalSubmissionInput = z.infer<typeof PlanProposalSubmissionSchema>;
 
-export type ProposalSubmissionState =
+export type PlanProposalSubmissionState =
   | { ok: true }
   | {
       ok?: false;
       errors?: Partial<
-        Record<keyof ProposalSubmissionInput | "_form", string[]>
+        Record<keyof PlanProposalSubmissionInput | "_form", string[]>
       >;
     }
   | undefined;
@@ -71,7 +71,7 @@ export type PresignUploadState =
   | { ok?: false; errors?: { _form?: string[] } }
   | undefined;
 
-export type Proposal = {
+export type PlanProposal = {
   id: string;
   assignmentId: string;
   pdfS3Key: string;

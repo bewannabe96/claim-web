@@ -152,17 +152,17 @@ export default async function AdminPartnersPage() {
             </Td>
             <Td align="right">
               <span className="text-sm text-black">
-                {a.matchStats?.exposureCount ?? 0}회
+                {a.assignmentStats?.exposureCount ?? 0}회
               </span>
             </Td>
             <Td align="right">
               <span className="text-sm text-black">
-                {a.matchStats?.selectedCount ?? 0}회
+                {a.assignmentStats?.selectedCount ?? 0}회
               </span>
             </Td>
             <Td align="right">
               <span className="text-sm text-black">
-                {a.matchStats?.contactedCount ?? 0}회
+                {a.assignmentStats?.contactedCount ?? 0}회
               </span>
             </Td>
             <Td align="center">

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /* ============================================================
- * 분석 리포트 (claim.proposal_analysis_report) — schema v5
+ * 분석 리포트 (claim.plan_proposal_analysis_report) — schema v5
  *
  * 외부 분석 파이프라인 (eightytwo_judge) 가 콜백으로 보내는 결과의 형태.
  * 우리 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 INSERT, queries.ts 의 wrapper 가 read.

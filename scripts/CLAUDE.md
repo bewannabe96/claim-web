@@ -63,7 +63,7 @@ set-workspace-env-vars.sh ←─ source ─┬─ write-env-local.sh
 7. `pnpm prisma migrate deploy` → `prisma/migrations/` 의 모든 migration 적용.
 8. `pnpm prisma db push --skip-generate --accept-data-loss` → schema.prisma 와 reconcile. PR 에는 schema.prisma 만 들어가고 `prisma/migrations/` 는 사람이 안 건드리므로 schema.prisma 가 마이그레이션 폴더보다 앞설 수 있음 — 매 부트스트랩 시 schema 정렬. 차이 없으면 no-op.
 9. `pnpm prisma generate` → Prisma Client 재생성.
-10. `pnpm prisma db seed` → `app_settings('app')` + `admin(본인)` + dev `partner_invitation` upsert/insert.
+10. `pnpm prisma db seed` → `app_settings('app')` + `admin(본인)` + dev `partner_signup_invitation` upsert/insert.
 
 **언제 호출**:
 - 수동 호출 거의 필요 없음 — SessionStart hook 이 컨테이너 없을 때 자동으로 백그라운드 호출.

@@ -2,11 +2,11 @@ import { notFound } from "next/navigation";
 
 import { AlertIcon, StatusScreen } from "@/components/status-screen";
 import { getPartnerById } from "@/features/partners/queries";
-import { getAssignmentByToken } from "@/features/proposals/queries";
-import { getRequestById } from "@/features/requests/queries";
+import { getAssignmentByToken } from "@/features/plan-proposals/queries";
+import { getRequestById } from "@/features/plan-requests/queries";
 import { nowMs } from "@/lib/wall-clock";
 
-import { ProposalForm } from "./_components/proposal-form";
+import { PlanProposalForm } from "./_components/proposal-form";
 
 /**
  * 설계사 제안서 제출 — 알림톡 일회용 토큰으로 진입.
@@ -70,7 +70,7 @@ export default async function PartnerAssignmentPage({
   }
 
   return (
-    <ProposalForm
+    <PlanProposalForm
       token={token}
       partnerName={partner.user.name}
       remainingMs={deadlineMs !== null ? deadlineMs - now : null}

@@ -1,14 +1,14 @@
-import type { AnalysisReportV5 } from "@/features/proposals/analysis-schema";
-import type { ProposalCard } from "@/features/proposals/queries";
-import { computeRoiSeries } from "@/features/proposals/select-scenarios";
+import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
+import type { PlanProposalCard } from "@/features/plan-proposals/queries";
+import { computeRoiSeries } from "@/features/plan-proposals/select-scenarios";
 
 import { formatKRW } from "./format-krw";
-import type { CoverageItem, ProposalData, RoiPoint } from "./result-types";
+import type { CoverageItem, PlanProposalData, RoiPoint } from "./result-types";
 
 /* ============================================================
- * 실 데이터 (Proposal + Partner + 분석 리포트) → 결과 페이지 mock shape.
+ * 실 데이터 (PlanProposal + Partner + 분석 리포트) → 결과 페이지 mock shape.
  *
- * 차트/카드 컴포넌트들이 mock fixture 의 `ProposalData` 형태에 강결합돼 있어
+ * 차트/카드 컴포넌트들이 mock fixture 의 `PlanProposalData` 형태에 강결합돼 있어
  * 어댑터로 변환만 한다.
  *
  * roi / coverage 의 키는 **분석 리포트의 category id** (e.g. "lung_cancer").
@@ -25,10 +25,10 @@ import type { CoverageItem, ProposalData, RoiPoint } from "./result-types";
 const DEFAULT_CUSTOMER_AGE = 33;
 
 export function adaptProposal(
-  card: ProposalCard,
+  card: PlanProposalCard,
   report: AnalysisReportV5 | null,
   customerAge: number = DEFAULT_CUSTOMER_AGE,
-): ProposalData {
+): PlanProposalData {
   const { proposal, partner } = card;
   const analyzed = proposal.analyzedAt != null;
   const contacted = proposal.contactedAt != null;
@@ -135,11 +135,11 @@ function coverageByCategory(
  *     리포트가 없는 케이스. 스키마 버전 불일치 / 누락 등)
  */
 function makeFallback(
-  proposal: ProposalCard["proposal"],
-  partner: ProposalCard["partner"],
+  proposal: PlanProposalCard["proposal"],
+  partner: PlanProposalCard["partner"],
   analyzed: boolean,
   contacted: boolean,
-): ProposalData {
+): PlanProposalData {
   return {
     id: proposal.id,
     partner: {

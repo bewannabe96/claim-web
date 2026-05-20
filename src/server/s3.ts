@@ -129,7 +129,7 @@ export async function verifyUploadedObject(
 /**
  * 업로드된 PDF 본문의 SHA-256 hex (64자) 계산.
  *
- * `submitProposal` 이 HEAD 검증 직후 호출 → `Proposal.pdfHash` 컬럼에 저장
+ * `submitProposal` 이 HEAD 검증 직후 호출 → `PlanProposal.pdfHash` 컬럼에 저장
  * (동일 PDF 식별 / audit 용도). NOT NULL 컬럼이라 null 반환 시 호출자가
  * 제출 자체를 실패시킴 (fail-fast).
  *

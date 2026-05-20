@@ -22,7 +22,7 @@ features/<도메인>/
 
 ## 구체 예시
 
-[features/proposals/](proposals/)
+[features/plan-proposals/](proposals/)
 - `schema.ts` — `RequestProposalSchema` (zod) + `RequestProposalState` 타입
 - `queries.ts` — `listProposalsForCustomer`, `getProposalById`
 - `actions.ts` — `requestProposal` (Server Action)

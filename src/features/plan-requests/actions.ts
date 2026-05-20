@@ -81,7 +81,7 @@ export async function submitStep1(
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
   }
 
-  // 매칭 후보 추출 (DB)
+  // 배정 후보 산출 (DB)
   const settings = await getSettings();
   const candidates = await findMatchCandidates(settings.candidateCount);
 
@@ -114,7 +114,7 @@ export async function submitStep1(
         position: i,
       })),
     }),
-    prisma.planRequestCandidate.createMany({
+    prisma.planRequestAssignmentCandidate.createMany({
       data: candidates.map((c, i) => ({
         requestId: id,
         partnerId: c.id,
@@ -122,10 +122,10 @@ export async function submitStep1(
         selected: false,
       })),
     }),
-    // 매칭 후보로 노출된 partner 들의 카운트 +1 — candidate row 와 같은 트랜잭션에
+    // 배정 후보로 노출된 partner 들의 카운트 +1 — candidate row 와 같은 트랜잭션에
     // 묶어 atomicity 보장. stats row 누락된 레거시 partner 는 silent skip (시더 백필
-    // 이 catch-all). exposureCount 정의: PlanRequestCandidate INSERT = 후보 카드 등장.
-    prisma.partnerMatchStats.updateMany({
+    // 이 catch-all). exposureCount 정의: PlanRequestAssignmentCandidate INSERT = 후보 카드 등장.
+    prisma.partnerAssignmentStats.updateMany({
       where: { partnerId: { in: candidates.map((c) => c.id) } },
       data: { exposureCount: { increment: 1 } },
     }),
@@ -214,11 +214,11 @@ export async function submitStep2(
   // 2) 선택된 ID 만 selected=true
   // 3) plan_request.status = 'confirming'
   await prisma.$transaction([
-    prisma.planRequestCandidate.updateMany({
+    prisma.planRequestAssignmentCandidate.updateMany({
       where: { requestId },
       data: { selected: false },
     }),
-    prisma.planRequestCandidate.updateMany({
+    prisma.planRequestAssignmentCandidate.updateMany({
       where: { requestId, partnerId: { in: parsed.data.partnerIds } },
       data: { selected: true },
     }),
@@ -348,7 +348,7 @@ export async function sendOtp(
  * 동의 단계 최종 제출 — 동의 + 휴대폰 번호 + OTP 코드 한꺼번에 검증/저장.
  *
  * 검증 통과 시 status='dispatched' 로 전환, 결과 토큰 발급, 선택된 설계사
- * 각각에 match_assignment 생성 (한 트랜잭션). 코드는 Redis 의 `otp:code:{id}:{phone}`
+ * 각각에 plan_request_assignment 생성 (한 트랜잭션). 코드는 Redis 의 `otp:code:{id}:{phone}`
  * 키에서 GET 으로 비교, 성공 시 DEL 로 즉시 무효화 (재사용 차단).
  *
  * 알림 발송 (트랜잭션 직후):
@@ -444,7 +444,7 @@ export async function finalizeRequest(
     };
   }
 
-  // 5) 저장 + dispatched 전환 + match_assignment 생성 — 한 트랜잭션.
+  // 5) 저장 + dispatched 전환 + plan_request_assignment 생성 — 한 트랜잭션.
   //    한 쪽만 성공하면 정합 깨짐 (요청만 dispatched 인데 설계사한테 슬롯 없음 등).
   const settings = await getSettings();
   const now = new Date();
@@ -482,7 +482,7 @@ export async function finalizeRequest(
         resultToken: newToken(),
       },
     }),
-    prisma.matchAssignment.createMany({
+    prisma.planRequestAssignment.createMany({
       data: assignmentsToCreate.map(
         ({ partnerName, partnerPhone, ...row }) => {
           void partnerName; // DB 컬럼 아님 — 알림 발송용으로만 보관.
@@ -492,10 +492,10 @@ export async function finalizeRequest(
       ),
     }),
     // 가입자가 선택해 제안서 요청까지 완료한 partner 들의 selectedCount +1.
-    // 정의: match_assignment INSERT = "제안서 요청" (결과 페이지의 문자요청과는 별개).
+    // 정의: plan_request_assignment INSERT = "제안서 요청" (결과 페이지의 문자요청과는 별개).
     // exposureCount 와 동일한 silent-skip 시맨틱 — stats row 누락된 레거시 partner 는
     // 시더 catch-all 이 보정.
-    prisma.partnerMatchStats.updateMany({
+    prisma.partnerAssignmentStats.updateMany({
       where: { partnerId: { in: req.candidates.map((c) => c.partnerId) } },
       data: { selectedCount: { increment: 1 } },
     }),

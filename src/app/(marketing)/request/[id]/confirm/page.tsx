@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { getRequestById } from "@/features/requests/queries";
+import { getRequestById } from "@/features/plan-requests/queries";
 
 import { ConfirmWizard } from "./_components/confirm-wizard";
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
-import { listFailedAnalysisProposals } from "@/features/proposals/queries";
-import type { AnalysisError } from "@/features/proposals/schema";
+import { listFailedAnalysisProposals } from "@/features/plan-proposals/queries";
+import type { AnalysisError } from "@/features/plan-proposals/schema";
 
 import { AnalysisErrorPill } from "../_components/analysis-error-pill";
 import { Card, CardHeader, PageHeader } from "../_components/page-shell";

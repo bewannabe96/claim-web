@@ -6,7 +6,7 @@ import { useEffect, useState, useTransition } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { submitStep1 } from "@/features/requests/actions";
+import { submitStep1 } from "@/features/plan-requests/actions";
 import {
   FOCUSED_CONCERN_IDS,
   FOCUSED_CONCERN_LABEL,
@@ -17,12 +17,12 @@ import {
   type FocusedConcernId,
   type MedicalHistoryEntry,
   type TreatmentPeriod,
-} from "@/features/requests/schema";
+} from "@/features/plan-requests/schema";
 import {
   Chip,
   ChipGroup,
   ProgressSegment,
-} from "@/features/requests/ui/wizard-primitives";
+} from "@/features/plan-requests/ui/wizard-primitives";
 import { cn } from "@/lib/utils";
 
 /* ============================================================
