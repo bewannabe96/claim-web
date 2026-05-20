@@ -191,7 +191,7 @@ async function validateExistingUserAdminLink(
  *
  * Server action 은 layout 의 인증 게이트를 거치지 않으므로 자체 가드 필수.
  */
-export async function createPartnerInvitation(
+export async function createPartnerSignupInvitation(
   _prev: PartnerMutationState,
   formData: FormData,
 ): Promise<PartnerMutationState> {
@@ -271,7 +271,7 @@ export async function createPartnerInvitation(
  * 미소비 가입 초청 정보 수정 — 어드민 전용.
  * token / expiresAt 은 reissue 로만 변경 (편집과 분리).
  */
-export async function updatePartnerInvitation(
+export async function updatePartnerSignupInvitation(
   invitationId: string,
   _prev: PartnerMutationState,
   formData: FormData,
@@ -345,7 +345,7 @@ export async function updatePartnerInvitation(
  * 다음 진입의 OAuth 가 덮어쓰므로 잠금 해제 목적은 아님 (cleanliness). 본인인증
  * audit 의 의미를 새 token 발급 시점에 초기화하는 의도.
  */
-export async function reissuePartnerInvitationToken(
+export async function reissuePartnerSignupInvitationToken(
   invitationId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireAdminSession();
@@ -380,7 +380,7 @@ export async function reissuePartnerInvitationToken(
  * 가입 초청 삭제 — 어드민 전용. 미소비 invitation 만 삭제 가능.
  * 소비된 invitation 은 audit 용으로 보존 (가입 완료된 설계사와의 trace).
  */
-export async function deletePartnerInvitation(
+export async function deletePartnerSignupInvitation(
   invitationId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireAdminSession();

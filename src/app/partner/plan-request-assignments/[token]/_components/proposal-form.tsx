@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import {
   requestPdfUpload,
-  submitProposal,
+  submitPlanProposal,
 } from "@/features/plan-proposals/actions";
 import {
   FOCUSED_CONCERN_LABEL,
@@ -37,7 +37,7 @@ type FieldErrors = {
  *   3. 제안서 PDF 첨부 (진설계만)
  *   4. 제출 CTA
  *
- * 제출 클릭 → presign → S3 직접 PUT → submitProposal action. PDF 바이트는 우리
+ * 제출 클릭 → presign → S3 직접 PUT → submitPlanProposal action. PDF 바이트는 우리
  * 함수를 거치지 않음 (Vercel body 한도 회피 + 메모리 효율).
  *
  * 휴대폰 번호는 노출하지 않음 — 가입자 PII 는 결과 화면의 "문자 받기" 통해 platform 이 relay.
@@ -111,7 +111,7 @@ export function PlanProposalForm({
 
       // 3. submit — server HEAD 검증 + DB insert
       setPhase("submitting");
-      const result = await submitProposal(token, {
+      const result = await submitPlanProposal(token, {
         pdfS3Key: presign.s3Key,
         note,
       });

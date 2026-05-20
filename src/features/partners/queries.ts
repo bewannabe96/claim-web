@@ -25,7 +25,7 @@ const PARTNER_INCLUDE = {
  * stats row 누락된 레거시 partner 는 `?? 0` 폴백 — 가장 우선 순위가 되어 다음
  * 후보 산출에서 다시 선택됨 (시더 catch-all 이 도달 전 임시 안전망).
  */
-export async function findMatchCandidates(
+export async function findAssignmentCandidates(
   limit: number,
 ): Promise<PartnerCard[]> {
   const eligible = await prisma.partner.findMany({
@@ -93,14 +93,14 @@ export async function listAllPartners(): Promise<Partner[]> {
  * consumedAt IS NOT NULL 은 audit 용도로 row 자체는 남지만 어드민 화면엔 노출 X
  * — 가입 완료된 설계사는 partner 리스트로 이동했으므로.
  */
-export async function listPartnerInvitations(): Promise<PartnerSignupInvitation[]> {
+export async function listPartnerSignupInvitations(): Promise<PartnerSignupInvitation[]> {
   return prisma.partnerSignupInvitation.findMany({
     where: { consumedAt: null },
     orderBy: { createdAt: "desc" },
   });
 }
 
-export async function getPartnerInvitationById(
+export async function getPartnerSignupInvitationById(
   id: string,
 ): Promise<PartnerSignupInvitation | null> {
   return prisma.partnerSignupInvitation.findUnique({ where: { id } });
@@ -119,7 +119,7 @@ export async function getPartnerInvitationById(
  * 검증에 사용. signup 페이지는 항상 Step 1 부터 시작하므로 linkedAuthId 로 분기 안 함
  * (매 진입마다 새 OAuth 가 lock 을 덮어쓰는 모델).
  */
-export async function getPartnerInvitationByToken(
+export async function getPartnerSignupInvitationByToken(
   token: string,
 ): Promise<PartnerSignupInvitationView | null> {
   const invitation = await prisma.partnerSignupInvitation.findUnique({

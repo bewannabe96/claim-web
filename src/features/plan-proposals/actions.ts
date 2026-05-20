@@ -11,8 +11,8 @@ import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
 import {
   fetchObjectSha256,
-  isProposalKeyForAssignment,
-  presignProposalUpload,
+  isPlanProposalKeyForAssignment,
+  presignPlanProposalUpload,
   verifyUploadedObject,
 } from "@/server/s3";
 import { publishAnalysisJob } from "@/server/sqs";
@@ -31,7 +31,7 @@ import {
  * 박혀 forgery 차단) → presigned URL 반환. 클라가 이 URL 로 PDF 직접 PUT.
  *
  * 호출은 클라이언트 client component 에서 fetch/action 으로. 형 검증 후 2단계
- * (`submitProposal`) 에 s3Key 전달.
+ * (`submitPlanProposal`) 에 s3Key 전달.
  */
 export async function requestPdfUpload(
   token: string,
@@ -52,7 +52,7 @@ export async function requestPdfUpload(
   }
 
   try {
-    const { url, s3Key } = await presignProposalUpload(assignment.id);
+    const { url, s3Key } = await presignPlanProposalUpload(assignment.id);
     return { ok: true, url, s3Key };
   } catch {
     return {
@@ -74,7 +74,7 @@ export async function requestPdfUpload(
  *
  * 시그니처는 FormData 가 아니라 객체 — 클라 client component 에서 직접 호출.
  */
-export async function submitProposal(
+export async function submitPlanProposal(
   token: string,
   input: PlanProposalSubmissionInput,
 ): Promise<PlanProposalSubmissionState> {
@@ -99,7 +99,7 @@ export async function submitProposal(
   }
 
   // path forgery 1차 방어 — assignment.id 가 키 경로에 박혀 있어야 함.
-  if (!isProposalKeyForAssignment(parsed.data.pdfS3Key, assignment.id)) {
+  if (!isPlanProposalKeyForAssignment(parsed.data.pdfS3Key, assignment.id)) {
     return {
       ok: false,
       errors: { pdfS3Key: ["잘못된 PDF 키입니다. 다시 시도해주세요."] },
@@ -211,7 +211,7 @@ export type RequestContactResult =
   | { ok: true; alreadyContacted: boolean }
   | { ok: false; error: "not_found" };
 
-export async function requestProposalContact(
+export async function requestPlanProposalContact(
   resultToken: string,
   proposalId: string,
 ): Promise<RequestContactResult> {
@@ -293,7 +293,7 @@ async function notifyPartnerOfContactRequest(args: {
 }): Promise<void> {
   if (!args.partnerPhone || !args.customerPhone) {
     console.warn(
-      "[requestProposalContact] partner notification skipped — missing phone",
+      "[requestPlanProposalContact] partner notification skipped — missing phone",
       {
         proposalId: args.proposalId,
         hasPartnerPhone: !!args.partnerPhone,
@@ -318,7 +318,7 @@ async function notifyPartnerOfContactRequest(args: {
     await sendNotificationLms(args.partnerPhone, msg);
   } catch (err) {
     console.error(
-      "[requestProposalContact] partner notification LMS failed",
+      "[requestPlanProposalContact] partner notification LMS failed",
       {
         proposalId: args.proposalId,
         error: err instanceof Error ? err.message : err,
@@ -347,7 +347,7 @@ export type RetryAnalysisResult =
   | { ok: true }
   | { ok: false; error: "not_found" | "already_analyzed" };
 
-export async function retryProposalAnalysis(
+export async function retryPlanProposalAnalysis(
   proposalId: string,
 ): Promise<RetryAnalysisResult> {
   await requireAdminSession();

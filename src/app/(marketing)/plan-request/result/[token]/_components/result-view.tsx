@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { requestProposalContact } from "@/features/plan-proposals/actions";
+import { requestPlanProposalContact } from "@/features/plan-proposals/actions";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +20,7 @@ import { ScenarioPickerRoiChart } from "./scenario-picker-roi-chart";
  *      추가 정보 / 문자 보내기 CTA)
  *
  * 연락 요청 상태 (contacted): SSR 의 proposal.contactedAt 기반으로 초기화 후
- * client state 로 관리. "문자 보내기" 클릭 시 requestProposalContact 액션을 호출 —
+ * client state 로 관리. "문자 보내기" 클릭 시 requestPlanProposalContact 액션을 호출 —
  * 액션이 멱등이라 서버는 첫 호출만 카운터 +1, 클라는 응답과 무관하게 즉시 토글
  * (optimistic). 새로고침 / 새 탭에서 button 이 다시 활성되는 것은 SSR 의 contactedAt
  * 으로 가려짐.
@@ -64,7 +64,7 @@ export function ResultView({
     if (contacted.has(id)) return;
     setContacted((s) => new Set(s).add(id));
     startTransition(async () => {
-      const result = await requestProposalContact(resultToken, id);
+      const result = await requestPlanProposalContact(resultToken, id);
       if (!result.ok) {
         // 서버에서 not_found — 토큰 불일치 등 비정상 케이스. 토글 롤백.
         setContacted((s) => {

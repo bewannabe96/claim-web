@@ -39,7 +39,7 @@ import { resolveOrigin } from "@/server/origin";
  *     건드리지 않음 → plan_request 전이 안 일어남). updateMany + WHERE id +
  *     assignment.requestId + analyzedAt IS NULL → 성공 분석이 이미 들어와 있으면
  *     덮어쓰기 금지 (race-safe). 어드민 "분석 실패" 페이지에서 인지 + 수동 fix
- *     후 `retryProposalAnalysis` 액션으로 재발행.
+ *     후 `retryPlanProposalAnalysis` 액션으로 재발행.
  *   - `succeeded` → 트랜잭션:
  *       1. proposal.analyzedAt = now() (첫 콜백만, WHERE id + assignment.requestId
  *          매치 + analyzedAt IS NULL — plan_request_id cross-check 로 페이로드 위조 차단)

@@ -5,7 +5,7 @@ import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { findMatchCandidates } from "@/features/partners/queries";
+import { findAssignmentCandidates } from "@/features/partners/queries";
 import { newId, newToken } from "@/lib/id";
 import {
   isAligoTestMode,
@@ -83,7 +83,7 @@ export async function submitStep1(
 
   // 배정 후보 산출 (DB)
   const settings = await getSettings();
-  const candidates = await findMatchCandidates(settings.candidateCount);
+  const candidates = await findAssignmentCandidates(settings.candidateCount);
 
   // 부모 (plan_request) → 자식 (medical_history, candidates) 순서로 트랜잭션.
   // FK 무결성 보장 + 일부만 들어가는 부분 실패 방지.

@@ -37,7 +37,7 @@ async function main() {
   console.log("[seed] app_settings('app') ready");
 
   await seedAdmin();
-  await seedDevPartnerInvitation();
+  await seedDevPartnerSignupInvitation();
   await seedExamplePartners();
   await seedPartnerCreditBalances();
   await seedPartnerAssignmentStats();
@@ -103,7 +103,7 @@ async function seedAdmin() {
  * admin UI 에서 초청 + 파생된 partner 를 수동 삭제. 만료 임박 / token 회전이
  * 필요하면 admin UI 의 reissue.
  */
-async function seedDevPartnerInvitation() {
+async function seedDevPartnerSignupInvitation() {
   const DEV_INVITATION_ID = "local_dev_inv001";
   const DEV_INVITATION_TOKEN = "local_dev_signup_token_for_testing";
 
@@ -148,7 +148,7 @@ async function seedDevPartnerInvitation() {
  * `verifyPartnerSignupOtp` 와 동일 패턴 — user / partner / partnerCreditBalance 를 단일
  * 트랜잭션으로 INSERT 해 `Partner.exists ⇔ PartnerCreditBalance.exists` 불변식을 만족.
  * invitation+OAuth+OTP 가입 흐름을 우회하므로 **dev seed 전용**: authId 미연결이라
- * `/partner` 대시보드 로그인 불가. 로그인 흐름 테스트는 `seedDevPartnerInvitation` 의
+ * `/partner` 대시보드 로그인 불가. 로그인 흐름 테스트는 `seedDevPartnerSignupInvitation` 의
  * invitation 으로 진행할 것.
  *
  * 멱등성: user.id 존재 시 skip. 픽스처 데이터 변경 후 재반영하려면 admin UI 에서 해당
@@ -267,7 +267,7 @@ async function seedPartnerCreditBalances() {
 /**
  * `Partner.exists ⇔ PartnerAssignmentStats.exists` 불변식 유지.
  *
- * 매칭 후보 정렬 (`findMatchCandidates`) + `isNew` 판정이 모든 partner 에 stats row
+ * 매칭 후보 정렬 (`findAssignmentCandidates`) + `isNew` 판정이 모든 partner 에 stats row
  * 존재를 전제. 정상 가입 트랜잭션 (verifyPartnerSignupOtp) 과 예시 픽스처
  * (seedExamplePartners) 는 자체 tx 에서 eager-create 하므로, 시더는 그 외 경로
  * (eager-create 도입 이전 레거시 partner / 수동 SQL) 의 누락을 메우는 catch-all.

@@ -98,7 +98,7 @@
     ▼
   /partner/plan-request-assignments/<token>   (가입자 요청 확인 + 진설계 PDF + 한줄 요약 제출)
     │
-    │ submitProposal
+    │ submitPlanProposal
     ▼
   /partner/plan-request-assignments/done      (제출 완료)
 ```
@@ -135,7 +135,7 @@
                        ┌───────────────────────┤
                        │                       │
               deadline 초과 + 0명 제출          │ 첫 제안서 제출
-                       │                       │ (submitProposal)
+                       │                       │ (submitPlanProposal)
                        ▼                       ▼
                   rematching               analyzing  ◄────┐
                        │                       │           │

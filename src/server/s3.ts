@@ -17,7 +17,7 @@ import { newId } from "@/lib/id";
  * S3 client + presigned URL 헬퍼.
  *
  * 흐름:
- *   1. `presignProposalUpload(assignmentId)` → presigned PUT URL + s3Key.
+ *   1. `presignPlanProposalUpload(assignmentId)` → presigned PUT URL + s3Key.
  *      클라가 직접 PUT 으로 업로드.
  *   2. `verifyUploadedObject(s3Key)` → HEAD 로 실제 업로드 확인 + size 캡처.
  *   3. `fetchObjectSha256(s3Key)` → 업로드 본문 SHA-256 계산 (audit / 외부
@@ -87,7 +87,7 @@ export const PROPOSAL_PDF_KEY_PREFIX = "proposals/";
  * URL TTL: 10분. ContentType=application/pdf 강제 — 클라가 다른 타입 PUT 하면
  * signature mismatch 로 거부.
  */
-export async function presignProposalUpload(
+export async function presignPlanProposalUpload(
   assignmentId: string,
 ): Promise<{ url: string; s3Key: string }> {
   const { env, client } = getS3();
@@ -129,7 +129,7 @@ export async function verifyUploadedObject(
 /**
  * 업로드된 PDF 본문의 SHA-256 hex (64자) 계산.
  *
- * `submitProposal` 이 HEAD 검증 직후 호출 → `PlanProposal.pdfHash` 컬럼에 저장
+ * `submitPlanProposal` 이 HEAD 검증 직후 호출 → `PlanProposal.pdfHash` 컬럼에 저장
  * (동일 PDF 식별 / audit 용도). NOT NULL 컬럼이라 null 반환 시 호출자가
  * 제출 자체를 실패시킴 (fail-fast).
  *
@@ -166,7 +166,7 @@ export async function fetchObjectSha256(s3Key: string): Promise<string | null> {
  * 키가 우리가 발급한 패턴 + 해당 assignment 소유인지 검증.
  * forgery 차단 1차 방어선 (HEAD 와 함께).
  */
-export function isProposalKeyForAssignment(
+export function isPlanProposalKeyForAssignment(
   s3Key: string,
   assignmentId: string,
 ): boolean {

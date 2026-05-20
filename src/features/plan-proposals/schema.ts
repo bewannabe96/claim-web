@@ -38,12 +38,12 @@ export type PlanRequestAssignment = {
  * 업로드 흐름 (2-step):
  *   1. `requestPdfUpload(token)` → presigned PUT URL + s3Key 반환
  *   2. 클라가 S3 로 직접 PUT (우리 함수 메모리 안 거침)
- *   3. `submitProposal(token, { pdfS3Key, note })` → HEAD 검증 + DB insert
+ *   3. `submitPlanProposal(token, { pdfS3Key, note })` → HEAD 검증 + DB insert
  * ============================================================ */
 
 /**
  * 폼 검증 schema — `pdfS3Key` 는 step (1) 에서 발급된 키, `note` 는 사용자 입력.
- * 키 패턴 검증은 server-side (`isProposalKeyForAssignment`) 가 추가로 수행.
+ * 키 패턴 검증은 server-side (`isPlanProposalKeyForAssignment`) 가 추가로 수행.
  */
 export const PlanProposalSubmissionSchema = z.object({
   pdfS3Key: z.string().min(1, "제안서 PDF를 첨부해주세요."),
@@ -91,7 +91,7 @@ export type PlanProposal = {
   /**
    * 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 정보.
    * 성공 시점이 와도 명시적으로 비우지 않으므로, read 측은 `analyzedAt` 우선 분기.
-   * 재시도 (retryProposalAnalysis) 시점에 두 필드 모두 초기화.
+   * 재시도 (retryPlanProposalAnalysis) 시점에 두 필드 모두 초기화.
    */
   analysisError?: AnalysisError;
   analysisErrorAt?: string;

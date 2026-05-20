@@ -380,11 +380,11 @@ User 에는 role discriminator 컬럼이 없음 — 역할은 partner / admin ex
 
 ### 7.4 Partner 가입 — invitation 경유 single source
 
-partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일회용 가입 초청 token** 으로만 가입. 어드민에 partner 직접 INSERT 액션 없음 (`createPartner` 없음 — `createPartnerInvitation` 만).
+partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일회용 가입 초청 token** 으로만 가입. 어드민에 partner 직접 INSERT 액션 없음 (`createPartner` 없음 — `createPartnerSignupInvitation` 만).
 
 **흐름 (2단계, Kakao 먼저 → 본인인증) — 매 진입마다 새 OAuth:**
 
-1. 어드민 `/admin/partners/new` 입력 → `createPartnerInvitation` 이 `claim.partner_signup_invitation` row INSERT (name/phone/bio/.../active + token + expiresAt = now + `PARTNER_INVITATION_TTL_DAYS`). `linkedAuthId` 와 `phoneVerifiedAt` 은 NULL. user/partner row 없음.
+1. 어드민 `/admin/partners/new` 입력 → `createPartnerSignupInvitation` 이 `claim.partner_signup_invitation` row INSERT (name/phone/bio/.../active + token + expiresAt = now + `PARTNER_INVITATION_TTL_DAYS`). `linkedAuthId` 와 `phoneVerifiedAt` 은 NULL. user/partner row 없음.
 2. 어드민이 `/admin/partners/invitations/<id>` 에서 가입 URL (`/partner/signup/<token>`) 복사 → 메신저로 설계사에게 전달.
 3. 설계사가 링크 진입 → invitation 유효성 (미소비 + 미만료) 확인. **페이지는 `linkedAuthId` 보지 않고 항상 Step 1 ("카카오톡으로 시작") 노출** — 다른 카카오 계정으로 재시도해도 동일하게 시작.
 4. `signUpWithKakao` action: 현재 Supabase 세션 `signOut()` (이전 진입의 잔여 세션 청소) → `signInWithOAuth` 에 `redirectTo=…?signup=<token>` + `queryParams.prompt=login` (Kakao SSO 우회 → 계정 선택 강제).
@@ -400,7 +400,7 @@ partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일
    - invitation 소비 (`consumedAt`, `consumedUserId`, `phoneVerifiedAt` audit)
    - 성공 → `/partner` redirect.
 
-**재발급/삭제** — `/admin/partners/invitations/<id>` 에서 `reissuePartnerInvitationToken` (token 회전 + expiresAt 갱신; 부수적으로 `linkedAuthId` / `phoneVerifiedAt` NULL 리셋 — 어차피 다음 진입이 덮어쓰므로 cleanliness 목적) / `deletePartnerInvitation` (미소비만). 소비된 invitation 은 audit 용 보존.
+**재발급/삭제** — `/admin/partners/invitations/<id>` 에서 `reissuePartnerSignupInvitationToken` (token 회전 + expiresAt 갱신; 부수적으로 `linkedAuthId` / `phoneVerifiedAt` NULL 리셋 — 어차피 다음 진입이 덮어쓰므로 cleanliness 목적) / `deletePartnerSignupInvitation` (미소비만). 소비된 invitation 은 audit 용 보존.
 
 **race-safety** —
 - 콜백의 lock 갱신: `updateMany WHERE token = ? AND consumedAt IS NULL AND expiresAt > now()`. 가입 트랜잭션이 먼저 `consumedAt` 채우면 이후 콜백은 no-op (이미 consumed 인 invitation 의 lock 을 못 옮김).

@@ -5,7 +5,7 @@ import { BrandMark } from "@/components/brand-mark";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import {
   getAnalysisReport,
-  listProposalCardsForRequest,
+  listPlanProposalCardsForRequest,
   type PlanProposalCard,
 } from "@/features/plan-proposals/queries";
 import { getRequestByResultToken } from "@/features/plan-requests/queries";
@@ -15,7 +15,7 @@ import { getSettings } from "@/server/settings";
 import { ExpiredState } from "./_components/expired-state";
 import { RematchingState } from "./_components/rematching-state";
 import { ResultView } from "./_components/result-view";
-import { adaptProposal } from "./_lib/adapt-proposal";
+import { adaptPlanProposal } from "./_lib/adapt-proposal";
 
 const MS_PER_DAY = 86_400_000;
 
@@ -32,7 +32,7 @@ const MS_PER_DAY = 86_400_000;
  *        ↓
  *   각 proposal.id → claim.plan_proposal_analysis_report (1:1, Prisma 모델)
  *        ↓
- *   adaptProposal(card, report) → 결과 페이지 컴포넌트가 기대하는 shape
+ *   adaptPlanProposal(card, report) → 결과 페이지 컴포넌트가 기대하는 shape
  *
  * 분석 미완료 proposal 은 report=null 로 들어가서 카드가 "분석 중" placeholder
  * 로 렌더 (adapt-proposal 의 makeFallback + analyzed=false).
@@ -70,7 +70,7 @@ export default async function ResultPage({
   }
 
   // 실 데이터 — submitted proposal + 작성 설계사 카드.
-  const cards = await listProposalCardsForRequest(req.id);
+  const cards = await listPlanProposalCardsForRequest(req.id);
 
   // 각 proposal 의 분석 리포트 — proposal.id 1:1. 분석 미완료면 null (placeholder UI).
   const reportEntries = await Promise.all(
@@ -87,7 +87,7 @@ export default async function ResultPage({
 
   // 실 데이터 → 결과 페이지 컴포넌트가 기대하는 PlanProposalData shape 으로 변환.
   const proposals = cards.map((card) =>
-    adaptProposal(card, reportsById[card.proposal.id] ?? null),
+    adaptPlanProposal(card, reportsById[card.proposal.id] ?? null),
   );
 
   // 분석 진행 현황 — 분석 안 된 proposal 이 있으면 progress 배지, 모두 완료면 "결과 준비됨".

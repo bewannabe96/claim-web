@@ -1,0 +1,89 @@
+[db] Worktree: vigorous-hypatia-f3b958
+[db] Project:  claim_vigorous-hypatia-f3b958
+[db] Postgres: 55153
+[db] Redis:    56153
+ Network claim_vigorous-hypatia-f3b958_default  Creating
+ Network claim_vigorous-hypatia-f3b958_default  Created
+ Volume claim_vigorous-hypatia-f3b958_pgdata  Creating
+ Volume claim_vigorous-hypatia-f3b958_pgdata  Created
+ Volume claim_vigorous-hypatia-f3b958_redisdata  Creating
+ Volume claim_vigorous-hypatia-f3b958_redisdata  Created
+ Container claim_vigorous-hypatia-f3b958_postgres  Creating
+ Container claim_vigorous-hypatia-f3b958_redis  Creating
+ Container claim_vigorous-hypatia-f3b958_redis  Created
+ Container claim_vigorous-hypatia-f3b958_postgres  Created
+ Container claim_vigorous-hypatia-f3b958_redis  Starting
+ Container claim_vigorous-hypatia-f3b958_postgres  Starting
+ Container claim_vigorous-hypatia-f3b958_redis  Started
+ Container claim_vigorous-hypatia-f3b958_postgres  Started
+[db] Waiting for postgres. ready.
+[db] Waiting for redis ready.
+[db] Wrote .env.local (postgres=55153, redis=56153)
+[db] Applying migrations...
+◇ injected env (0) from .env.local // tip: ◈ secrets for agents [www.dotenvx.com]
+◇ injected env (27) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+Loaded Prisma config from prisma.config.ts.
+
+Prisma config detected, skipping environment variable loading.
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": PostgreSQL database "postgres", schemas "claim" at "127.0.0.1:55153"
+
+6 migrations found in prisma/migrations
+
+Applying migration `20260518090123_init`
+Applying migration `20260518171241_479a23a9`
+Applying migration `20260518173821_a8a2b8c7`
+Applying migration `20260519113835_fe543e68`
+Applying migration `20260520052650_1dacdd3a`
+Applying migration `20260520093720_727d597e`
+
+The following migration(s) have been applied:
+
+migrations/
+  └─ 20260518090123_init/
+    └─ migration.sql
+  └─ 20260518171241_479a23a9/
+    └─ migration.sql
+  └─ 20260518173821_a8a2b8c7/
+    └─ migration.sql
+  └─ 20260519113835_fe543e68/
+    └─ migration.sql
+  └─ 20260520052650_1dacdd3a/
+    └─ migration.sql
+  └─ 20260520093720_727d597e/
+    └─ migration.sql
+      
+All migrations have been successfully applied.
+[db] Reconciling schema.prisma → DB (db push)...
+◇ injected env (0) from .env.local // tip: ⌁ auth for agents [www.vestauth.com]
+◇ injected env (27) from .env // tip: ⌘ suppress logs { quiet: true }
+Loaded Prisma config from prisma.config.ts.
+
+Prisma config detected, skipping environment variable loading.
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": PostgreSQL database "postgres", schemas "claim" at "127.0.0.1:55153"
+
+🚀  Your database is now in sync with your Prisma schema. Done in 158ms
+
+[db] Generating Prisma Client...
+Loaded Prisma config from prisma.config.ts.
+
+Prisma config detected, skipping environment variable loading.
+[db] Seeding...
+◇ injected env (0) from .env.local // tip: ⌘ multiple files { path: ['.env.local', '.env'] }
+◇ injected env (27) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+Loaded Prisma config from prisma.config.ts.
+
+Prisma config detected, skipping environment variable loading.
+Running seed command `tsx prisma/seed.ts` ...
+[seed] app_settings('app') ready
+[seed] admin (b1ob@insupire.com) ready
+[seed] partner_signup_invitation ready — /partner/signup/local_dev_signup_token_for_testing
+[seed] example partners — 3 fixture(s) checked, 3 new partner(s) created
+[seed] partner_credit_balance — 3 partner(s) checked, 0 new row(s) created
+[seed] partner_assignment_stats — 3 partner(s) checked, 0 new row(s) created
+
+🌱  The seed command has been executed.
+
+[db] Ready. DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55153/postgres?schema=claim
+[db] If 'pnpm dev' was already running, restart it to pick up new DATABASE_URL.

@@ -9,7 +9,7 @@ import { z } from "zod";
  * SQS client + 분석 잡 발행 헬퍼.
  *
  * 흐름:
- *   1. 설계사가 제안서 PDF 업로드 + submit → `submitProposal` 액션.
+ *   1. 설계사가 제안서 PDF 업로드 + submit → `submitPlanProposal` 액션.
  *   2. DB 트랜잭션 commit 후 `publishAnalysisJob({ planRequestId, s3Key, proposalId })` 호출.
  *   3. eightytwo_judge 파이프라인이 큐를 polling, S3 PDF 분석 → 콜백으로 리포트 전달.
  *
@@ -76,7 +76,7 @@ function getSqs(): { env: SqsEnv; client: SQSClient } {
  * 페이로드: `{ request_id, status, result|error, metadata, duration_ms }` +
  * `X-Signature: sha256=<hmac>` 헤더.
  *
- * 호출자는 트랜잭션 commit **후** 호출 (`submitProposal`). 실패는 throw —
+ * 호출자는 트랜잭션 commit **후** 호출 (`submitPlanProposal`). 실패는 throw —
  * 호출자가 graceful 처리 (로그 후 사용자 응답은 성공).
  */
 export async function publishAnalysisJob(input: {

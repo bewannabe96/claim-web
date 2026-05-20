@@ -30,7 +30,7 @@ export type PlanProposalCard = {
 
 /**
  * proposalId 가 도메인 타입에 남아 있으므로, fetch 시 proposal.id 만 가볍게 join.
- * 전체 proposal 객체가 필요한 곳에서는 별도 query 또는 mapProposal 사용.
+ * 전체 proposal 객체가 필요한 곳에서는 별도 query 또는 mapPlanProposal 사용.
  */
 const ASSIGNMENT_WITH_PROPOSAL_ID = {
   proposal: { select: { id: true } },
@@ -81,7 +81,7 @@ export async function listAssignmentsForPartner(
   return rows.map(mapAssignment);
 }
 
-export async function listSubmittedProposalsForRequest(
+export async function listSubmittedPlanProposalsForRequest(
   requestId: string,
 ): Promise<PlanProposal[]> {
   const rows = await prisma.planProposal.findMany({
@@ -90,12 +90,12 @@ export async function listSubmittedProposalsForRequest(
     },
     orderBy: { submittedAt: "asc" },
   });
-  return rows.map(mapProposal);
+  return rows.map(mapPlanProposal);
 }
 
-export async function getProposalById(id: string): Promise<PlanProposal | null> {
+export async function getPlanProposalById(id: string): Promise<PlanProposal | null> {
   const row = await prisma.planProposal.findUnique({ where: { id } });
-  return row ? mapProposal(row) : null;
+  return row ? mapPlanProposal(row) : null;
 }
 
 /**
@@ -128,7 +128,7 @@ export async function listAssignmentDetailsForRequest(
         ...row,
         proposal: row.proposal ? { id: row.proposal.id } : null,
       });
-      const proposal = row.proposal ? mapProposal(row.proposal) : null;
+      const proposal = row.proposal ? mapPlanProposal(row.proposal) : null;
       return { assignment, partner, proposal };
     })
     .filter((d): d is AssignmentDetail => d !== null);
@@ -137,7 +137,7 @@ export async function listAssignmentDetailsForRequest(
 /**
  * 결과 페이지 — 제출된 제안서와 작성 설계사 카드를 함께. 빠른 제출 순.
  */
-export async function listProposalCardsForRequest(
+export async function listPlanProposalCardsForRequest(
   requestId: string,
 ): Promise<PlanProposalCard[]> {
   const rows = await prisma.planRequestAssignment.findMany({
@@ -153,7 +153,7 @@ export async function listProposalCardsForRequest(
     .map((row) => {
       const partner = partnerById.get(row.partnerId);
       if (!row.proposal || !partner) return null;
-      return { proposal: mapProposal(row.proposal), partner };
+      return { proposal: mapPlanProposal(row.proposal), partner };
     })
     .filter((c): c is PlanProposalCard => c !== null);
 }
@@ -206,7 +206,7 @@ function mapAssignment(row: AssignmentRow): PlanRequestAssignment {
  * 노출하지 않음 (undefined). 페이로드 컨트랙트가 깨졌다는 신호이므로 로그만 남기고
  * 어드민 UI 에선 단순 "분석 중" 으로 보이게 됨 — 필요 시 별도 모니터링 추가.
  */
-function mapProposal(row: PrismaPlanProposal): PlanProposal {
+function mapPlanProposal(row: PrismaPlanProposal): PlanProposal {
   return {
     id: row.id,
     assignmentId: row.assignmentId,
@@ -252,7 +252,7 @@ export type FailedPlanProposalRow = {
   planRequestId: string;
 };
 
-export async function listFailedAnalysisProposals(): Promise<
+export async function listFailedAnalysisPlanProposals(): Promise<
   FailedPlanProposalRow[]
 > {
   const rows = await prisma.planProposal.findMany({
@@ -273,7 +273,7 @@ export async function listFailedAnalysisProposals(): Promise<
       const partner = partnerById.get(row.assignment.partnerId);
       if (!partner) return null;
       return {
-        proposal: mapProposal(row),
+        proposal: mapPlanProposal(row),
         partner,
         planRequestId: row.assignment.requestId,
       };

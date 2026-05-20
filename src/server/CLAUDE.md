@@ -80,7 +80,7 @@
   }
   ```
 - **Key 패턴**: `proposals/{assignment_id}/{nanoid(16)}.pdf` — assignment 가 경로에 박혀 있어
-  forgery 1차 방어 (`isProposalKeyForAssignment`) 가능. submit 단계의 HEAD 가 2차 방어.
+  forgery 1차 방어 (`isPlanProposalKeyForAssignment`) 가능. submit 단계의 HEAD 가 2차 방어.
 - **Size 한도**: `PROPOSAL_PDF_MAX_BYTES` (default 10MB) — presigned PUT 으론 강제 못 함, HEAD-then-reject 방식.
 
 ## SQS (분석 파이프라인 잡 큐)
@@ -94,7 +94,7 @@
     "Resource": "arn:aws:sqs:<region>:<account>:<queue-name>"
   }
   ```
-- **발행 시점**: `submitProposal` 액션의 DB 트랜잭션 commit 직후. 실패는 로깅 (graceful) — DB 는 이미 저장됨, 누락 메시지는 별도 backfill 잡으로 재발행.
+- **발행 시점**: `submitPlanProposal` 액션의 DB 트랜잭션 commit 직후. 실패는 로깅 (graceful) — DB 는 이미 저장됨, 누락 메시지는 별도 backfill 잡으로 재발행.
 - **페이로드**: `{ request_id, graph: "proposal_analysis", input: { s3_key }, webhook: { url }, metadata: { proposal_id, plan_request_id } }`. `request_id` 는 메시지마다 새로 생성하는 UUID (correlation/logging 용). 우리 도메인 식별은 `metadata.*_id` 가 책임. 소비자는 eightytwo_judge.
 - **콜백 URL**: `ANALYSIS_CALLBACK_URL` env. eightytwo_judge 가 분석 완료 시 그 URL 로 POST → `/api/webhooks/eightytwo-judge-analysis` 라우트 처리. dev 에선 ngrok 같은 tunnel 필요.
 
@@ -110,12 +110,12 @@
   ```
   `metadata.*` 는 우리가 SQS metadata 로 실어 보낸 값이 그대로 passthrough. `request_id` 는 발행 시 생성한 UUID 가 echo 되어 옴 (correlation/log 용, DB 식별엔 사용 안 함). `error.group` 은 `input_error | product_id_match | internal_error` enum 고정 — 미정의 group 은 zod 단계에서 reject (DB 진입 차단).
 - **동작**:
-  - `failed` → `plan_proposal.analysisError + analysisErrorAt` 마킹 (WHERE id + assignment.requestId 매치 + `analyzedAt IS NULL` — 성공 분석이 들어와 있으면 덮어쓰기 금지, race-safe). `analyzedAt` 은 건드리지 않음 → plan_request 전이 안 일어남. 마킹 성공 시 `/admin/analysis-failures` + `/admin/requests/[id]` revalidate. 어드민이 외부 시스템 수정 후 `retryProposalAnalysis` 액션으로 재발행 (`features/plan-proposals/actions.ts`).
+  - `failed` → `plan_proposal.analysisError + analysisErrorAt` 마킹 (WHERE id + assignment.requestId 매치 + `analyzedAt IS NULL` — 성공 분석이 들어와 있으면 덮어쓰기 금지, race-safe). `analyzedAt` 은 건드리지 않음 → plan_request 전이 안 일어남. 마킹 성공 시 `/admin/analysis-failures` + `/admin/requests/[id]` revalidate. 어드민이 외부 시스템 수정 후 `retryPlanProposalAnalysis` 액션으로 재발행 (`features/plan-proposals/actions.ts`).
   - `succeeded` → 트랜잭션 안에서:
     1. `plan_proposal.analyzedAt = now()` (WHERE id + assignment.requestId(=plan_request_id) 매치 + analyzedAt IS NULL → 첫 콜백만 기록, 페이로드 위조 차단, race-free).
     2. `updated.count===1` 이면 `plan_proposal_analysis_report` INSERT (proposalId 1:1, schemaVersion=result.schema_version, report=result 본문, durationMs).
     트랜잭션 후, plan_request 의 **모든 plan_request_assignment** 가 submitted + 그 plan_proposal 이 analyzed 인 경우에만 `plan_request.status='analyzing' → 'completed'`. pending/expired assignment 가 하나라도 있으면 전이 안 함 (assignment 총수 vs fully-analyzed 수 비교).
-- **저장 책임**: 이 웹훅이 분석 리포트 + 분석 실패 마킹의 단일 writer. read 는 [features/plan-proposals/queries.ts](../features/plan-proposals/queries.ts) 의 `getAnalysisReport(proposalId)` / `listFailedAnalysisProposals()`.
+- **저장 책임**: 이 웹훅이 분석 리포트 + 분석 실패 마킹의 단일 writer. read 는 [features/plan-proposals/queries.ts](../features/plan-proposals/queries.ts) 의 `getAnalysisReport(proposalId)` / `listFailedAnalysisPlanProposals()`.
 - **재시도 안전**: 정상 처리든 no-op 이든 200 반환. updateMany WHERE 절 + transaction 으로 첫 콜백만 INSERT 보장 (race-free). 발신측 중복 이벤트도 멱등. failed → succeeded 전환도 안전 (succeeded 가 analyzedAt 채우면 이후 failed 는 WHERE 조건으로 no-op).
 
 ## DB 컨벤션

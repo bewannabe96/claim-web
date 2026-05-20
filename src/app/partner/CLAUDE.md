@@ -47,7 +47,7 @@ export async function updateMyProfile(...) {
 
 `signOutPartner` 같은 가드 없어도 무해한 액션은 예외.
 
-**토큰 기반 action** (`submitProposal`, `requestPdfUpload`, `signUpWithKakao`) 은 token 자체가 인증 역할 — partner session 가드 추가 안 함. 알림톡 / 신규 가입 흐름의 본질이므로.
+**토큰 기반 action** (`submitPlanProposal`, `requestPdfUpload`, `signUpWithKakao`) 은 token 자체가 인증 역할 — partner session 가드 추가 안 함. 알림톡 / 신규 가입 흐름의 본질이므로.
 
 ## 사용자 모델 (User + Partner extension + Invitation)
 
@@ -175,7 +175,7 @@ DAL 이 매 요청마다 확인. 매칭 후보 추출에서도 동시에 제외.
 - 토큰은 `nanoid(32)` (192bit) 라 추측 불가.
 - assignments: `assignment.status='pending'` 이 아닌 경우 폼 미노출 (`submitted`/`expired`).
 - signup: invitation 의 `consumedAt IS NULL AND expiresAt > now()` 양쪽 만족해야 진입. **매 진입마다 새 Kakao OAuth 가 invitation.linkedAuthId 를 덮어씀** — Kakao 계정 자체는 보안 게이트가 아니라 "가입 후 어떤 계정으로 로그인할지" 결정 수단. **횡령 방지는 휴대폰 OTP** — 발송 대상이 `invitation.phone` 으로 고정되어 invitation 소유자만 코드 수신 가능. verify 페이지/액션은 "현재 Kakao 세션 == 최신 lock" 인지만 검증 — mismatch 시 silent 하게 Step 1 으로 돌려보내 새 OAuth 시작. 가입 트랜잭션 안에서 invitation 의 미소비 / 미만료 / linkedAuthId 매칭 모두 재확인 (race-safe).
-- `submitProposal` action 이 s3Key prefix(`assignment.id`) + S3 HEAD 검증으로 path forgery 차단.
+- `submitPlanProposal` action 이 s3Key prefix(`assignment.id`) + S3 HEAD 검증으로 path forgery 차단.
 
 토큰 흐름을 로그인 흐름으로 막지 말 것 — alimtalk / 가입 링크 발송 시 매번 로그인 요구는 UX 손해.
 
@@ -185,7 +185,7 @@ DAL 이 매 요청마다 확인. 매칭 후보 추출에서도 동시에 제외.
 - ❌ Partner mutation server action 에 `requirePartnerSession()` 가드 누락 — layout 게이트는 페이지 렌더 전용.
 - ❌ 토큰 기반 action (signUpWithKakao 등) 에 session 가드 추가 — 흐름 끊김. 토큰 + 콜백 검증이 인증.
 - ❌ middleware 의 carve-out 목록에 새 토큰 경로 누락 — 새 토큰 흐름 추가 시 `isPartnerPublicPath` 도 갱신.
-- ❌ 어드민에서 user/partner 직접 INSERT 액션 부활 — invitation 경유가 단일 진입점. `createPartnerInvitation` 만 존재.
+- ❌ 어드민에서 user/partner 직접 INSERT 액션 부활 — invitation 경유가 단일 진입점. `createPartnerSignupInvitation` 만 존재.
 - ❌ Kakao OAuth 응답에서 phone 을 직접 매칭하려는 시도 — Kakao 는 phone 을 제공하지 않음. phone 매칭은 휴대폰 OTP (verify 단계, 발송 대상이 `invitation.phone` 으로 고정) 책임.
 - ❌ User row 만 만들고 Partner row 누락 — partner extension row 자체가 권한. 누락 시 DAL 통과 안 됨.
 - ❌ verify action 에서 `invitation.linkedAuthId === authUser.id` 매칭 검사 누락 — 다른 탭의 stale 세션이 가입 트랜잭션 호출 가능 (Kakao 자체는 게이트 아니지만 일관성 검증 필요).

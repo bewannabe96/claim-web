@@ -5,8 +5,8 @@ import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  deletePartnerInvitation,
-  reissuePartnerInvitationToken,
+  deletePartnerSignupInvitation,
+  reissuePartnerSignupInvitationToken,
 } from "@/features/partners/actions";
 
 /**
@@ -23,7 +23,7 @@ export function InvitationActions({ invitationId }: { invitationId: string }) {
   const onReissue = () => {
     setError(null);
     startTransition(async () => {
-      const result = await reissuePartnerInvitationToken(invitationId);
+      const result = await reissuePartnerSignupInvitationToken(invitationId);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -38,7 +38,7 @@ export function InvitationActions({ invitationId }: { invitationId: string }) {
     }
     setError(null);
     startTransition(async () => {
-      const result = await deletePartnerInvitation(invitationId);
+      const result = await deletePartnerSignupInvitation(invitationId);
       if (!result.ok) {
         setError(result.error);
         return;

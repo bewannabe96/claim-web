@@ -152,14 +152,14 @@ import { prisma } from "@/server/db/prisma";
  */
 export async function finalizeRequestStatus(requestId: string): Promise<void> {
   const [total, pending, submitted, analyzed] = await Promise.all([
-    prisma.matchAssignment.count({ where: { requestId } }),
-    prisma.matchAssignment.count({ where: { requestId, status: "pending" } }),
-    prisma.matchAssignment.count({ where: { requestId, status: "submitted" } }),
-    prisma.matchAssignment.count({
+    prisma.planRequestAssignment.count({ where: { requestId } }),
+    prisma.planRequestAssignment.count({ where: { requestId, status: "pending" } }),
+    prisma.planRequestAssignment.count({ where: { requestId, status: "submitted" } }),
+    prisma.planRequestAssignment.count({
       where: {
         requestId,
         status: "submitted",
-        plan_proposal: { analyzedAt: { not: null } },
+        proposal: { analyzedAt: { not: null } },
       },
     }),
   ]);
@@ -206,7 +206,7 @@ export async function GET(req: Request) {
 
   // 마감 지난 pending assignment 의 requestId 수집
   const now = new Date();
-  const stale = await prisma.matchAssignment.findMany({
+  const stale = await prisma.planRequestAssignment.findMany({
     where: {
       status: "pending",
       request: { deadlineAt: { lte: now } },
@@ -218,7 +218,7 @@ export async function GET(req: Request) {
     return Response.json({ ok: true, expired: 0, transitioned: 0 });
   }
 
-  await prisma.matchAssignment.updateMany({
+  await prisma.planRequestAssignment.updateMany({
     where: { id: { in: stale.map((s) => s.id) } },
     data: { status: "expired" },
   });
@@ -411,7 +411,7 @@ export async function GET(req: Request) {
 
 1. `PlanRequest WHERE status='rematching' AND rematchCount=0` 조회.
 2. 각 요청에 대해:
-   - 기존 `findMatchCandidates()` 재호출 (이전 후보 제외).
+   - 기존 `findAssignmentCandidates()` 재호출 (이전 후보 제외).
    - 새 `PlanRequestAssignmentCandidate` rows insert.
    - 새 `PlanRequestAssignment` rows 생성 (가입자가 다시 선택해야 하므로 즉시 송부 아님 — UX 결정 필요).
    - **UX 분기 결정 필요**:
@@ -423,7 +423,7 @@ export async function GET(req: Request) {
 #### 의존성
 
 - [ ] **UX 결정**: 옵션 A vs B
-- [ ] `findMatchCandidates()` 의 "이전 후보 제외" 옵션 — 현재 시그니처 확인 필요
+- [ ] `findAssignmentCandidates()` 의 "이전 후보 제외" 옵션 — 현재 시그니처 확인 필요
 
 (알림 발송 인프라는 `server/aligo.ts:sendNotificationLms` 로 이미 제공됨 — cron 구현 시 호출만 추가.)
 
@@ -442,13 +442,13 @@ export async function GET(req: Request) {
 #### 배경
 
 - 외부 분석 파이프라인 (eightytwo_judge) 일시 장애 → `plan_proposal.analysisError + analysisErrorAt` 마킹.
-- 어드민이 `/admin/analysis-failures` 에서 수동 "재시도" 클릭 — [src/features/plan-proposals/actions.ts:204](../src/features/plan-proposals/actions.ts) 의 `retryProposalAnalysis()`.
+- 어드민이 `/admin/analysis-failures` 에서 수동 "재시도" 클릭 — [src/features/plan-proposals/actions.ts:204](../src/features/plan-proposals/actions.ts) 의 `retryPlanProposalAnalysis()`.
 - 일시 장애의 경우 사람 개입 없이 자동 재시도가 충분.
 
 #### 무엇을 한다
 
 1. `PlanProposal WHERE analyzedAt IS NULL AND analysisErrorAt IS NOT NULL AND analysisErrorAt < NOW() - 30분` 조회.
-2. 각 plan_proposal 에 대해 `retryProposalAnalysis()` 의 코어 로직 호출 (admin 검증 제외 → 함수 분리 필요).
+2. 각 plan_proposal 에 대해 `retryPlanProposalAnalysis()` 의 코어 로직 호출 (admin 검증 제외 → 함수 분리 필요).
 3. 최대 재시도 횟수 추적 — **schema 확장 필요**.
 
 #### Schema 확장 (`PlanProposal` 모델)
@@ -481,18 +481,18 @@ model PlanProposal {
 
 ```ts
 // src/features/plan-proposals/actions.ts — 함수 분리
-export async function _retryProposalAnalysisCore(proposalId: string) {
+export async function _retryPlanProposalAnalysisCore(proposalId: string) {
   // requireAdminSession() 제외, 본 로직만
   // ...
 }
 
-export async function retryProposalAnalysis(proposalId: string) {
+export async function retryPlanProposalAnalysis(proposalId: string) {
   await requireAdminSession();
-  return _retryProposalAnalysisCore(proposalId);
+  return _retryPlanProposalAnalysisCore(proposalId);
 }
 
 // src/app/api/cron/retry-failed-analysis/route.ts
-import { _retryProposalAnalysisCore } from "@/features/plan-proposals/actions";
+import { _retryPlanProposalAnalysisCore } from "@/features/plan-proposals/actions";
 
 export async function GET(req: Request) {
   if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -518,7 +518,7 @@ export async function GET(req: Request) {
       where: { id },
       data: { retryCount: { increment: 1 } },
     });
-    await _retryProposalAnalysisCore(id);
+    await _retryPlanProposalAnalysisCore(id);
   }
 
   return Response.json({ ok: true, retried: candidates.length });
@@ -528,7 +528,7 @@ export async function GET(req: Request) {
 #### 체크리스트
 
 - [ ] `PlanProposal.retryCount` schema 추가 + `pnpm db:push` (worktree 한정)
-- [ ] `retryProposalAnalysis` 를 `_retryProposalAnalysisCore` 로 분리
+- [ ] `retryPlanProposalAnalysis` 를 `_retryPlanProposalAnalysisCore` 로 분리
 - [ ] 어드민 수동 재시도 시 `retryCount = 0` 으로 리셋 (admin override)
 - [ ] cron 라우트 추가
 - [ ] vercel.json 등록

@@ -32,9 +32,9 @@ proposals/
   - `type` 은 그룹별 세부 사유 (open string, 외부 확장 가능).
   - 라벨 매핑은 `ANALYSIS_ERROR_GROUP_LABEL`, 어드민 pill 은 `app/admin/(dashboard)/_components/analysis-error-pill.tsx` 한 곳에서 색상 정책 단일화.
 - 읽기 진입점:
-  - `queries.ts:mapProposal` — 모든 PlanProposal read 가 자동으로 `parseAnalysisError` (zod safeParse) 통과시켜 도메인 타입 노출. parse 실패 row 는 undefined + 로그.
-  - `queries.ts:listFailedAnalysisProposals()` — `analyzedAt IS NULL AND analysisErrorAt IS NOT NULL`. 어드민 `/admin/analysis-failures` 페이지 단일 사용처.
-- 재시도: `actions.ts:retryProposalAnalysis(proposalId)` — 어드민 전용 (`requireAdminSession`). 두 컬럼 null 초기화 (race-safe `WHERE analyzedAt IS NULL`) → `publishAnalysisJob` 재발행. webhook 이 첫 콜백처럼 멱등 처리.
+  - `queries.ts:mapPlanProposal` — 모든 PlanProposal read 가 자동으로 `parseAnalysisError` (zod safeParse) 통과시켜 도메인 타입 노출. parse 실패 row 는 undefined + 로그.
+  - `queries.ts:listFailedAnalysisPlanProposals()` — `analyzedAt IS NULL AND analysisErrorAt IS NOT NULL`. 어드민 `/admin/analysis-failures` 페이지 단일 사용처.
+- 재시도: `actions.ts:retryPlanProposalAnalysis(proposalId)` — 어드민 전용 (`requireAdminSession`). 두 컬럼 null 초기화 (race-safe `WHERE analyzedAt IS NULL`) → `publishAnalysisJob` 재발행. webhook 이 첫 콜백처럼 멱등 처리.
 - 운영 흐름: 외부 시스템 (예: 상품 카탈로그) 수정 → 어드민이 `/admin/analysis-failures` 에서 "분석 재시도" → 성공 시 row 자연스럽게 사라짐. 영구 미해결 케이스는 plan_request 가 `analyzing` 으로 정체된다는 신호.
 
 ### 시나리오 선정 (`select-scenarios.ts`)
@@ -46,6 +46,6 @@ proposals/
 
 - `queries.ts` 안에서 분석 리포트를 raw row 그대로 반환 — 반드시 `parse()` 통과한 `AnalysisReportV5` 만.
 - 분석 리포트 카테고리를 cancer/cerebro/cardio 같은 임의 그룹으로 묶기 — 카테고리 자체가 시나리오 단위 (admin priority 가 묶음 정책 담당).
-- `PlanProposal.pdfHash` 는 NOT NULL — `submitProposal` 이 S3 GET → SHA-256 계산. 실패 시 제출 자체 차단 (fail-fast). 동일 PDF 식별 / audit 용도 (분석 리포트 join 키는 plan_proposal.id).
-- `analysisError` 초기화에 raw `null` 직접 전달 — Prisma 의 nullable Json 은 `Prisma.JsonNull` sentinel 사용 (`raw null` 은 "필드 미수정" 의미). 패턴은 `retryProposalAnalysis` 참조.
+- `PlanProposal.pdfHash` 는 NOT NULL — `submitPlanProposal` 이 S3 GET → SHA-256 계산. 실패 시 제출 자체 차단 (fail-fast). 동일 PDF 식별 / audit 용도 (분석 리포트 join 키는 plan_proposal.id).
+- `analysisError` 초기화에 raw `null` 직접 전달 — Prisma 의 nullable Json 은 `Prisma.JsonNull` sentinel 사용 (`raw null` 은 "필드 미수정" 의미). 패턴은 `retryPlanProposalAnalysis` 참조.
 - 어드민 group pill 을 각 페이지에서 새로 정의 — `_components/analysis-error-pill.tsx` 의 `AnalysisErrorPill` 재사용 (색상/라벨 정책 단일화).

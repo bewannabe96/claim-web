@@ -24,7 +24,7 @@ import type { CoverageItem, PlanProposalData, RoiPoint } from "./result-types";
 /** mock fixture 와 동일한 가입자 나이 기준 — plan_request 에 birthdate 컬럼 도입 시 교체. */
 const DEFAULT_CUSTOMER_AGE = 33;
 
-export function adaptProposal(
+export function adaptPlanProposal(
   card: PlanProposalCard,
   report: AnalysisReportV5 | null,
   customerAge: number = DEFAULT_CUSTOMER_AGE,

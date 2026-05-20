@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { listFailedAnalysisProposals } from "@/features/plan-proposals/queries";
+import { listFailedAnalysisPlanProposals } from "@/features/plan-proposals/queries";
 import type { AnalysisError } from "@/features/plan-proposals/schema";
 
 import { AnalysisErrorPill } from "../_components/analysis-error-pill";
@@ -25,7 +25,7 @@ import { RetryAnalysisButton } from "../_components/retry-analysis-button";
  * status (analysis_failed) 도입 시 보강 예정.
  */
 export default async function AdminAnalysisFailuresPage() {
-  const rows = await listFailedAnalysisProposals();
+  const rows = await listFailedAnalysisPlanProposals();
 
   return (
     <div className="flex flex-col gap-8">
