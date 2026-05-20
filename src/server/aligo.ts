@@ -11,10 +11,15 @@ import { getServiceName } from "./branding";
  * 사용처: `features/requests/actions.ts:sendOtp` — 본인인증 6자리 코드 SMS.
  *
  * 자격:
- *   - ALIGO_KEY       : 알리고 콘솔의 API key
- *   - ALIGO_USER_ID   : 알리고 계정 ID
- *   - ALIGO_SENDER    : 사전 등록된 발신번호 (미등록 번호로는 발송 불가)
- *   - ALIGO_TEST_MODE : Y → testmode_yn=Y 로 호출 (실제 발송/과금 X), N → 실 발송
+ *   - ALIGO_KEY          : 알리고 콘솔의 API key
+ *   - ALIGO_USER_ID      : 알리고 계정 ID
+ *   - ALIGO_SENDER       : 사전 등록된 발신번호 (미등록 번호로는 발송 불가)
+ *   - ALIGO_TEST_MODE    : Y → testmode_yn=Y 로 호출 (실제 발송/과금 X), N → 실 발송
+ *   - ALIGO_PROXY_URL    : (선택) 고정 IP 프록시 base URL. 알리고 IP whitelist 통과용
+ *                          (Vercel egress 가 동적이라 직접 호출 불가). 설정 시
+ *                          https://apis.aligo.in 대신 ${url}/aligo/send/ 로 호출.
+ *                          인프라: infra/aligo-proxy/ (Lightsail + Caddy + Node).
+ *   - ALIGO_PROXY_SECRET : (선택) 프록시 Bearer 인증 secret. ALIGO_PROXY_URL 설정 시 필수.
  *
  * 사용자 노출 문구의 서비스명은 `branding.getServiceName()` 으로 분리됨 — 다른
  * 채널(이메일/알림톡)에서도 재사용.
@@ -24,11 +29,18 @@ import { getServiceName } from "./branding";
  * 비어있어도 dev 가 동작. 실 SMS 흐름 검증은 ALIGO_TEST_MODE=N + 실 자격으로.
  */
 
-const EnvSchema = z.object({
-  ALIGO_KEY: z.string().min(1, "ALIGO_KEY missing"),
-  ALIGO_USER_ID: z.string().min(1, "ALIGO_USER_ID missing"),
-  ALIGO_SENDER: z.string().min(1, "ALIGO_SENDER missing"),
-});
+const EnvSchema = z
+  .object({
+    ALIGO_KEY: z.string().min(1, "ALIGO_KEY missing"),
+    ALIGO_USER_ID: z.string().min(1, "ALIGO_USER_ID missing"),
+    ALIGO_SENDER: z.string().min(1, "ALIGO_SENDER missing"),
+    ALIGO_PROXY_URL: z.string().url().optional(),
+    ALIGO_PROXY_SECRET: z.string().min(1).optional(),
+  })
+  .refine((env) => !env.ALIGO_PROXY_URL || !!env.ALIGO_PROXY_SECRET, {
+    message: "ALIGO_PROXY_SECRET required when ALIGO_PROXY_URL is set",
+    path: ["ALIGO_PROXY_SECRET"],
+  });
 
 type AligoEnv = z.infer<typeof EnvSchema>;
 
@@ -40,6 +52,8 @@ function getEnv(): AligoEnv {
     ALIGO_KEY: process.env.ALIGO_KEY,
     ALIGO_USER_ID: process.env.ALIGO_USER_ID,
     ALIGO_SENDER: process.env.ALIGO_SENDER,
+    ALIGO_PROXY_URL: process.env.ALIGO_PROXY_URL,
+    ALIGO_PROXY_SECRET: process.env.ALIGO_PROXY_SECRET,
   });
   return cached;
 }
@@ -79,9 +93,22 @@ export async function sendOtpSms(
     testmode_yn: testMode ? "Y" : "N",
   });
 
-  const res = await fetch("https://apis.aligo.in/send/", {
+  // 프록시 설정 시 ${url}/aligo/send/ 로 라우팅 (infra/aligo-proxy 가 /aligo/* → apis.aligo.in/* 패스).
+  // 미설정 시 알리고 직접 호출 — Vercel 에선 IP whitelist 못 통과하므로 prod 는 항상 프록시 사용.
+  const targetUrl = env.ALIGO_PROXY_URL
+    ? `${env.ALIGO_PROXY_URL}/aligo/send/`
+    : "https://apis.aligo.in/send/";
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (env.ALIGO_PROXY_SECRET) {
+    headers.Authorization = `Bearer ${env.ALIGO_PROXY_SECRET}`;
+  }
+
+  const res = await fetch(targetUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers,
     body,
   });
 

@@ -1,0 +1,18 @@
+# ── 필수 ──────────────────────────────────────────────────────
+# 사전에 `ssh-keygen -t ed25519 -f ~/.ssh/aligo-proxy` 로 생성한 공개키 경로
+ssh_public_key_path = "~/.ssh/aligo-proxy.pub"
+
+# ── 선택 ──────────────────────────────────────────────────────
+
+# 운영에선 본인 IP 만 허용 권장 (`curl ifconfig.me` 로 확인)
+# allowed_ssh_cidrs = ["1.2.3.4/32"]
+
+# 커스텀 도메인. 비워두면 <ip>.nip.io 자동 사용 (DNS 셋업 불필요)
+# domain = "aligo-proxy.example.com"
+
+# 인스턴스 spec 변경 (default: micro_3_0 = 1GB, ~$10/월 in Seoul)
+# lightsail_bundle_id = "small_3_0"   # 2GB, ~$20/월
+
+# 리전 변경 (default: ap-northeast-2 Seoul)
+# aws_region        = "ap-northeast-1"
+# availability_zone = "ap-northeast-1a"
