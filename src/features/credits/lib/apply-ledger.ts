@@ -35,6 +35,11 @@ export type ApplyLedgerInput = {
   referenceId: string | null;
   idempotencyKey: string | null;
   createdById: string | null;
+  /// 결제 제공자 식별자. topup / refund 만 의미 있음 ("stub" | "portone" | "toss" 등).
+  /// adjustment / spend / 호출자 미지정 시 null.
+  provider?: string | null;
+  /// PG 측 거래 식별자. topup 은 transactionId, refund 는 cancellationId.
+  providerRef?: string | null;
 };
 
 export type ApplyLedgerResult =
@@ -103,6 +108,8 @@ export async function applyLedger(
             referenceId: input.referenceId,
             idempotencyKey: input.idempotencyKey,
             createdById: input.createdById,
+            provider: input.provider ?? null,
+            providerRef: input.providerRef ?? null,
           },
         });
 

@@ -162,6 +162,31 @@ export async function refundTopup(
     };
   }
 
+  // PG 측 실 환불 먼저 — 성공 시 cancellationId 를 idempotencyKey 로 사용해 webhook 의
+  // Transaction.Cancelled 와 dedup. provider 가 cancelPayment 미지원 (stub) 이면 ledger 만.
+  //
+  // 트랜잭션 경계 한계: PG 환불 성공 + ledger 작성 실패 (conflict 극히 드묾) 시 PG 와
+  // ledger 가 어긋남. 운영 대응을 위해 cancellationId 를 명시 로깅.
+  const provider = getPaymentProvider();
+  let cancellationId: string | null = null;
+  if (provider.cancelPayment) {
+    const cancel = await provider.cancelPayment({
+      paymentId: parsed.data.paymentId,
+      amount: parsed.data.amount,
+      reason: parsed.data.reason,
+    });
+    if (!cancel.ok) {
+      console.error(
+        `[credits] PG cancelPayment failed paymentId=${parsed.data.paymentId} reason=${cancel.reason}`,
+      );
+      return {
+        ok: false,
+        errors: { _form: [`결제사 환불 실패: ${cancel.reason}`] },
+      };
+    }
+    cancellationId = cancel.cancellationId;
+  }
+
   const result = await applyLedger({
     partnerId,
     amount: -parsed.data.amount,
@@ -169,11 +194,25 @@ export async function refundTopup(
     reason: parsed.data.reason,
     referenceType: "payment",
     referenceId: parsed.data.paymentId,
-    idempotencyKey: null,
+    idempotencyKey: cancellationId ? `cancellation:${cancellationId}` : null,
     createdById: session.user.id,
+    provider: provider.name,
+    providerRef: cancellationId,
   });
 
   if (!result.ok) {
+    if (cancellationId) {
+      console.error(
+        `[credits] PG refunded but ledger apply failed — manual reconcile required`,
+        {
+          paymentId: parsed.data.paymentId,
+          cancellationId,
+          partnerId,
+          amount: parsed.data.amount,
+          ledgerError: result.error,
+        },
+      );
+    }
     if (result.error === "insufficient_balance") {
       return {
         ok: false,
@@ -231,9 +270,14 @@ export async function initiateTopup(
     paymentId,
     amount: parsed.data.amount,
     userEmail: session.user.email,
+    userPhone: session.user.phone,
+    userName: session.user.name,
   });
 
-  return { ok: true, paymentId, redirectUrl: init.redirectUrl };
+  if (init.kind === "redirect") {
+    return { ok: true, paymentId, kind: "redirect", redirectUrl: init.redirectUrl };
+  }
+  return { ok: true, paymentId, kind: "sdk", sdkPayload: init.sdkPayload };
 }
 
 /**
@@ -265,6 +309,8 @@ export async function confirmTopup(args: {
     referenceId: args.paymentId,
     idempotencyKey: args.paymentId,
     createdById: null,
+    provider: args.providerName,
+    providerRef: args.providerRef,
   });
 
   if (!result.ok) {
@@ -285,6 +331,61 @@ export async function confirmTopup(args: {
   revalidatePath("/partner");
 
   return { ok: true, ledgerId: result.ledgerId, alreadyApplied: result.alreadyApplied };
+}
+
+/**
+ * 클라이언트 SDK 가 결제 성공 반환 직후 호출하는 즉시 ack — 사용자가 webhook 도착을
+ * 기다릴 필요 없이 바로 잔액 갱신.
+ *
+ * 진입점:
+ *   - PC: TopupAmountForm 의 `PortOne.requestPayment` Promise resolve 직후.
+ *   - 모바일: /partner/credits/topup/result 페이지가 redirect 도착 후.
+ *
+ * 안전:
+ *   - requirePartnerSession() — partner 본인만 ack 가능.
+ *   - provider.fetchPaymentStatus 가 PG API 로 결제 진정성 + 금액 재확인.
+ *   - session.partnerId 와 PG 응답의 partnerId (stash + customData) 교차 검증.
+ *   - 같은 paymentId 의 webhook 가 늦게 도착해도 idempotencyKey 로 no-op.
+ *
+ * 비고: Stub provider 는 fetchPaymentStatus 미구현 — stub 환경에선 ack 가 not_supported
+ *      반환, webhook (GET redirect) 만으로 잔액 갱신.
+ */
+export async function acknowledgeTopup({
+  paymentId,
+}: {
+  paymentId: string;
+}): Promise<
+  | { ok: true; ledgerId: string; alreadyApplied: boolean }
+  | { ok: false; error: string }
+> {
+  const session = await requirePartnerSession();
+  const provider = getPaymentProvider();
+
+  if (!provider.fetchPaymentStatus) {
+    return { ok: false, error: "not_supported" };
+  }
+
+  const status = await provider.fetchPaymentStatus(paymentId);
+  if (!status.ok) {
+    return { ok: false, error: status.reason };
+  }
+
+  // Defense in depth — partner 가 본인 결제만 ack 가능. PG 응답의 partnerId 는
+  // stash/customData 에서 옴, 그 둘은 우리가 채움. 그래도 session 과 cross-check.
+  if (status.partnerId !== session.partnerId) {
+    console.warn(
+      `[credits] acknowledgeTopup partnerId mismatch session=${session.partnerId} pg=${status.partnerId} paymentId=${paymentId}`,
+    );
+    return { ok: false, error: "forbidden" };
+  }
+
+  return confirmTopup({
+    paymentId,
+    partnerId: status.partnerId,
+    amount: status.amount,
+    providerName: provider.name,
+    providerRef: status.providerRef,
+  });
 }
 
 /**

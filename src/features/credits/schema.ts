@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { PortOneSdkPayload } from "./payment/types";
+
 /**
  * 크레딧 도메인 스키마 — DB 진실 (prisma/schema.prisma) 과 짝.
  *
@@ -101,8 +103,24 @@ export type RefundMutationState =
     }
   | undefined;
 
+/**
+ * Provider 가 두 가지 시작 방식 중 하나로 응답:
+ *   - "redirect": URL 로 브라우저 navigate (stub — webhook route 가 GET 으로 받음).
+ *   - "sdk":      브라우저에서 `PortOne.requestPayment(sdkPayload)` 호출 (portone).
+ *
+ * `useActionState` 의 직렬화 boundary 를 넘으므로 모든 필드 JSON-safe.
+ */
+export type TopupInitSuccess =
+  | { ok: true; paymentId: string; kind: "redirect"; redirectUrl: string }
+  | {
+      ok: true;
+      paymentId: string;
+      kind: "sdk";
+      sdkPayload: PortOneSdkPayload;
+    };
+
 export type TopupInitMutationState =
-  | { ok: true; paymentId: string; redirectUrl: string }
+  | TopupInitSuccess
   | {
       ok?: false;
       errors?: Partial<Record<keyof TopupInitInput | "_form", string[]>>;

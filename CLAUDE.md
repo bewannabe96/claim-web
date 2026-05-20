@@ -21,6 +21,8 @@
 - Parallel route 슬롯에 **`default.tsx` 없으면 빌드 실패**.
 - `<Link href>`는 typedRoutes 검증 — 동적 쿼리는 `href={{ pathname, query }}` 객체 형식.
 - **Client Component `useState` 는 Router Cache 가 보존** — soft nav 후 같은 라우트에 재진입하면 떠날 때 state 그대로 복원됨. fresh state 원하면 navigate 직전 명시적 reset (예: [step1-wizard.tsx](src/app/(marketing)/request/new/_components/step1-wizard.tsx)).
+- **`schema.prisma` 변경 후 dev 서버 재시작 필수** — `pnpm db:push` 가 DB + generated client 는 갱신하지만, 실행 중인 next-dev 가 메모리에 OLD client 를 들고 있어 `PrismaClientValidationError: Unknown argument` 발생. Turbopack HMR 가 `node_modules` 의 generated 모듈은 watch 안 함.
+- **PortOne webhook 은 콘솔에서 "결제모듈 V2" 등록 필수** — `@portone/server-sdk` 의 verify 가 2024-04-25 페이로드 전용. V1 또는 다른 버전은 `Unrecognized` 로 분류되어 silent ignored (잔액 누락). 자세한 건 [docs/credits.md §4](docs/credits.md), [features/credits/CLAUDE.md](src/features/credits/CLAUDE.md).
 
 ## 디렉토리 책임
 

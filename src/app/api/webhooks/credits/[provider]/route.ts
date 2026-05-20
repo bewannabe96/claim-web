@@ -1,3 +1,4 @@
+import { applyLedger } from "@/features/credits/lib/apply-ledger";
 import { confirmTopup } from "@/features/credits/actions";
 import { getPaymentProvider } from "@/features/credits/payment";
 
@@ -8,7 +9,14 @@ import { getPaymentProvider } from "@/features/credits/payment";
  *   - 세션 가드 없음. 호출자는 PG 인프라 (PortOne/Toss/Stub 의 redirect).
  *   - 진정성은 PaymentProvider.verifyWebhook 가 책임 — 실 provider 는 HMAC,
  *     stub 은 query string + production fail-closed.
- *   - 멱등성은 confirmTopup 이 책임 — idempotencyKey = paymentId 의 UNIQUE 인덱스.
+ *   - 멱등성은 applyLedger 의 idempotencyKey UNIQUE 인덱스가 책임:
+ *     · topup: `paymentId`
+ *     · refund: `cancellation:${cancellationId}` (어드민 환불이 같은 키로 먼저 작성하면 webhook 은 alreadyApplied no-op)
+ *
+ * Event dispatch (verifyWebhook 가 정규화):
+ *   - topup_completed → confirmTopup (기존 흐름)
+ *   - refund          → applyLedger(type='refund'). 외부 콘솔 환불 흡수용.
+ *   - ignored         → 200 OK 로그만 (VirtualAccountIssued / Failed / Ready / BillingKey.* 등)
  *
  * 메서드:
  *   - POST: 실 PG 가 보내는 표준 콜백.
@@ -42,37 +50,85 @@ async function handle(req: Request, ctx: RouteCtx): Promise<Response> {
     });
   }
 
-  const result = await confirmTopup({
-    paymentId: verify.paymentId,
-    partnerId: verify.partnerId,
-    amount: verify.amount,
-    providerName: provider.name,
-    providerRef: verify.providerRef,
-  });
+  const event = verify.event;
 
-  if (!result.ok) {
-    console.error(
-      `[credits-webhook] confirmTopup failed provider=${providerName} paymentId=${verify.paymentId} error=${result.error}`,
-    );
-    return new Response(result.error, { status: 500 });
+  if (event.kind === "topup_completed") {
+    const result = await confirmTopup({
+      paymentId: event.paymentId,
+      partnerId: event.partnerId,
+      amount: event.amount,
+      providerName: provider.name,
+      providerRef: event.providerRef,
+    });
+
+    if (!result.ok) {
+      console.error(
+        `[credits-webhook] confirmTopup failed provider=${providerName} paymentId=${event.paymentId} error=${result.error}`,
+      );
+      return new Response(result.error, { status: 500 });
+    }
+
+    if (result.alreadyApplied) {
+      console.log(
+        `[credits-webhook] topup idempotent replay paymentId=${event.paymentId} ledgerId=${result.ledgerId}`,
+      );
+    }
+
+    // Dev stub 은 브라우저에서 GET 으로 진입 — 결과 페이지로 forward.
+    if (req.method === "GET") {
+      return Response.redirect(new URL("/partner/credits", req.url), 303);
+    }
+
+    return Response.json({
+      ok: true,
+      kind: "topup_completed",
+      ledgerId: result.ledgerId,
+      alreadyApplied: result.alreadyApplied,
+    });
   }
 
-  if (result.alreadyApplied) {
-    console.log(
-      `[credits-webhook] idempotent replay no-op paymentId=${verify.paymentId} ledgerId=${result.ledgerId}`,
-    );
+  if (event.kind === "refund") {
+    const result = await applyLedger({
+      partnerId: event.partnerId,
+      amount: -event.amount,
+      type: "refund",
+      reason: event.reason ?? "External cancellation via PortOne",
+      referenceType: "payment",
+      referenceId: event.paymentId,
+      idempotencyKey: `cancellation:${event.cancellationId}`,
+      // 시스템 actor — 외부 콘솔 환불의 경우 actor 없음. 어드민 UI 환불은 이미 같은
+      // idempotencyKey 로 ledger 를 작성한 후라 여기 도달은 alreadyApplied no-op.
+      createdById: null,
+      provider: provider.name,
+      providerRef: event.cancellationId,
+    });
+
+    if (!result.ok) {
+      console.error(
+        `[credits-webhook] refund applyLedger failed paymentId=${event.paymentId} cancellationId=${event.cancellationId} error=${result.error}`,
+      );
+      return new Response(result.error, { status: 500 });
+    }
+
+    if (result.alreadyApplied) {
+      console.log(
+        `[credits-webhook] refund idempotent replay paymentId=${event.paymentId} cancellationId=${event.cancellationId} ledgerId=${result.ledgerId}`,
+      );
+    }
+
+    return Response.json({
+      ok: true,
+      kind: "refund",
+      ledgerId: result.ledgerId,
+      alreadyApplied: result.alreadyApplied,
+    });
   }
 
-  // Dev stub 은 브라우저에서 GET 으로 진입 — 결과 페이지로 forward.
-  if (req.method === "GET") {
-    return Response.redirect(new URL("/partner/credits", req.url), 303);
-  }
-
-  return Response.json({
-    ok: true,
-    ledgerId: result.ledgerId,
-    alreadyApplied: result.alreadyApplied,
-  });
+  // event.kind === "ignored"
+  console.log(
+    `[credits-webhook] ignored event type=${event.rawType} provider=${providerName}`,
+  );
+  return Response.json({ ok: true, kind: "ignored" });
 }
 
 export async function POST(req: Request, ctx: RouteCtx): Promise<Response> {

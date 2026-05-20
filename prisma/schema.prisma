@@ -275,6 +275,13 @@ model PartnerCreditLedger {
   /// 외부 요청 단위 멱등키 — UNIQUE 인덱스로 race-safe. NULL 다수 허용.
   idempotencyKey String? @unique @map("idempotency_key")
 
+  /// 결제 제공자 식별자. topup / refund 만 유의미 — "stub" | "portone" | "toss"(추후).
+  /// adjustment / spend 는 null. forensic reconciliation 용 (PG 콘솔 매칭).
+  provider String? @db.VarChar(32)
+  /// PG 측 거래 식별자. topup 은 PortOne transactionId, refund 는 cancellationId.
+  /// adjustment / spend / stub 은 null. PG 콘솔/리포트 join 키.
+  providerRef String? @map("provider_ref")
+
   /// 액터 user.id. 시스템 자동 (웹훅·spend) 은 null. FK 미설정 (audit 보존).
   createdById String?  @map("created_by_id")
 
