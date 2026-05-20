@@ -83,7 +83,8 @@ partner/
    ├─ page.tsx                         # /partner 대시보드 (잔액 카드 임베드)
    ├─ credits/
    │  ├─ page.tsx                      # 잔액 + 거래 내역 (cursor pagination)
-   │  └─ topup/page.tsx                # 충전 금액 입력 → PG provider redirect
+   │  ├─ topup/page.tsx                # 충전 금액 입력 → PG SDK 호출 / stub redirect
+   │  └─ topup/result/page.tsx         # 모바일 SDK redirect 착지 — acknowledgeTopup 호출 + 결과 안내
    └─ _actions/logout.ts               # signOutPartner
 ```
 
