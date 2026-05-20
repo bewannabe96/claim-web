@@ -7,19 +7,27 @@ import { redirect } from "next/navigation";
 
 import { findMatchCandidates } from "@/features/partners/queries";
 import { newId, newToken } from "@/lib/id";
-import { isAligoTestMode, sendOtpSms } from "@/server/aligo";
+import {
+  isAligoTestMode,
+  sendNotificationLms,
+  sendOtpSms,
+} from "@/server/aligo";
+import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
 import { getClientIp } from "@/server/get-client-ip";
+import { resolveOrigin } from "@/server/origin";
 import { getRedis } from "@/server/redis";
 import { getSettings } from "@/server/settings";
 
 import { hasActiveRequestForPhone } from "./queries";
 import {
+  CoverageRequestSchema,
   OtpSchema,
   SendOtpSchema,
   Step1Schema,
   Step2Schema,
   Step3Schema,
+  coverageRequestToText,
   deriveRrn,
   type FinalizeState,
   type MedicalHistoryEntry,
@@ -343,7 +351,9 @@ export async function sendOtp(
  * 각각에 match_assignment 생성 (한 트랜잭션). 코드는 Redis 의 `otp:code:{id}:{phone}`
  * 키에서 GET 으로 비교, 성공 시 DEL 로 즉시 무효화 (재사용 차단).
  *
- * TODO: 알림톡 발송 — 실 서비스 단계에서 외부 API 호출.
+ * 알림 발송 (트랜잭션 직후):
+ *   - 설계사 (2-3) 구현됨 — 선택된 각 설계사에게 일회용 token 링크 LMS.
+ *   - 가입자 (1-1) TODO — 디스패치 확인 LMS. 발송 매체/본문 정책 미정.
  */
 export async function finalizeRequest(
   requestId: string,
@@ -383,15 +393,27 @@ export async function finalizeRequest(
   // 코드 일치 — 즉시 무효화. dispatched 트랜잭션 실패해도 같은 코드 재사용은 막음.
   await redis.del(key);
 
-  // 3) 요청 상태 + 선택된 후보 확인
+  // 3) 요청 상태 + 선택된 후보 확인. 요청서 본문 (budget/coverage) 과 partner
+  //    이름/휴대폰까지 join — 트랜잭션 직후 설계사 알림 LMS 본문에 재사용
+  //    (DB 재조회 회피).
   const req = await prisma.planRequest.findUnique({
     where: { id: requestId },
     select: {
       id: true,
       status: true,
+      monthlyBudgetMin: true,
+      monthlyBudgetMax: true,
+      coverage: true,
       candidates: {
         where: { selected: true },
-        select: { partnerId: true },
+        select: {
+          partnerId: true,
+          partner: {
+            select: {
+              user: { select: { name: true, phone: true } },
+            },
+          },
+        },
       },
     },
   });
@@ -430,6 +452,19 @@ export async function finalizeRequest(
     now.getTime() + settings.submissionDeadlineHours * 3600 * 1000,
   );
 
+  // assignment row 를 트랜잭션 진입 전에 build — 트랜잭션 후 LMS 발송에서
+  // 동일 token 을 재사용 (DB 재조회 없이 partner 별 제출 URL 생성).
+  const assignmentsToCreate = req.candidates.map((c) => ({
+    id: newId(),
+    requestId,
+    partnerId: c.partnerId,
+    token: newToken(),
+    status: "pending" as const,
+    createdAt: now,
+    partnerName: c.partner.user.name,
+    partnerPhone: c.partner.user.phone,
+  }));
+
   await prisma.$transaction([
     prisma.planRequest.update({
       where: { id: requestId },
@@ -448,14 +483,13 @@ export async function finalizeRequest(
       },
     }),
     prisma.matchAssignment.createMany({
-      data: req.candidates.map((c) => ({
-        id: newId(),
-        requestId,
-        partnerId: c.partnerId,
-        token: newToken(),
-        status: "pending",
-        createdAt: now,
-      })),
+      data: assignmentsToCreate.map(
+        ({ partnerName, partnerPhone, ...row }) => {
+          void partnerName; // DB 컬럼 아님 — 알림 발송용으로만 보관.
+          void partnerPhone;
+          return row;
+        },
+      ),
     }),
     // 가입자가 선택해 제안서 요청까지 완료한 partner 들의 selectedCount +1.
     // 정의: match_assignment INSERT = "제안서 요청" (결과 페이지의 문자요청과는 별개).
@@ -467,8 +501,104 @@ export async function finalizeRequest(
     }),
   ]);
 
-  // TODO: 알림톡 발송 — 실 서비스 단계에서 외부 API 호출.
+  // 설계사 알림 LMS 발송 (2-3) — 각 선택된 설계사 휴대폰으로 제출 페이지 링크.
+  // Promise.allSettled 로 한 설계사 실패가 다른 설계사 발송을 막지 않게. await 으로
+  // redirect 전에 완료 보장 (Vercel serverless 의 fire-and-forget 회피).
+  await notifyPartnersOfNewAssignment({
+    customerName: parsed.data.name,
+    monthlyBudgetMin: req.monthlyBudgetMin,
+    monthlyBudgetMax: req.monthlyBudgetMax,
+    coverage: req.coverage,
+    assignments: assignmentsToCreate,
+  });
+
+  // TODO: 알림 발송 (1-1) — 가입자에게 디스패치 확인 LMS. dispatched 페이지가 "최대
+  // N시간 안에 결과가 옴" 이라는 expectation 을 약속하고 있으므로 (`request/[id]/
+  // dispatched/page.tsx`, `confirm-wizard.tsx`) 발송 시점은 여기 (트랜잭션 직후).
+  // 본문엔 결과 페이지 링크 (resultToken) + 예상 도착 시간. 발송 매체 미정.
 
   revalidatePath("/admin/requests");
   redirect(`/request/${requestId}/dispatched`);
+}
+
+/**
+ * 신규 제안서 요청 배정 — 선택된 설계사들에게 일회용 token 링크 LMS.
+ *
+ * 본문엔 가입자 이름 / 희망 보험료 / 필요 담보 + 제출 페이지 URL. 설계사가 본문
+ * 만으로 요청서 개요를 파악하고 링크로 진입해 제안서 작성 시작.
+ *
+ * partnerPhone 이 누락된 row 는 skip + 경고 로그 (Partner.user.phone 은 invitation
+ * 단계부터 검증돼 사실상 항상 채워져 있음 — defensive only). coverage parse 실패도
+ * 동일 — schema 통과한 본체 컬럼이라 사실상 안전. 발송 실패는 catch 후 log 만 —
+ * finalize 트랜잭션은 이미 commit 됐고, dispatched 페이지가 가입자에게 노출되므로
+ * 사용자 흐름엔 영향 없음.
+ */
+async function notifyPartnersOfNewAssignment(args: {
+  customerName: string;
+  monthlyBudgetMin: number;
+  monthlyBudgetMax: number;
+  coverage: unknown;
+  assignments: ReadonlyArray<{
+    id: string;
+    partnerId: string;
+    token: string;
+    partnerName: string | null;
+    partnerPhone: string | null;
+  }>;
+}): Promise<void> {
+  const origin = await resolveOrigin();
+  const serviceName = getServiceName();
+
+  const budget = formatBudgetRange(args.monthlyBudgetMin, args.monthlyBudgetMax);
+  const coverageParsed = CoverageRequestSchema.safeParse(args.coverage);
+  const requestText = coverageParsed.success
+    ? coverageRequestToText(coverageParsed.data)
+    : "협의 필요";
+
+  await Promise.allSettled(
+    args.assignments.map(async (a) => {
+      if (!a.partnerPhone) {
+        console.warn(
+          "[finalizeRequest] partner notification skipped — missing phone",
+          { assignmentId: a.id, partnerId: a.partnerId },
+        );
+        return;
+      }
+      const url = `${origin}/partner/assignments/${a.token}`;
+      const partnerName = a.partnerName ?? "파트너";
+      const msg = [
+        `[${serviceName}] ${partnerName} 파트너님,`,
+        `${args.customerName}님이 파트너님을 선택해서 요청서를 보내셨어요:)`,
+        ``,
+        `*희망보험료 : ${budget}`,
+        `*필요 담보 : ${requestText}`,
+        ``,
+        `고객님의 요청을 수락하시면 진설계에 필요한 정보를 전달드려요.`,
+        `지금 바로 요청서를 확인하시고 설계제안서를 보내보세요!`,
+        ``,
+        url,
+        ``,
+        `(해당 메시지는 파트너님께서 '요청서 도착 알림'을 설정하신 경우 발송됩니다.)`,
+      ].join("\n");
+      try {
+        await sendNotificationLms(a.partnerPhone, msg);
+      } catch (err) {
+        console.error("[finalizeRequest] partner notification LMS failed", {
+          assignmentId: a.id,
+          partnerId: a.partnerId,
+          error: err instanceof Error ? err.message : err,
+        });
+      }
+    }),
+  );
+}
+
+/**
+ * 보험료 범위 → "월 X만~Y만" / "월 X원~Y원" 한글 표기.
+ * UI 의 formatBudget (candidates/page.tsx) 와 동일 규칙 — 만원 단위 절삭 표시.
+ */
+function formatBudgetRange(min: number, max: number): string {
+  const fmt = (n: number) =>
+    n >= 10000 ? `${Math.floor(n / 10000)}만` : `${n.toLocaleString("ko-KR")}원`;
+  return `월 ${fmt(min)}~${fmt(max)}`;
 }

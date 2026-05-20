@@ -9,7 +9,10 @@ import {
   CURRENT_REPORT_VERSION,
 } from "@/features/proposals/analysis-schema";
 import { AnalysisErrorSchema } from "@/features/proposals/schema";
+import { sendNotificationLms } from "@/server/aligo";
+import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
+import { resolveOrigin } from "@/server/origin";
 
 /**
  * 분석 완료 웹훅 — eightytwo_judge 가 한 proposal 분석 종료 시 POST.
@@ -212,14 +215,59 @@ export async function POST(req: Request) {
   ]);
 
   if (total > 0 && total === fullyAnalyzed) {
-    await prisma.planRequest.updateMany({
+    // 첫 전이만 알림 발송 — count===1 인 호출만 이후 LMS 까지 진행 (race-safe 멱등).
+    // updateMany WHERE status='analyzing' 가 0 row 면 다른 콜백이 이미 transition 한 것.
+    const transitioned = await prisma.planRequest.updateMany({
       where: { id: plan_request_id, status: "analyzing" },
       data: { status: "completed" },
     });
     revalidatePath("/admin/requests");
+
+    if (transitioned.count === 1) {
+      await notifyAnalysisCompleted(plan_request_id);
+    }
   }
 
   return Response.json({ ok: true });
+}
+
+/**
+ * 분석 완료 알림 — 가입자 휴대폰으로 결과 페이지 링크 LMS 발송.
+ *
+ * finalizeRequest 가 consentMessaging=true 를 강제하므로 dispatched 까지 간 모든
+ * request 는 수신 동의 완료 상태. phone/resultToken 은 finalize 트랜잭션이 함께 set.
+ * 실패는 log 만 — 분석 완료 transition 은 이미 됐으므로 webhook 응답엔 영향 없음.
+ */
+async function notifyAnalysisCompleted(planRequestId: string): Promise<void> {
+  const request = await prisma.planRequest.findUnique({
+    where: { id: planRequestId },
+    select: { name: true, phone: true, resultToken: true },
+  });
+  if (!request?.phone || !request.resultToken) {
+    console.warn(
+      "[webhook/analysis] completed notification skipped — missing phone or resultToken",
+      { planRequestId },
+    );
+    return;
+  }
+
+  const origin = await resolveOrigin();
+  const url = `${origin}/result/${request.resultToken}`;
+  const customerName = request.name ?? "고객";
+  const msg = [
+    `[${getServiceName()}] ${customerName}님께서 선택하신 파트너님들의 제안서를 Claim AI가 분석했어요:)`,
+    `지금 바로 분석 결과를 확인해보시고 마음에 드는 파트너님께 연락을 요청해보세요!`,
+    ``,
+    url,
+  ].join("\n");
+  try {
+    await sendNotificationLms(request.phone, msg);
+  } catch (err) {
+    console.error("[webhook/analysis] completed notification LMS failed", {
+      planRequestId,
+      error: err instanceof Error ? err.message : err,
+    });
+  }
 }
 
 /**

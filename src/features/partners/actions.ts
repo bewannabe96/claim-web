@@ -148,6 +148,10 @@ export async function createPartnerInvitation(
     throw err;
   }
 
+  // TODO: 알림 발송 (2-1) — 새 invitation 의 phone 으로 가입 링크 LMS
+  // (`${origin}/partner/signup/${token}` + 만료시각 안내). 현재는 어드민이 수동으로
+  // 링크 복사해 설계사에게 전달. 자동화 시 redirect 직전에 sendNotificationLms 호출.
+
   revalidatePath("/admin/partners");
   redirect(`/admin/partners/invitations/${id}`);
 }
@@ -236,6 +240,10 @@ export async function reissuePartnerInvitationToken(
       error: "재발급 불가 — 이미 가입 완료되었거나 초청이 삭제되었습니다.",
     };
   }
+
+  // TODO: 알림 발송 (2-2) — 재발급된 새 token 으로 invitation.phone 에 가입 링크 LMS
+  // 재발송 (구 token 은 이미 무효, 본문에 "이전 링크는 더 이상 유효하지 않습니다"
+  // 안내 권장). 자동화 시 새 token 을 다시 조회해 sendNotificationLms 호출.
 
   revalidatePath("/admin/partners");
   revalidatePath(`/admin/partners/invitations/${invitationId}`);

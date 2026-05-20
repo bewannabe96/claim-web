@@ -245,9 +245,10 @@ export async function GET(req: Request) {
 - [ ] `CRON_SECRET` 환경변수 등록 (Vercel + .env.local)
 - [ ] 로컬 테스트: `deadlineAt` 을 과거로 수동 set → curl 로 호출 → DB 확인
 
-#### 알림톡 발송 (선행 의존성 없음)
+#### 알림 발송 (현황)
 
-- 작업 #1 의 부수 효과로 가입자에게 "결과 준비됨" 알림톡이 가야 하지만, 알림톡 발송 자체가 [src/features/requests/actions.ts:365](../src/features/requests/actions.ts) `TODO` 상태. 외부 알림톡 API 도입 후 hook 으로 추가.
+- 분석 완료 (`analyzing → completed`) 시 가입자 결과 페이지 링크 LMS — **구현 완료** ([webhook route 의 `notifyAnalysisCompleted`](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts), `server/aligo.ts:sendNotificationLms` 사용).
+- 작업 #1 (deadline 만료) 트리거 시점의 부수 알림은 미구현 — `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4), 그리고 작업 #4 의 `dispatched → rematching` 전이 시 가입자 재매칭 알림 LMS (시점 1-4) 가 함께 발송돼야 함. 두 시점 모두 `proposals/schema.ts` / `requests/schema.ts` 의 status enum 옆에 TODO 주석 표기. 알리고 LMS 모듈은 이미 존재하므로 cron 구현 시 `sendNotificationLms` 호출만 추가.
 
 ---
 
@@ -399,7 +400,7 @@ export async function GET(req: Request) {
 
 #### 배경
 
-- PRD §5.7: "1회 자동 재매칭 — 새 N명 후보 추천 → 가입자에게 알림톡으로 재선택 요청".
+- PRD §5.7: "1회 자동 재매칭 — 새 N명 후보 추천 → 가입자에게 알림으로 재선택 요청" (현재 알림 채널은 알리고 LMS).
 - `PlanRequest.rematchCount` 필드 존재 ([prisma/schema.prisma:68](../prisma/schema.prisma)), 기본 0.
 - `PlanRequestStatus.rematching` 상태 정의됨 ([src/features/requests/schema.ts:294](../src/features/requests/schema.ts)).
 - 재매칭 실행 로직은 **구현 안 됨**.
@@ -414,7 +415,7 @@ export async function GET(req: Request) {
    - 새 `PlanRequestCandidate` rows insert.
    - 새 `MatchAssignment` rows 생성 (가입자가 다시 선택해야 하므로 즉시 송부 아님 — UX 결정 필요).
    - **UX 분기 결정 필요**:
-     - 옵션 A: 가입자에게 "재선택" 알림톡 → 가입자가 새 후보 중 K명 다시 골라야 함.
+     - 옵션 A: 가입자에게 "재선택" 알림 (LMS) → 가입자가 새 후보 중 K명 다시 골라야 함.
      - 옵션 B: 시스템이 자동으로 상위 K명 선택 → 즉시 송부 (UX 단순, 가입자 의사 무시).
    - `rematchCount = 1`, `dispatchedAt = now`, `deadlineAt = now + submissionDeadlineHours`.
 3. 2회 실패하면 `status='failed'` 로 종결.
@@ -422,12 +423,13 @@ export async function GET(req: Request) {
 #### 의존성
 
 - [ ] **UX 결정**: 옵션 A vs B
-- [ ] 알림톡 발송 API (작업 #1 과 공유 의존성)
 - [ ] `findMatchCandidates()` 의 "이전 후보 제외" 옵션 — 현재 시그니처 확인 필요
+
+(알림 발송 인프라는 `server/aligo.ts:sendNotificationLms` 로 이미 제공됨 — cron 구현 시 호출만 추가.)
 
 #### 구현 우선순위
 
-작업 #1 + 알림톡 인프라가 완료된 후 착수.
+작업 #1 완료 후 착수.
 
 ---
 
@@ -539,7 +541,7 @@ export async function GET(req: Request) {
 
 #### 현재 구현
 
-- 알리고 SMS 게이트웨이 통합 완료: [src/server/aligo.ts](../src/server/aligo.ts).
+- 알리고 SMS / LMS 게이트웨이 통합 완료: [src/server/aligo.ts](../src/server/aligo.ts) (`sendOtpSms` + `sendNotificationLms`).
 - 가입자 본인인증 OTP 발송: [src/features/requests/actions.ts](../src/features/requests/actions.ts) `sendOtp`.
 - 설계사 가입 OTP 발송: [src/app/partner/signup/[token]/actions.ts](../src/app/partner/signup/[token]/actions.ts).
 - 코드 저장: Redis 키 `otp:code:{requestId}:{phone}`, TTL = **180초** (`OTP_TTL_SECONDS`). TTL 이 곧 재전송 쿨다운 + 만료.
@@ -649,8 +651,7 @@ Phase 1 (1~2주)
   └─ 2.3 작업 #3 (invitation 정리)
 
 Phase 2 (1개월 후)
-  ├─ 알림톡 발송 API 도입 (선행 작업)
-  ├─ 3.1 작업 #4 (자동 재매칭) — 알림톡 의존
+  ├─ 3.1 작업 #4 (자동 재매칭) — LMS 알림 인프라 이미 존재
   └─ 3.2 작업 #5 (분석 재시도)
 
 Phase 3 (필요 시)

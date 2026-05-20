@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 
 import { requireAdminSession } from "@/server/dal";
 import { newId } from "@/lib/id";
+import { sendNotificationLms } from "@/server/aligo";
+import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
 import {
   fetchObjectSha256,
@@ -159,6 +161,11 @@ export async function submitProposal(
     }),
   ]);
 
+  // TODO: 알림 발송 (1-2) — 첫 제안서 도착 시 가입자에게 LMS ("첫 설계사 제안서
+  // 도착, 결과 페이지에서 미리 보기"). 트리거는 dispatched → analyzing 전이가 1 row
+  // 갱신된 호출만 (race-safe). 본문엔 resultToken 기반 결과 페이지 URL.
+  // 우선순위 결정 후 발송 매체 확정.
+
   // DB commit 후 SQS publish — eightytwo_judge 파이프라인 트리거.
   // proposal.id + plan_request.id 를 metadata 로 실어 보내 콜백이 정확히 이 row 들을
   // 식별. 실패는 로깅만 (사용자 응답은 성공). 누락 메시지는 별도 backfill 잡으로 재발행.
@@ -214,12 +221,25 @@ export async function requestProposalContact(
   });
   if (!request) return { ok: false, error: "not_found" };
 
+  // partner.user.name/phone + request.name/phone 까지 join — 마킹 성공 분기에서
+  // 설계사 알림 LMS 본문에 양측 이름 + 가입자 연락처를 박는다 (DB 재조회 회피).
   const proposal = await prisma.proposal.findUnique({
     where: { id: proposalId },
     select: {
       id: true,
       contactedAt: true,
-      assignment: { select: { requestId: true, partnerId: true } },
+      assignment: {
+        select: {
+          requestId: true,
+          partnerId: true,
+          partner: {
+            select: {
+              user: { select: { name: true, phone: true } },
+            },
+          },
+          request: { select: { name: true, phone: true } },
+        },
+      },
     },
   });
   if (!proposal || proposal.assignment.requestId !== request.id) {
@@ -232,8 +252,8 @@ export async function requestProposalContact(
   }
 
   // race-safe 마킹 + 카운터 증가. updateMany WHERE contactedAt IS NULL 의 count 가
-  // 0 이면 다른 호출이 먼저 마킹한 것 — 그 경우 카운터 트랜잭션을 건너뛰어 중복
-  // +1 방지.
+  // 0 이면 다른 호출이 먼저 마킹한 것 — 그 경우 카운터 트랜잭션 + 알림 발송을 모두
+  // 건너뛰어 중복 +1 / 중복 LMS 방지.
   const marked = await prisma.proposal.updateMany({
     where: { id: proposalId, contactedAt: null },
     data: { contactedAt: new Date() },
@@ -243,10 +263,68 @@ export async function requestProposalContact(
       where: { partnerId: proposal.assignment.partnerId },
       data: { contactedCount: { increment: 1 } },
     });
+    await notifyPartnerOfContactRequest({
+      proposalId,
+      partnerName: proposal.assignment.partner.user.name,
+      partnerPhone: proposal.assignment.partner.user.phone,
+      customerName: proposal.assignment.request.name,
+      customerPhone: proposal.assignment.request.phone,
+    });
+    // TODO: 알림 발송 (1-5) — 가입자 ack ("설계사에게 연락 요청이 전달되었어요").
+    // 우선순위 낮음. 결과 페이지 UI 에서 button disabled 로 즉시 피드백 주고 있어
+    // 별도 LMS 가 필요한지 정책 결정 필요. 발송 매체 미정.
   }
 
   revalidatePath(`/result/${resultToken}`);
   return { ok: true, alreadyContacted: false };
+}
+
+/**
+ * 연락 요청 → 설계사 LMS (2-5). 양측 이름 + 가입자 번호를 본문에 그대로 박아
+ * 설계사가 별도 페이지 진입 없이 바로 연락 가능. finalize 가 request.name/phone 을
+ * 항상 채우므로 둘 다 누락은 사실상 불가능 — defensive 로만 체크.
+ */
+async function notifyPartnerOfContactRequest(args: {
+  proposalId: string;
+  partnerName: string | null;
+  partnerPhone: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+}): Promise<void> {
+  if (!args.partnerPhone || !args.customerPhone) {
+    console.warn(
+      "[requestProposalContact] partner notification skipped — missing phone",
+      {
+        proposalId: args.proposalId,
+        hasPartnerPhone: !!args.partnerPhone,
+        hasCustomerPhone: !!args.customerPhone,
+      },
+    );
+    return;
+  }
+  const partnerName = args.partnerName ?? "파트너";
+  const customerName = args.customerName ?? "고객";
+  const msg = [
+    `[${getServiceName()}] ${partnerName} 파트너님,`,
+    `${customerName}님이 파트너님의 설계제안서를 보시고, 연락을 요청하셨어요:)`,
+    ``,
+    `원활한 상담을 위하여 ${customerName}님께서 요청하신 방법으로 지금 연락해보세요!`,
+    ``,
+    `*전화번호 : ${args.customerPhone}`,
+    ``,
+    `(해당 메시지는 파트너님께서 '연락 요청 알림'을 설정하신 경우 발송됩니다.)`,
+  ].join("\n");
+  try {
+    await sendNotificationLms(args.partnerPhone, msg);
+  } catch (err) {
+    console.error(
+      "[requestProposalContact] partner notification LMS failed",
+      {
+        proposalId: args.proposalId,
+        error: err instanceof Error ? err.message : err,
+      },
+    );
+  }
 }
 
 /* ============================================================

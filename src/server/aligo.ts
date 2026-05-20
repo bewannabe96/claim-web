@@ -5,10 +5,13 @@ import { z } from "zod";
 import { getServiceName } from "./branding";
 
 /**
- * 알리고 SMS 발송 게이트웨이.
+ * 알리고 SMS / LMS 발송 게이트웨이.
  * https://smartsms.aligo.in/admin/api/spec.html
  *
- * 사용처: `features/requests/actions.ts:sendOtp` — 본인인증 6자리 코드 SMS.
+ * 사용처:
+ *   - `sendOtpSms`           — 본인인증 6자리 코드 SMS (90byte 본문 한도).
+ *   - `sendNotificationLms`  — URL 포함 알림 LMS (2000byte 본문 한도). 분석 완료 →
+ *                              가입자, 제안서 요청 배정 → 설계사, 연락 요청 → 설계사.
  *
  * 자격:
  *   - ALIGO_KEY          : 알리고 콘솔의 API key
@@ -71,15 +74,15 @@ const AligoResponseSchema = z.object({
 });
 
 /**
- * OTP 6자리 SMS 발송. 실패 시 throw — 호출자가 사용자 응답 분기.
+ * 알리고 send/ 엔드포인트 호출 공통 — SMS/LMS 분기는 호출자 책임.
  *
- * SMS 본문 90byte 한도 안에서 한글로 작성 (안내 + 코드). LMS/MMS 로 승급할 필요
- * 없도록 짧게 유지.
+ * 실패 시 throw. 알리고 result_code: 1=성공, 그 외=실패.
  */
-export async function sendOtpSms(
-  receiver: string,
-  code: string,
-): Promise<void> {
+async function callAligo(params: {
+  receiver: string;
+  msg: string;
+  msg_type: "SMS" | "LMS";
+}): Promise<void> {
   const env = getEnv();
   const testMode = isAligoTestMode();
 
@@ -87,9 +90,9 @@ export async function sendOtpSms(
     key: env.ALIGO_KEY,
     user_id: env.ALIGO_USER_ID,
     sender: env.ALIGO_SENDER,
-    receiver,
-    msg: `[${getServiceName()}] 본인확인을 위해 인증번호 [${code}]를 입력해주세요`,
-    msg_type: "SMS",
+    receiver: params.receiver,
+    msg: params.msg,
+    msg_type: params.msg_type,
     testmode_yn: testMode ? "Y" : "N",
   });
 
@@ -126,4 +129,42 @@ export async function sendOtpSms(
       `Aligo result_code=${parsed.data.result_code} message=${parsed.data.message ?? ""}`,
     );
   }
+}
+
+/**
+ * OTP 6자리 SMS 발송. 실패 시 throw — 호출자가 사용자 응답 분기.
+ *
+ * SMS 본문 90byte 한도 안에서 한글로 작성 (안내 + 코드). LMS/MMS 로 승급할 필요
+ * 없도록 짧게 유지.
+ */
+export async function sendOtpSms(
+  receiver: string,
+  code: string,
+): Promise<void> {
+  await callAligo({
+    receiver,
+    msg: `[${getServiceName()}] 본인확인을 위해 인증번호 [${code}]를 입력해주세요`,
+    msg_type: "SMS",
+  });
+}
+
+/**
+ * 알림 LMS 발송 — URL/마감 등 SMS 90byte 한도 초과 안내 문구에 사용.
+ *
+ * 90byte 초과 시 메시지가 잘리지 않도록 일괄 LMS 로 발송. 호출자가 본문을 그대로
+ * 전달 (서비스명 prefix 포함). 실패는 throw — fire-and-forget 호출 시 .catch(log).
+ *
+ * test mode 일 때는 알리고 호출 자체를 skip + console.log 로 dry-run 만 — dev 에서
+ * ALIGO_KEY 등 자격 없이도 동작하도록. 호출자가 매번 분기하지 않게 함수 내부 결정
+ * (OTP 와 다른 패턴: OTP 는 코드 "000000" 고정 의미를 호출자가 알아야 했음).
+ */
+export async function sendNotificationLms(
+  receiver: string,
+  message: string,
+): Promise<void> {
+  if (isAligoTestMode()) {
+    console.log("[aligo:test-mode] LMS dry-run", { receiver, message });
+    return;
+  }
+  await callAligo({ receiver, msg: message, msg_type: "LMS" });
 }
