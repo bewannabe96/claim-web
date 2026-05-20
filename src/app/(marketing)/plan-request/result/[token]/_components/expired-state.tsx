@@ -14,7 +14,7 @@ export function ExpiredState() {
       showBrand={false}
       title="결과 보관 기간이 종료됐어요"
       description="제안서 결과는 일정 기간만 유지돼요. 다시 매칭을 받고 싶다면 새 요청을 보내주세요."
-      primary={{ label: "새로 매칭 요청하기", href: "/request/new" }}
+      primary={{ label: "새로 매칭 요청하기", href: "/plan-request/new" }}
     />
   );
 }

@@ -261,7 +261,7 @@ export async function GET(req: Request) {
 #### 배경
 
 - `AppSettings.resultRetentionDays` (기본 7일) — [prisma/schema.prisma:408](../prisma/schema.prisma).
-- 결과 페이지 [src/app/(marketing)/request/[id]/result/page.tsx](../src/app/(marketing)/request/%5Bid%5D/result/page.tsx) 가 `dispatchedAt + N일` 비교로 차단.
+- 결과 페이지 [src/app/(marketing)/plan-request/result/[token]/page.tsx](../src/app/(marketing)/plan-request/result/%5Btoken%5D/page.tsx) 가 `dispatchedAt + N일` 비교로 차단.
 - DB 행은 무한 적재 → 장기 운영 시 스토리지 + 개인정보 누적.
 
 #### 무엇을 한다

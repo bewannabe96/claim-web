@@ -424,7 +424,7 @@ partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일
 
 obscurity 이지 보안 아님. MFA / IP 화이트리스트 와 병행 권장. 자세한 건 [src/app/admin/CLAUDE.md](../src/app/admin/CLAUDE.md). partner 영역은 가입자/마케팅과 동등 노출 정책이라 knock/X-Robots-Tag 모두 적용 안 함.
 
-**알림톡 토큰 진입 (partner 만)** — `/partner/assignments/[token]` 은 PRD §5.4 일회용 토큰 인증. middleware carve-out + 페이지에서 token → assignment lookup 으로 처리. 로그인과 무관하게 작동 — 토큰 자체가 인증이고, partner 도메인의 1차 흐름.
+**알림톡 토큰 진입 (partner 만)** — `/partner/plan-request-assignments/[token]` 은 PRD §5.4 일회용 토큰 인증. middleware carve-out + 페이지에서 token → assignment lookup 으로 처리. 로그인과 무관하게 작동 — 토큰 자체가 인증이고, partner 도메인의 1차 흐름.
 
 **검색 엔진 색인 차단 (admin 만)** — middleware 가 `X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex` HTTP 헤더를 모든 `/admin/*` 응답 + 404 응답 + knock 응답에 자동 부착. `src/app/admin/layout.tsx` 의 `metadata.robots` 가 `<meta name="robots">` 로 이중 방어. robots.txt 에 `Disallow: /admin` 은 의도적으로 추가하지 않음 — 경로 존재를 노출하는 역효과.
 

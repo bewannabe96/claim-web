@@ -128,13 +128,13 @@ export function Step1Wizard() {
 
       if (result && "ok" in result && result.ok) {
         // Next.js Router Cache 가 client state 를 보존하므로 navigate 직전에
-        // 초기화 — 다음에 /request/new 로 돌아왔을 때 폼이 처음부터 보이도록.
+        // 초기화 — 다음에 /plan-request/new 로 돌아왔을 때 폼이 처음부터 보이도록.
         // isPending 이 router.replace 완료까지 true 라 form view 가 flash 되지
-        // 않고 MatchingScreen 이 유지됨. replace 로 /request/new 가 history 에
+        // 않고 MatchingScreen 이 유지됨. replace 로 /plan-request/new 가 history 에
         // 남지 않게 함.
         setPhaseIdx(0);
         setData({ medicalHistory: [], focusedConcerns: [] });
-        router.replace(`/request/${result.requestId}/candidates`);
+        router.replace(`/plan-request/${result.requestId}/candidates`);
         return;
       }
 

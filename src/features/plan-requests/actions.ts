@@ -41,7 +41,7 @@ import {
  * ============================================================
  *
  * 주의: "최종 송부"는 OTP 검증 시점 (finalize) 이지만, 후보 노출 → 선택 단계는
- * URL 기반 (/request/[id]/candidates) 으로 흘러야 새로고침/뒤로가기가 자연스러움.
+ * URL 기반 (/plan-request/[id]/candidates) 으로 흘러야 새로고침/뒤로가기가 자연스러움.
  * 그래서 이 시점에 status='selecting' 으로 row 생성하고, dispatched 전환은 finalize.
  */
 
@@ -228,7 +228,7 @@ export async function submitStep2(
     }),
   ]);
 
-  redirect(`/request/${requestId}/confirm`);
+  redirect(`/plan-request/${requestId}/confirm`);
 }
 
 /* ============================================================
@@ -518,7 +518,7 @@ export async function finalizeRequest(
   // 본문엔 결과 페이지 링크 (resultToken) + 예상 도착 시간. 발송 매체 미정.
 
   revalidatePath("/admin/requests");
-  redirect(`/request/${requestId}/dispatched`);
+  redirect(`/plan-request/${requestId}/dispatched`);
 }
 
 /**
@@ -564,7 +564,7 @@ async function notifyPartnersOfNewAssignment(args: {
         );
         return;
       }
-      const url = `${origin}/partner/assignments/${a.token}`;
+      const url = `${origin}/partner/plan-request-assignments/${a.token}`;
       const partnerName = a.partnerName ?? "파트너";
       const msg = [
         `[${serviceName}] ${partnerName} 파트너님,`,

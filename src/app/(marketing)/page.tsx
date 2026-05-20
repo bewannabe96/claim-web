@@ -55,7 +55,7 @@ function Hero() {
 
       <div className="mt-10">
         <Button
-          render={<Link href="/request/new" />}
+          render={<Link href="/plan-request/new" />}
           nativeButton={false}
           className="h-14 w-full rounded-full text-base font-medium"
         >
@@ -297,7 +297,7 @@ function ClosingSection() {
 
       <div className="mt-10">
         <Button
-          render={<Link href="/request/new" />}
+          render={<Link href="/plan-request/new" />}
           nativeButton={false}
           variant="secondary"
           className="h-14 w-full rounded-full bg-white text-base font-medium text-black hover:bg-[#e2e2e2]"

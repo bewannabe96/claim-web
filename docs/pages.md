@@ -29,11 +29,11 @@
 | URL | 역할 | 접근 | DB | PRD | 상태 |
 |---|---|---|---|---|---|
 | `/` | 랜딩 — 서비스 소개 + 요청 시작 CTA | 누구나 | — | — | ✅ |
-| `/request/new` | 요청서 작성 5-phase wizard (basic / coverage / budget / medical / notes) | 누구나 | **W**: pr + pr_mh + pr_cand (트랜잭션) · **R**: pt (매칭) | §5.1 | ✅ |
-| `/request/[id]/candidates` | 매칭된 설계사 후보 카드 + 선택 (최대 selectLimit) | 가입자 | **W**: pr_cand.selected, pr.status=confirming · **R**: pr, pt, cfg | §5.2 | ✅ |
-| `/request/[id]/confirm` | 본인 인증 (이름·휴대폰·OTP) + 동의 + 요청 내용 검토 | 가입자 | **W**: pr.{name,phone,consent,status=dispatched,...}, assign(K개 생성) — 트랜잭션 · **R**: pr, cfg | §5.3 | ✅ (OTP는 demo `000000`) |
-| `/request/[id]/dispatched` | 송부 완료 안내 + 마감 시간 노출 | 누구나 (id 안다면) | **R**: pr | §5.3 | ✅ |
-| `/result/[token]` | 제안서 비교 — 설계사 chip 탭 / 시나리오 chip(top-3 + 검색) + ROI(log) 차트 + 해지 시 월부담 차트 + 보장 패널 | 가입자(token) | **R**: pr, assignment + plan_proposal(+pdfHash) + partner, `eightytwo_judge.proposal_analysis_reports` (raw SQL), app_settings.scenario_priority | §5.6 | ✅ 분석 리포트 v4 연동 완료 (PlanProposal.pdfHash 매칭) |
+| `/plan-request/new` | 요청서 작성 5-phase wizard (basic / coverage / budget / medical / notes) | 누구나 | **W**: pr + pr_mh + pr_cand (트랜잭션) · **R**: pt (매칭) | §5.1 | ✅ |
+| `/plan-request/[id]/candidates` | 매칭된 설계사 후보 카드 + 선택 (최대 selectLimit) | 가입자 | **W**: pr_cand.selected, pr.status=confirming · **R**: pr, pt, cfg | §5.2 | ✅ |
+| `/plan-request/[id]/confirm` | 본인 인증 (이름·휴대폰·OTP) + 동의 + 요청 내용 검토 | 가입자 | **W**: pr.{name,phone,consent,status=dispatched,...}, assign(K개 생성) — 트랜잭션 · **R**: pr, cfg | §5.3 | ✅ (OTP는 demo `000000`) |
+| `/plan-request/[id]/dispatched` | 송부 완료 안내 + 마감 시간 노출 | 누구나 (id 안다면) | **R**: pr | §5.3 | ✅ |
+| `/plan-request/result/[token]` | 제안서 비교 — 설계사 chip 탭 / 시나리오 chip(top-3 + 검색) + ROI(log) 차트 + 해지 시 월부담 차트 + 보장 패널 | 가입자(token) | **R**: pr, assignment + plan_proposal(+pdfHash) + partner, `eightytwo_judge.proposal_analysis_reports` (raw SQL), app_settings.scenario_priority | §5.6 | ✅ 분석 리포트 v4 연동 완료 (PlanProposal.pdfHash 매칭) |
 
 ---
 
@@ -44,8 +44,8 @@
 | URL | 역할 | 접근 | DB | PRD | 상태 |
 |---|---|---|---|---|---|
 | `/partner/login` | 설계사 로그인 폼 | 누구나 | — | — | ⚪ placeholder |
-| `/partner/assignments/[token]` | 가입자 요청 컨텍스트 + 제안서 제출 폼 (한줄 요약 + PDF) | 설계사(token) | **W**: prop (insert), assign.status=submitted — 트랜잭션 · **R**: assign, pr (+ pr_mh, pr_cand), pt · **S3**: presigned PUT | §5.4 | ✅ |
-| `/partner/assignments/done` | 제출 완료 안내 | 누구나 | — | §5.4 | ✅ |
+| `/partner/plan-request-assignments/[token]` | 가입자 요청 컨텍스트 + 제안서 제출 폼 (한줄 요약 + PDF) | 설계사(token) | **W**: prop (insert), assign.status=submitted — 트랜잭션 · **R**: assign, pr (+ pr_mh, pr_cand), pt · **S3**: presigned PUT | §5.4 | ✅ |
+| `/partner/plan-request-assignments/done` | 제출 완료 안내 | 누구나 | — | §5.4 | ✅ |
 | `/partner` | 설계사 대시보드 — 잔액 카드 + 충전/내역 CTA | 설계사 (Kakao) | **R**: partner_credit_balance | — | ✅ |
 | `/partner/credits` | 크레딧 잔액 + 거래 내역 (cursor pagination) | 설계사 (Kakao) | **R**: partner_credit_balance, partner_credit_ledger | — | ✅ |
 | `/partner/credits/topup` | 충전 금액 입력 → PG provider redirect (현재 stub) | 설계사 (Kakao) | **W**: Redis `topup:pending:{paymentId}` (provider 자체) | — | ✅ stub 만, 실 PG 후속 |
@@ -76,17 +76,17 @@
 
 ```
   /                           (랜딩에서 CTA 클릭)
-  └─► /request/new            (5-phase wizard 제출)
-      └─► /request/<id>/candidates   (후보 보고 K명 선택)
-          └─► /request/<id>/confirm   (이름·번호·OTP·동의)
-              └─► /request/<id>/dispatched   (송부 완료 안내)
+  └─► /plan-request/new            (5-phase wizard 제출)
+      └─► /plan-request/<id>/candidates   (후보 보고 K명 선택)
+          └─► /plan-request/<id>/confirm   (이름·번호·OTP·동의)
+              └─► /plan-request/<id>/dispatched   (송부 완료 안내)
                     │
                     │ T 시간 후 / K명 제출 시
                     ▼
                   알림톡 (token 포함)
                     │
                     ▼
-                  /result/<token>            (제안서 비교 + 설계사 선택)
+                  /plan-request/result/<token>            (제안서 비교 + 설계사 선택)
                     └─► 마음에 드는 설계사에게 직접 문자 (수동)
 ```
 
@@ -96,11 +96,11 @@
   알림톡 도착 (요청 송부 시)
     │
     ▼
-  /partner/assignments/<token>   (가입자 요청 확인 + 진설계 PDF + 한줄 요약 제출)
+  /partner/plan-request-assignments/<token>   (가입자 요청 확인 + 진설계 PDF + 한줄 요약 제출)
     │
     │ submitProposal
     ▼
-  /partner/assignments/done      (제출 완료)
+  /partner/plan-request-assignments/done      (제출 완료)
 ```
 
 ### 운영자 흐름
@@ -158,11 +158,11 @@
 
 | 상태 | 의미 | 진입 페이지 |
 |---|---|---|
-| `selecting` | 매칭 후보 노출, 가입자가 K명 선택 진행 중 | `/request/<id>/candidates` |
-| `confirming` | OTP 인증 진행 중 | `/request/<id>/confirm` |
-| `dispatched` | 설계사들에게 송부됨, 첫 제출 대기 | `/request/<id>/dispatched` |
+| `selecting` | 매칭 후보 노출, 가입자가 K명 선택 진행 중 | `/plan-request/<id>/candidates` |
+| `confirming` | OTP 인증 진행 중 | `/plan-request/<id>/confirm` |
+| `dispatched` | 설계사들에게 송부됨, 첫 제출 대기 | `/plan-request/<id>/dispatched` |
 | `analyzing` | 1건 이상 제출됨 — incremental AI 분석 진행. 추가 제출도 받음 | (가입자 대기) |
-| `completed` | 모든 assignment 종결 + 분석 완료, 가입자에게 알림톡 발송됨 | `/result/<token>` |
+| `completed` | 모든 assignment 종결 + 분석 완료, 가입자에게 알림톡 발송됨 | `/plan-request/result/<token>` |
 | `rematching` | deadline 지났고 0명 제출 → 자동 재매칭 트리거 (PRD §5.7) | (운영자 알림) |
 | `failed` | 재매칭도 실패 | (운영자 알림) |
 

@@ -183,9 +183,9 @@ export async function submitProposal(
     });
   }
 
-  revalidatePath("/partner/assignments");
+  revalidatePath("/partner/plan-request-assignments");
   revalidatePath("/admin/requests");
-  redirect("/partner/assignments/done");
+  redirect("/partner/plan-request-assignments/done");
 }
 
 /* ============================================================
@@ -275,7 +275,7 @@ export async function requestProposalContact(
     // 별도 LMS 가 필요한지 정책 결정 필요. 발송 매체 미정.
   }
 
-  revalidatePath(`/result/${resultToken}`);
+  revalidatePath(`/plan-request/result/${resultToken}`);
   return { ok: true, alreadyContacted: false };
 }
 

@@ -2,7 +2,7 @@
 
 가입자 페이지와 같은 모바일 셸 (`max-w-[480px]`) 안에서 동작. 세 가지 진입 흐름이 공존:
 
-1. **알림톡 일회용 토큰** — PRD §5.4. `/partner/assignments/[token]` 으로 직접 진입. **로그인 불필요** — 토큰 자체가 인증.
+1. **알림톡 일회용 토큰** — PRD §5.4. `/partner/plan-request-assignments/[token]` 으로 직접 진입. **로그인 불필요** — 토큰 자체가 인증.
 2. **카카오톡 로그인** — `/partner/login` → Kakao OAuth → `/partner` 대시보드. 본인 받은 요청 / 진행 현황 확인용.
 3. **가입 초청** — `/partner/signup/[token]` 으로 진입 → Kakao OAuth (콜백이 invitation 에 Kakao 계정 lock) → `/partner/signup/[token]/verify` 본인인증 → 통과 시 단일 트랜잭션으로 user + partner INSERT + invitation 소비. 어드민이 발급한 일회용 invitation token 보유 시 1회 사용.
 
@@ -22,7 +22,7 @@
 - **`?next` 보존**: redirect 시 원래 경로(`pathname + search`) 를 쿼리에 실어 보냄 →
   로그인 페이지 → action → callback URL 까지 forward → 로그인 성공 후 원 위치 복귀.
   화이트리스트 (`safeNextPath`, `/partner/*` 만) 는 페이지/액션/콜백 3 단계 검증.
-- **Carve-out**: `/partner/login`, `/partner/assignments/*` (알림톡 토큰), `/partner/signup/*` (가입 초청 token) 는 auth 체크 스킵.
+- **Carve-out**: `/partner/login`, `/partner/plan-request-assignments/*` (알림톡 토큰), `/partner/signup/*` (가입 초청 token) 는 auth 체크 스킵.
 - **X-Robots-Tag 미부착** — partner 영역은 가입자/마케팅과 동등 노출 정책.
 
 ### ② `(dashboard)/layout.tsx` (진짜 auth boundary)
@@ -171,7 +171,7 @@ DAL 이 매 요청마다 확인. 매칭 후보 추출에서도 동시에 제외.
 
 ### 토큰 진입 흐름의 우회 우려
 
-`/partner/assignments/[token]` + `/partner/signup/[token]` 모두 로그인 게이트가 없으므로 token + status 검증이 전부.
+`/partner/plan-request-assignments/[token]` + `/partner/signup/[token]` 모두 로그인 게이트가 없으므로 token + status 검증이 전부.
 - 토큰은 `nanoid(32)` (192bit) 라 추측 불가.
 - assignments: `assignment.status='pending'` 이 아닌 경우 폼 미노출 (`submitted`/`expired`).
 - signup: invitation 의 `consumedAt IS NULL AND expiresAt > now()` 양쪽 만족해야 진입. **매 진입마다 새 Kakao OAuth 가 invitation.linkedAuthId 를 덮어씀** — Kakao 계정 자체는 보안 게이트가 아니라 "가입 후 어떤 계정으로 로그인할지" 결정 수단. **횡령 방지는 휴대폰 OTP** — 발송 대상이 `invitation.phone` 으로 고정되어 invitation 소유자만 코드 수신 가능. verify 페이지/액션은 "현재 Kakao 세션 == 최신 lock" 인지만 검증 — mismatch 시 silent 하게 Step 1 으로 돌려보내 새 OAuth 시작. 가입 트랜잭션 안에서 invitation 의 미소비 / 미만료 / linkedAuthId 매칭 모두 재확인 (race-safe).

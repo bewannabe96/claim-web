@@ -252,7 +252,7 @@ async function notifyAnalysisCompleted(planRequestId: string): Promise<void> {
   }
 
   const origin = await resolveOrigin();
-  const url = `${origin}/result/${request.resultToken}`;
+  const url = `${origin}/plan-request/result/${request.resultToken}`;
   const customerName = request.name ?? "고객";
   const msg = [
     `[${getServiceName()}] ${customerName}님께서 선택하신 파트너님들의 제안서를 Claim AI가 분석했어요:)`,

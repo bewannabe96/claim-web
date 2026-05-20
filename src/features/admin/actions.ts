@@ -53,7 +53,7 @@ export async function saveSettings(
   revalidatePath("/admin/settings");
   revalidatePath("/admin");
   // 결과 페이지가 보관 기간 (만료 검사 + 푸터 문구) 에 의존 — 변경 시 갱신.
-  revalidatePath("/result", "layout");
+  revalidatePath("/plan-request/result", "layout");
   return { ok: true };
 }
 
@@ -104,6 +104,6 @@ export async function saveScenarioPriority(
   revalidatePath("/admin/settings");
   revalidatePath("/admin");
   // 결과 페이지가 우선순위에 의존 — 변경 시 갱신.
-  revalidatePath("/result", "layout");
+  revalidatePath("/plan-request/result", "layout");
   return { ok: true };
 }

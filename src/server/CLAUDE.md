@@ -298,7 +298,7 @@ partner 는 `partner_signup_invitation → Kakao 가입 콜백` 단일 진입점
    즉시 307 로 튕기고, 실제 권한은 DAL 이 판정. PPR 모드의 1초 meta refresh fallback 회피 목적도 겸함.
    `auth.getUser()` 가 `AuthError` (refresh 실패 등) throw 하면 stale `sb-*-auth-token*`
    cookie 명시 청소 — 라이브러리는 `AuthSessionMissingError` 에서만 자동 청소.
-   admin 은 knock + X-Robots-Tag 추가. partner 는 `/partner/login` + `/partner/assignments/*`
+   admin 은 knock + X-Robots-Tag 추가. partner 는 `/partner/login` + `/partner/plan-request-assignments/*`
    (알림톡 토큰 진입) + `/partner/signup/*` (가입 초청 token) carve-out.
 
 로그인 흐름:
