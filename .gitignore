@@ -52,3 +52,6 @@ supabase/.temp
 
 # JetBrains IDE
 .idea/
+
+# Worktree bootstrap log (Claude Code session)
+.claude/workspace-bootstrap.log
