@@ -44,7 +44,7 @@ import { prisma } from "@/server/db/prisma";
  *       2. updated.count===1 이면 plan_proposal_analysis_report INSERT (proposalId 1:1)
  *     그 후 `finalizeRequestStatus(plan_request_id)` 호출 — plan_request 의 모든
  *     plan_request_assignment 가 submitted + 그 proposal 이 analyzed 인 경우에만
- *     `analyzing → completed` + 가입자 LMS. 전이 책임은 cron (deadline 만료) 과
+ *     `analyzing → completed` + 가입자 알림톡 (UI_0741). 전이 책임은 cron (deadline 만료) 과
  *     공유하므로 `features/plan-requests/state-transition.ts` 단일 진입점에 통합.
  *
  * 발신측 재시도 안전: 첫 콜백이 transition 직전에 끊겨도 retry 가 pending 을
