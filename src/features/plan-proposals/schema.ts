@@ -1,6 +1,21 @@
 import { z } from "zod";
 
 /* ============================================================
+ * 연락 수단 — 결과 페이지 "상담 진행하기" CTA 에서 가입자가 선택.
+ * 설계사 LMS 본문에 노출되어 어떤 채널로 연락할지 지시.
+ * ============================================================ */
+
+export const CONTACT_CHANNELS = ["kakao", "sms"] as const;
+export const ContactChannelSchema = z.enum(CONTACT_CHANNELS);
+export type ContactChannel = z.infer<typeof ContactChannelSchema>;
+
+/** 알림톡 본문의 `연락 요청 방법 : {label}` 슬롯에 들어가는 한글 라벨. */
+export const CONTACT_CHANNEL_LABEL: Record<ContactChannel, string> = {
+  kakao: "카카오톡",
+  sms: "문자",
+};
+
+/* ============================================================
  * PlanRequestAssignment — (Request × Partner) 1대1 슬롯
  * ============================================================ */
 
@@ -86,7 +101,7 @@ export type PlanProposal = {
   submittedAt: string;
   /** 외부 분석 파이프라인 콜백 수신 시각. null = 아직. */
   analyzedAt?: string;
-  /** 가입자가 결과 페이지에서 이 제안서를 보고 "문자 보내기" 한 시각. */
+  /** 가입자가 결과 페이지에서 이 제안서를 보고 "상담 진행하기" 한 시각. */
   contactedAt?: string;
   /**
    * 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 정보.

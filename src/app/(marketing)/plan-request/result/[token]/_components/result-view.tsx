@@ -4,10 +4,12 @@ import { useState, useTransition } from "react";
 
 import { requestPlanProposalContact } from "@/features/plan-proposals/actions";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
+import type { ContactChannel } from "@/features/plan-proposals/schema";
 import { cn } from "@/lib/utils";
 
 import { type PlanProposalData } from "../_lib/result-types";
 import { SurrenderLossChart } from "./charts/surrender-loss-chart";
+import { ContactChannelSheet } from "./contact-channel-sheet";
 import { ScenarioPickerRoiChart } from "./scenario-picker-roi-chart";
 
 /**
@@ -17,13 +19,13 @@ import { ScenarioPickerRoiChart } from "./scenario-picker-roi-chart";
  *   1. AI 인사이트 카드 (검정)
  *   2. Sticky chip 탭 — 제안서 A/B/C
  *   3. 선택된 제안서 본문 (설계사 헤더 / 핵심 수치 / ROI / 레이더 / 핵심 담보 /
- *      추가 정보 / 문자 보내기 CTA)
+ *      추가 정보 / 상담 진행하기 CTA)
  *
  * 연락 요청 상태 (contacted): SSR 의 proposal.contactedAt 기반으로 초기화 후
- * client state 로 관리. "문자 보내기" 클릭 시 requestPlanProposalContact 액션을 호출 —
- * 액션이 멱등이라 서버는 첫 호출만 카운터 +1, 클라는 응답과 무관하게 즉시 토글
- * (optimistic). 새로고침 / 새 탭에서 button 이 다시 활성되는 것은 SSR 의 contactedAt
- * 으로 가려짐.
+ * client state 로 관리. "상담 진행하기" 클릭 → 바텀 시트에서 채널 (카카오톡 / 문자)
+ * 선택 → requestPlanProposalContact 액션을 호출. 액션이 멱등이라 서버는 첫 호출만
+ * 카운터 +1, 클라는 응답과 무관하게 즉시 토글 (optimistic). 새로고침 / 새 탭에서
+ * button 이 다시 활성되는 것은 SSR 의 contactedAt 으로 가려짐.
  */
 export function ResultView({
   resultToken,
@@ -46,10 +48,18 @@ export function ResultView({
   const [contacted, setContacted] = useState<Set<string>>(
     () => new Set(proposals.filter((p) => p.contacted).map((p) => p.id)),
   );
+  // 시트가 어느 proposal 에 대해 열렸는지 식별. 닫혀있으면 null. chip 탭 전환과
+  // 무관하게 사용자가 누른 시점의 proposal 을 고정해 잘못된 설계사에게 연락 가는
+  // 케이스를 차단.
+  const [sheetProposalId, setSheetProposalId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   const active = proposals[activeIdx];
   if (!active) return null;
+
+  const sheetProposal = sheetProposalId
+    ? (proposals.find((p) => p.id === sheetProposalId) ?? null)
+    : null;
 
   // 모든 제안서의 분석 리포트 — chip union/intersection 계산용.
   // PlanProposalBody 가 reuse 되므로 ScenarioPickerRoiChart 의 recent/active state 는
@@ -60,16 +70,17 @@ export function ResultView({
         .filter((r): r is AnalysisReportV5 => Boolean(r))
     : [];
 
-  function markContacted(id: string) {
+  function markContacted(id: string, channel: ContactChannel) {
     if (contacted.has(id)) return;
     setContacted((s) => new Set(s).add(id));
     startTransition(async () => {
-      const result = await requestPlanProposalContact(resultToken, id);
+      const result = await requestPlanProposalContact(resultToken, id, channel);
       if (!result.ok) {
         // not_found — 토큰 불일치 등 비정상 케이스.
         // settled — 보관 기간 지나 cron 정산 완료된 요청 (stale 탭에서 늦게 도착한 클릭).
-        //   새로고침하면 ExpiredState 가 렌더되어 자연스럽게 이탈하므로 별도 토스트 없이
-        //   토글 롤백만 (사용자는 단순히 button 이 다시 활성된 것으로 보임).
+        // invalid_channel — 클라/서버 사이 enum 불일치 (정상 플로우엔 없음, defensive).
+        //   세 경우 모두 새로고침하면 ExpiredState 가 렌더되거나 button 이 다시 활성되어
+        //   자연스럽게 이탈하므로 별도 토스트 없이 토글 롤백만.
         setContacted((s) => {
           const next = new Set(s);
           next.delete(id);
@@ -133,7 +144,18 @@ export function ResultView({
         scenarioPriority={scenarioPriority ?? []}
         resultRetentionDays={resultRetentionDays}
         contacted={contacted.has(active.id)}
-        onContact={() => markContacted(active.id)}
+        onContact={() => setSheetProposalId(active.id)}
+      />
+
+      <ContactChannelSheet
+        open={sheetProposal !== null}
+        onClose={() => setSheetProposalId(null)}
+        onSelect={(channel) => {
+          if (sheetProposal) {
+            markContacted(sheetProposal.id, channel);
+            setSheetProposalId(null);
+          }
+        }}
       />
     </div>
   );
@@ -350,7 +372,8 @@ function PlanProposalBody({
       </div>
     </article>
 
-    {/* 문자 보내기 CTA — 하단 viewport 고정. 480px 모바일 컨테이너 기준 가운데 정렬. */}
+    {/* 상담 진행하기 CTA — 하단 viewport 고정. 480px 모바일 컨테이너 기준 가운데 정렬.
+      *   클릭 시 부모가 ContactChannelSheet 를 열어 채널 (카카오톡 / 문자) 선택을 받음. */}
     <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] px-6 pt-3 pb-4 bg-white border-t border-[#efefef] shadow-[0_-4px_16px_rgba(0,0,0,0.04)] z-50">
       <button
         type="button"
@@ -364,8 +387,8 @@ function PlanProposalBody({
         )}
       >
         {contacted
-          ? "문자를 보냈어요"
-          : `${proposal.partner.name} 설계사에게 문자 보내기`}
+          ? "상담 요청을 보냈어요"
+          : `${proposal.partner.name} 설계사와 상담 진행하기`}
       </button>
     </div>
     </>
