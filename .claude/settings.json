@@ -1,0 +1,30 @@
+{
+  "enabledPlugins": {
+    "supabase@claude-plugins-official": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/worktree-session-start.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/worktree-session-end.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

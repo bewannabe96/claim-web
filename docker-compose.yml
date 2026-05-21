@@ -1,0 +1,45 @@
+# 로컬 개발 전용 — worktree 별 격리 Postgres + Redis.
+# 컨테이너명/포트/볼륨이 모두 COMPOSE_PROJECT_NAME + *_HOST_PORT 환경변수로 결정.
+# scripts/set-workspace-env-vars.sh 가 worktree 디렉토리명을 hash 해서 자동 계산.
+#
+# 사용: pnpm workspace:setup (docker compose up -d 직접 호출 금지 — env 가 비어있음)
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      # 127.0.0.1 바인딩 — LAN 노출 차단 (next.config.ts 의 allowedDevOrigins 와 무관).
+      - "127.0.0.1:${POSTGRES_HOST_PORT}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # OTP 코드 저장 + IP 레이트리밋 — TTL 만으로 수명 관리, 영속성 불필요.
+  # SessionEnd hook 이 down -v 로 매번 정리.
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME}_redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
+  redisdata:

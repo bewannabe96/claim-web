@@ -1,0 +1,647 @@
+// ============================================================
+// Prisma schema — partner-match-mvp
+//
+// 진실 공급원 (DB 구조). features/<x>/schema.ts 의 zod 와 짝.
+//   - zod    → 앱 레이어 입력/형식 검증 (value/range/format)
+//   - prisma → DB 구조 무결성 (PK / FK / NOT NULL / UNIQUE / 인덱스)
+//
+// 명명 규칙:
+//   - 모델 = PascalCase (TS 클라이언트 친화).
+//   - 컬럼 DB 이름 = snake_case (`@map`). 모든 모델에 `@@map` 으로 테이블명 매핑.
+//   - PK 는 `String @id` — 앱-사이드 nanoid(16) (`src/lib/id.ts` 의 `newId()`)
+//     로 INSERT 전 생성. **DB DEFAULT 없음**. CUID/UUID 디폴트도 쓰지 않음.
+//
+// updated_at 정책: Prisma 의 `@updatedAt` 가 INSERT / UPDATE 시 timestamp 설정.
+// DB 트리거는 사용 안 함 — 모든 시점 컨트롤은 앱 레이어 (Prisma client) 가 책임.
+//
+// DB 레벨 제약 최소화: CHECK / partial unique index 사용 안 함. 단일 row 강제
+// (app_settings), race-safe 중복 차단 (phone-active, result_token) 같은 도메인
+// 규칙은 모두 features/<x>/{queries,actions}.ts 가 책임.
+//
+// 스키마 분리: 모든 도메인 테이블 + `_prisma_migrations` 모두 `claim` 스키마.
+// (DATABASE_URL 의 `?schema=claim` 로 default 가 claim → Prisma 가 그 안에 둠.)
+// `schemas` 배열에 `public` 을 넣지 말 것 — `prisma migrate reset` 이 namespace
+// 마다 `DROP SCHEMA … CASCADE` 를 도는데, Supabase `public` 은 extension
+// (pg_graphql / pg_net / supabase_realtime 등) 들이 살아서 drop 권한 없음 +
+// 강제 drop 시 프로젝트가 깨짐.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")        // Supavisor transaction pooler (6543)
+  directUrl = env("DIRECT_URL")          // 직결 (5432) — migrate / introspect 용
+  schemas   = ["claim"]
+}
+
+// ============================================================
+// plan_request — 가입자 제안서 요청서
+// ============================================================
+
+model PlanRequest {
+  id String @id
+
+  // Step1: 요청서 본체 (gender 는 Step3 finalize 에서 주민번호로 set)
+  gender             String?
+  occupation         String
+  monthlyBudgetMin   Int    @map("monthly_budget_min")
+  monthlyBudgetMax   Int    @map("monthly_budget_max")
+
+  // CoverageRequest discriminated union (broad | focused) — zod 검증 후 jsonb.
+  coverage           Json
+  additionalNotes    String? @map("additional_notes")
+
+  // Step3: 본인 인증 (1:1 sparse — 인증 완료 시 채워짐)
+  name               String?
+  phone              String?
+  // 주민번호 앞6자리+뒤1자리 → birth_date + gender(=Step1 gender) derive 후 폐기.
+  // 원본 RRN 은 어디에도 저장하지 않음 (개인정보 최소화).
+  birthDate          DateTime? @db.Date @map("birth_date")
+  consentThirdParty  Boolean @default(false) @map("consent_third_party")
+  consentMessaging   Boolean @default(false) @map("consent_messaging")
+
+  // 워크플로우
+  status        String  @default("selecting")
+  rematchCount  Int     @default(0)     @map("rematch_count")
+  resultToken   String? @map("result_token")
+
+  /// 요청서 생성 시점에 PlanRequestPriceTier 에서 매칭한 가격을 snapshot.
+  /// 보관 기간 만료 시점에 contactedAt 있는 파트너 N명에게 `price/N` (1000원 단위
+  /// 반올림) 으로 분할 차감 — 자세한 흐름은 features/plan-requests/settlement.ts.
+  /// admin 이 tier 가격을 바꿔도 진행 중 요청에는 영향 X. Step1 트랜잭션에서
+  /// 항상 채우므로 신규 row 는 NOT NULL 보장 — nullable 은 기존 row 보호용.
+  price         Int?
+
+  // 시점
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  dispatchedAt  DateTime? @db.Timestamptz(6) @map("dispatched_at")
+  deadlineAt    DateTime? @db.Timestamptz(6) @map("deadline_at")
+  /// 정산 완료 시각. NULL = 미정산 (보관 기간 만료 cron 대기).
+  /// 정산 정책: 보관 기간 만료 시점에 contactedAt 있는 proposal 의 파트너 N명에게
+  /// price/N (1000원 단위 반올림) 차감. cron 이 spendCredit 모두 성공 후에만 마킹
+  /// → 부분 실패는 다음 tick 에서 멱등키로 재시도 (spendCredit alreadyApplied 흡수).
+  settledAt     DateTime? @db.Timestamptz(6) @map("settled_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  medicalHistory PlanRequestMedicalHistory[]
+  candidates     PlanRequestAssignmentCandidate[]
+  assignments    PlanRequestAssignment[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("plan_request")
+  @@schema("claim")
+}
+
+// ============================================================
+// plan_request_price_tier — budget 범위 → 요청서 가격 매핑 (가변 row, 비중첩)
+// ============================================================
+// step1-wizard 의 BUDGET_OPTIONS 가 이 테이블에서 동적으로 로드됨 (server component
+// 가 listPriceTiers() 호출 → client wizard 에 prop). admin 페이지가 일괄 편집 —
+// $transaction(deleteMany + createMany) 로 전체 row 를 atomic 교체. 비중첩 + 연속
+// 구간 invariant 가 트랜잭션 단위로 보장됨.
+//
+// 구간 표현: 인접 row 의 budgetMax+1 === 다음 row 의 budgetMin (1원 갭, 닫힘-열림
+// 구간). 첫 row 의 budgetMin=0, 마지막 row 의 budgetMax=9_999_999 (sentinel).
+// PlanRequest 생성 시점에 price 가 PlanRequest.price 로 snapshot 되어, admin 이
+// tier 를 어떻게 갈아끼우든 진행 중 요청에는 영향 X.
+//
+// 운영 규모상 lookup 테이블 — index 추가 안 함 (full scan, 보통 수십 row 미만).
+
+model PlanRequestPriceTier {
+  id        String   @id                       // nanoid(16)
+  /// 표시 순서 (boundary 오름차순). UNIQUE — bulk save 가 0..N-1 로 자동 재할당.
+  position  Int      @unique
+  budgetMin Int      @map("budget_min")
+  budgetMax Int      @map("budget_max")
+  /// 요청서당 차감 가격 (KRW). admin 이 수정.
+  price     Int
+
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@unique([budgetMin, budgetMax])
+  @@map("plan_request_price_tier")
+  @@schema("claim")
+}
+
+// ============================================================
+// plan_request_medical_history — 병력 (1:N)
+// ============================================================
+
+model PlanRequestMedicalHistory {
+  id String @id
+
+  requestId            String   @map("request_id")
+  diagnosis            String
+  treatmentPeriod      String   @map("treatment_period")
+  treatmentStartDate   DateTime @db.Date @map("treatment_start_date")
+  hospitalizationDays  Int      @default(0) @map("hospitalization_days")
+  outpatientVisits     Int      @default(0) @map("outpatient_visits")
+  hadSurgery           Boolean  @default(false) @map("had_surgery")
+  position             Int
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  request PlanRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, position])
+  @@index([requestId])
+  @@map("plan_request_medical_history")
+  @@schema("claim")
+}
+
+// ============================================================
+// plan_request_assignment_candidate — 배정 후보 (M:N junction)
+// ============================================================
+// 알고리즘이 산출한 (PlanRequest × Partner) 후보 슬롯. 가입자가 K명 선택
+// (selected=true) 시점에 plan_request_assignment 로 실체화. 자세한 어휘/모델
+// 정의는 docs/domain-glossary.md.
+
+model PlanRequestAssignmentCandidate {
+  requestId      String   @map("request_id")
+  partnerId      String   @map("partner_id")
+  candidateRank  Int      @map("candidate_rank")
+  selected       Boolean  @default(false)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  request PlanRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  partner Partner     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@id([requestId, partnerId])
+  @@unique([requestId, candidateRank])
+  @@index([requestId])
+  @@index([partnerId])
+  @@map("plan_request_assignment_candidate")
+  @@schema("claim")
+}
+
+// ============================================================
+// user — 모든 인증 사용자의 공통 정보
+// ============================================================
+// Supabase auth.users 와 1:1. id 는 도메인 nanoid (다른 테이블 FK 가 참조), authId
+// 는 auth.users.id (UUID) 와 매핑되는 별도 인증 key.
+//
+// 사용자 생성 흐름:
+//   1. 운영자가 사전 등록 — User row 생성 (authId=null) + 역할별 extension row.
+//   2. 첫 로그인 (admin: 비번 / partner: kakao OAuth) 시 callback/action 이 email 로
+//      User row 를 찾아 authId 채움 (claim). 이후 로그인은 authId 로 직접 lookup.
+//
+// 역할(role)은 별도 필드로 두지 않음 — 한 사용자가 여러 역할을 가질 수 있도록
+// Partner / Admin extension row 의 존재(+active) 자체가 권한 판단 기준. DAL 이 단일 진실.
+
+model User {
+  id        String   @id                                  // nanoid(16) — 도메인 식별자
+  authId    String?  @unique @db.Uuid @map("auth_id")     // = auth.users.id (UUID). 사전 등록 시 null, 첫 로그인 후 claim.
+  email     String   @unique
+  name      String
+  // partner 의 phone 은 invitation 단계부터 검증되는 식별자 — 다른 사용자와 충돌 못 함.
+  // admin 은 phone 미입력 가능 (nullable). UNIQUE + NULL 다수 허용 (PostgreSQL 기본).
+  phone     String?  @unique
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  partner   Partner?
+  admin     Admin?
+
+  @@map("user")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner — 설계사 추가 정보 (User 와 1:1, PK 공유)
+// ============================================================
+// 가입자 노출:  user.name, bio, yearsOfExperience, trustMetric
+// 운영:        user.email (로그인), user.phone (알림톡), active
+// 배정 카운터: partner_assignment_stats 가 1:1 로 보유 (본체 hot row 와 분리).
+//
+// id 는 User.id 와 동일 — 1:1 extension. plan_request_assignment /
+// plan_request_assignment_candidate 의 partnerId 는 이 id (= User.id) 를 참조.
+
+model Partner {
+  id                 String   @id                          // = User.id (공유 nanoid)
+
+  bio                String
+  yearsOfExperience  Int      @map("years_of_experience")
+  trustMetric        String   @map("trust_metric")
+  /// 설계사 자격번호 — 운영자가 등록 시 기입. UNIQUE 제약으로 중복 등록 차단.
+  licenseNumber      String   @unique @map("license_number")
+  /// 프로필 사진 S3 key — `partners/avatar/{partnerId}/{nanoid}.{ext}` 형태. nullable (미업로드).
+  /// 공개 GET 허용 prefix 라 URL 은 `<bucket>.s3.<region>.amazonaws.com/<key>` 로 직접 노출.
+  avatarKey          String?  @map("avatar_key")
+  active             Boolean  @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  user             User                              @relation(fields: [id], references: [id], onDelete: Cascade)
+  candidates       PlanRequestAssignmentCandidate[]
+  assignments      PlanRequestAssignment[]
+  assignmentStats  PartnerAssignmentStats?
+  creditBalance    PartnerCreditBalance?
+  creditLedger     PartnerCreditLedger[]
+
+  @@map("partner")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner_assignment_stats — 설계사 배정 카운터 (Partner 와 1:1, PK 공유)
+// ============================================================
+// 배정 형평성 정렬 키 + 운영 지표. 본체 Partner 의 read-heavy 경로
+// (어드민 편집/카드 노출)에서 분리해 hot row 의 width 를 줄임.
+//
+// 각 카운터 정의 (퍼널 단계 순):
+//   - exposureCount: plan_request_assignment_candidate INSERT (= 후보 카드
+//     등장). 가입자가 선택하지 않아도 카운트 +1. submitStep1 트랜잭션 안에서
+//     candidate row 와 같은 트랜잭션으로 증가.
+//   - selectedCount: plan_request_assignment INSERT (= 가입자가 Step3
+//     finalize 까지 완료해 알림톡 발송 대상으로 배정됨). finalizeRequest
+//     트랜잭션 안에서 assignment 와 같이 증가.
+//   - contactedCount: 결과 페이지에서 제안서 비교 후 가입자가 "문자 보내기"
+//     액션으로 연락을 요청한 횟수. proposal.contactedAt IS NULL 인 경우에만
+//     +1 (멱등) — requestProposalContact 액션 트랜잭션 안에서 proposal
+//     마킹과 함께.
+//
+// 항상 exposureCount >= selectedCount >= contactedCount (퍼널의 부분집합 관계).
+// DB CHECK 미사용 정책이라 앱 레이어가 정의로 보장.
+//
+// 1:1 보장: partnerId = PK 이자 FK. 빈 row 는 가입 트랜잭션
+// (verifyPartnerSignupOtp) 안에서 함께 INSERT — Partner.exists ⇔
+// PartnerAssignmentStats.exists 불변식. 레거시 partner 대비 시더 백필.
+
+model PartnerAssignmentStats {
+  partnerId      String   @id @map("partner_id")
+  exposureCount  Int      @default(0) @map("exposure_count")
+  selectedCount  Int      @default(0) @map("selected_count")
+  contactedCount Int      @default(0) @map("contacted_count")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  // 배정 후보 정렬 — selected_count 적은 순.
+  @@index([selectedCount])
+  @@map("partner_assignment_stats")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner_credit_balance — 설계사 크레딧 잔액 (Partner 와 1:1)
+// ============================================================
+// 1 credit = 1 KRW. 항상 Int (소수 없음, Decimal/Float/BigInt 금지).
+//
+// 잔액 갱신은 모든 케이스에서 partner_credit_ledger INSERT 와 같은 트랜잭션 안에서
+// 일어남. 동시 갱신은 `version` 컬럼의 optimistic lock 으로 직렬화 — 자세한 알고리즘은
+// features/credits/lib/apply-ledger.ts 가 단일 chokepoint.
+//
+// 음수 잔액은 DB CHECK 미사용 정책에 따라 앱 레이어 (apply-ledger) 가 사전 검사.
+//
+// 1:1 보장: partnerId 는 PK 이자 FK. 빈 row 는 partner 가입 트랜잭션 시점
+// (verifyPartnerSignupOtp) 에 함께 INSERT — Partner.exists ⇔ PartnerCreditBalance.exists
+// 불변식을 유지. 레거시 파트너 대비 시더 + getCreditBalance lazy upsert fallback.
+
+model PartnerCreditBalance {
+  partnerId String   @id @map("partner_id")              // = Partner.id (= User.id)
+  balance   Int      @default(0)
+  /// 빚 카운터. spend 시 balance 가 부족하면 그만큼 debt 에 +. topup 은 debt 를
+  /// 먼저 갚고 남는 게 balance 로 들어감. balance, debt 둘 다 항상 ≥ 0 인 양변 분해.
+  /// 음수 잔액 표현을 직관적인 두 수치로 분리 (자산 vs 부채). apply-ledger 가 단일 분배 책임.
+  debt      Int      @default(0)
+  /// Optimistic lock counter. updateMany WHERE version=expected 패턴.
+  version   Int      @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@map("partner_credit_balance")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner_credit_ledger — 크레딧 변동 append-only 원장
+// ============================================================
+// 모든 잔액 변동은 이 테이블에 한 row INSERT. row 삭제/수정 금지 (운영 SQL 도 금함).
+// 환불은 별도 row (type='adjustment' 또는 'refund', 음수 amount) 로 표현 — PG cancel
+// API 미연동.
+//
+// referenceType + referenceId 는 자유 포인터:
+//   - type='topup'      → ("payment", paymentId)
+//   - type='spend'      → ("assignment"/"plan_request"/..., entity id)
+//   - type='adjustment' → null
+// FK 강제 안 함 (다양한 출처 + 원본 entity cascade 삭제 시에도 audit 보존).
+//
+// idempotencyKey: 같은 외부 요청 (PG 웹훅 재전송 / spend 재실행) 의 중복 적용 차단.
+// NULL 허용 (admin 수기 adjustment 등 멱등 키가 없는 경로) — PostgreSQL 기본: UNIQUE
+// 인덱스에서 NULL 은 distinct 취급, 다수 NULL row 공존 가능.
+//
+// createdById: 액터의 user.id. admin adjustment → admin user.id, 웹훅·시스템 spend →
+// null. FK 미설정 — user 삭제 시 audit 가 사라지면 안 됨.
+
+model PartnerCreditLedger {
+  id        String  @id                                  // nanoid(16)
+  partnerId String  @map("partner_id")
+
+  /// 부호 있는 KRW. topup/refund 양수, spend 음수, adjustment 양·음 모두 가능.
+  amount       Int
+  /// 이 row 적용 직후 balance 스냅샷. apply-ledger 가 balance 갱신과 같은 tx 에서 set.
+  balanceAfter Int @map("balance_after")
+  /// 이 row 적용 직후 debt 스냅샷 (balanceAfter 의 짝). 기존 row 는 default 0
+  /// (debt 도입 이전이라 의미적으로도 0 이 정확). spend 시 balance 부족분이
+  /// 누적, topup 시 차감.
+  debtAfter    Int @default(0) @map("debt_after")
+
+  /// "topup" | "spend" | "adjustment" | "refund" — zod 로 검증. DB enum 아님.
+  type   String
+  /// 운영 메모 (admin adjustment 사유, spend feature 라벨 등). 길이는 zod 가 강제.
+  reason String?
+
+  referenceType String? @map("reference_type")
+  referenceId   String? @map("reference_id")
+
+  /// 외부 요청 단위 멱등키 — UNIQUE 인덱스로 race-safe. NULL 다수 허용.
+  idempotencyKey String? @unique @map("idempotency_key")
+
+  /// 결제 제공자 식별자. topup / refund 만 유의미 — "stub" | "portone" | "toss"(추후).
+  /// adjustment / spend 는 null. forensic reconciliation 용 (PG 콘솔 매칭).
+  provider String? @db.VarChar(32)
+  /// PG 측 거래 식별자. topup 은 PortOne transactionId, refund 는 cancellationId.
+  /// adjustment / spend / stub 은 null. PG 콘솔/리포트 join 키.
+  providerRef String? @map("provider_ref")
+
+  /// 액터 user.id. 시스템 자동 (웹훅·spend) 은 null. FK 미설정 (audit 보존).
+  createdById String?  @map("created_by_id")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  /// 파트너 거래 내역 — 최신 순 페이지네이션 최적화.
+  @@index([partnerId, createdAt(sort: Desc)])
+  /// 원본 entity → ledger 역추적 (payment_id 로 topup 확인, assignment_id 로 spend 확인).
+  @@index([referenceType, referenceId])
+  @@map("partner_credit_ledger")
+  @@schema("claim")
+}
+
+// ============================================================
+// partner_signup_invitation — 운영자가 발행한 설계사 가입 초청 (임시)
+// ============================================================
+// 운영자가 신규 설계사 등록 시 user/partner row 를 즉시 만들지 않고 이 테이블에만
+// INSERT. 설계사가 발급된 일회용 가입 링크 (`/partner/signup/[token]`) 로 진입 →
+// Kakao OAuth (콜백이 linkedAuthId lock) → /verify 페이지의 본인인증 통과 →
+// 단일 트랜잭션으로 user + partner INSERT + invitation 소비 (consumedAt +
+// consumedUserId + phoneVerifiedAt audit).
+//
+// **분기 — `existingUserId`**: 어드민 본인이 자기 자신을 설계사로도 등록하는
+// 겸직 흐름. set 된 경우 Kakao OAuth 우회 — admin 세션 + OTP 본인인증만으로
+// 진행되어, 가입 트랜잭션이 user.create 대신 그 id 의 User 에 Partner extension
+// 만 추가 (1 User = 1 phone 원칙 유지). 발급은 `/admin/partners/new` 의 phone
+// lookup → "어드민 본인 설계사 등록" 체크박스로만 set, immutable.
+//
+// 한 invitation = 한 row. 재발급은 token + expiresAt 회전 (row 신규 INSERT 아님).
+// 소비된 invitation 은 audit 용으로 남기되 token 으론 더 이상 진입 불가
+// (consumedAt IS NOT NULL 가드).
+//
+// 동일 phone / licenseNumber 의 미소비 invitation 중복 차단은 앱 레이어 (zod +
+// actions 의 사전 lookup) 가 책임 — partial unique index 사용 안 함.
+
+model PartnerSignupInvitation {
+  id String @id                                            // nanoid(16)
+
+  // 가입 시 user / partner 로 옮겨질 정보. partner.* 컬럼과 1:1 대응.
+  name              String
+  /// user.phone 후보 + Kakao OAuth 응답의 phone 과 매칭 검증 키.
+  phone             String
+  bio               String
+  yearsOfExperience Int      @map("years_of_experience")
+  trustMetric       String   @map("trust_metric")
+  licenseNumber     String   @map("license_number")
+  /// 가입 시 partner.active 로 복사.
+  active            Boolean  @default(true)
+
+  /// 일회용 가입 토큰. nanoid(32) (`newToken()`). 재발급 시 회전.
+  token     String   @unique
+  expiresAt DateTime @db.Timestamptz(6) @map("expires_at")
+
+  /// Kakao OAuth 콜백이 lock 한 auth.users.id (UUID). 매 콜백마다 무조건 덮어씀
+  /// — 다른 카카오 계정으로 같은 invitation 재진입해도 그대로 새 계정으로 갱신.
+  /// 보안 게이트 아님 (횡령 방지는 PortOne 본인인증의 phone 매칭이 책임). 단지
+  /// "최신 OAuth 한 브라우저 컨텍스트가 verify 액션을 호출하는지" 일관성 검증에 사용.
+  /// 본인인증 통과 시 user.authId 가 됨. reissue 호출 시 NULL 로 리셋.
+  /// UNIQUE 아님 — audit 보존 invitation 들과 충돌 회피.
+  linkedAuthId String? @db.Uuid @map("linked_auth_id")
+
+  /// 본인인증 (PortOne) 통과 audit 기록 — 가입 트랜잭션 (verifyPartnerSignupOtp)
+  /// 직전 set 후 invitation 소비. 가입 게이트 아닌 audit only. 콜백 진입 시 NULL
+  /// 리셋 (새 계정 진입이면 본인인증 다시 받도록), reissue 시 NULL 리셋.
+  phoneVerifiedAt DateTime? @db.Timestamptz(6) @map("phone_verified_at")
+
+  /// 소비 흔적 (가입 완료 시점). NULL = 미소비 (재발급/삭제 가능).
+  consumedAt     DateTime? @db.Timestamptz(6) @map("consumed_at")
+  /// 가입된 user.id (audit). FK 아님 — invitation 보존이 audit 본질이므로
+  /// user 삭제 시 cascade 안 됨. consumedAt IS NOT NULL 일 때만 set.
+  consumedUserId String?   @map("consumed_user_id")
+
+  /// 어드민 본인이 자기 자신을 설계사로도 등록하는 "겸직" 흐름의 진입점.
+  /// set 된 경우 가입 트랜잭션은 user.create 대신 이 id 의 User 에 Partner
+  /// extension 만 추가 (1 User = 1 phone 원칙 유지). NULL = 일반 신규 가입.
+  /// Kakao OAuth 우회 — admin 세션 + OTP 본인인증으로만 진행. FK 미설정
+  /// (audit 보존 + cascade 회피). 발급 시 set, immutable.
+  existingUserId String? @map("existing_user_id")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  // 어드민 리스트 정렬 + phone/licenseNumber 충돌 사전 검사 용도.
+  @@index([consumedAt, createdAt(sort: Desc)])
+  @@index([phone])
+  @@index([licenseNumber])
+  @@index([linkedAuthId])
+  @@index([existingUserId])
+  @@map("partner_signup_invitation")
+  @@schema("claim")
+}
+
+// ============================================================
+// plan_request_assignment — PlanRequest × Partner 1:1 배정 슬롯
+// ============================================================
+// 가입자가 선택한 설계사 K명 각각에 대해 1 row. 알림톡 진입 시 일회용 token 으로
+// 인증. 설계사가 폼 제출하면 status='submitted' + plan_proposal 1:1 생성.
+//
+// (request_id, partner_id) UNIQUE — 한 요청은 한 설계사에게 한 번만 배정.
+// status 는 enum 대신 text — PRD 에서 상태 추가 가능성 (`declined` 등) 대비.
+
+model PlanRequestAssignment {
+  id        String @id
+
+  requestId String @map("request_id")
+  partnerId String @map("partner_id")
+
+  /// 알림톡 URL 진입용 일회성 토큰. nanoid(32) (newToken).
+  token     String @unique
+
+  status    String @default("pending")
+
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  submittedAt DateTime? @db.Timestamptz(6) @map("submitted_at")
+
+  request  PlanRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  partner  Partner      @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  proposal PlanProposal?
+
+  @@unique([requestId, partnerId])
+  @@index([requestId])
+  @@index([partnerId, status])
+  @@map("plan_request_assignment")
+  @@schema("claim")
+}
+
+// ============================================================
+// plan_proposal — 설계사 제출 제안서 (plan_request_assignment 와 1:1)
+// ============================================================
+// 정형 필드 (보험료, 담보, 갱신/환급) 는 AI 가 PDF 에서 파싱하므로 입력 받지 않음.
+// 설계사는 진설계 PDF (S3 저장) + 100자 한줄 요약만 작성.
+
+model PlanProposal {
+  id           String @id
+  assignmentId String @unique @map("assignment_id")
+
+  /// S3 object key — "proposals/{assignment_id}/{nanoid}.pdf". presigned URL 로 업로드 후 저장.
+  pdfS3Key     String  @map("pdf_s3_key")
+  /// HEAD 검증 시점 capture. 표시·집계용. null 허용.
+  pdfSizeBytes BigInt? @map("pdf_size_bytes")
+
+  /// PDF 본문의 SHA-256 (hex, 64자). 업로드 직후 항상 채워짐. 동일 PDF 식별/audit
+  /// 용도 — 분석 리포트 join 키는 plan_proposal.id 사용 (`PlanProposalAnalysisReport` 1:1).
+  pdfHash      String  @map("pdf_hash")
+
+  /// 100자 한줄 요약 — 가입자 결과 페이지 말풍선에 그대로 노출 (verbatim).
+  note String
+
+  submittedAt DateTime  @default(now()) @db.Timestamptz(6) @map("submitted_at")
+  /// 외부 분석 파이프라인 (eightytwo_judge) 콜백 수신 시각.
+  /// 첫 콜백 시점만 기록 (WHERE analyzed_at IS NULL 로 update 한정 → 재시도 시 no-op).
+  /// plan_request 의 모든 plan_request_assignment 가 submitted + 그 plan_proposal 이
+  /// analyzed_at IS NOT NULL 인 경우에만 plan_request.status='completed'
+  /// (pending/expired assignment 가 하나라도 있으면 전이 안 함).
+  /// SQS 메시지 metadata 에 plan_proposal.id + plan_request.id 를 실어보내고, 콜백이
+  /// 그 두 id 로 직접 식별 + 마킹 (cross-validation 으로 페이로드 위조 차단).
+  analyzedAt  DateTime? @db.Timestamptz(6) @map("analyzed_at")
+
+  /// 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 payload.
+  /// `{ group: "input_error"|"product_id_match"|"internal_error", type, message, detail? }`.
+  /// 어드민이 group=product_id_match 등 수기 대응 필요한 케이스를 인지하는 용도.
+  /// 분석 성공 (analyzedAt 채워질 때) 시점에 명시적으로 null 초기화하진 않음 —
+  /// 어차피 read 측은 analyzedAt 으로 우선 분기. 재시도 (retryProposalAnalysis)
+  /// 시점에 두 컬럼 모두 null 로 초기화.
+  analysisError   Json?     @map("analysis_error")
+  analysisErrorAt DateTime? @db.Timestamptz(6) @map("analysis_error_at")
+
+  /// 가입자가 결과 페이지에서 이 제안서를 보고 "문자 보내기" 로 설계사에게 연락
+  /// 요청한 시각. requestProposalContact 액션이 한 번만 set (WHERE contactedAt IS
+  /// NULL 로 멱등) + 같은 트랜잭션에서 partner_assignment_stats.contacted_count +1.
+  /// NULL = 아직 연락 요청 전 (또는 연락 요청 이전에 분석 미완료).
+  contactedAt DateTime? @db.Timestamptz(6) @map("contacted_at")
+
+  assignment     PlanRequestAssignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  analysisReport PlanProposalAnalysisReport?
+
+  @@index([pdfHash])
+  /// 어드민 "분석 실패" 뷰 — analyzedAt IS NULL AND analysisErrorAt IS NOT NULL
+  /// 조건 스캔이 작은 테이블이지만 자주 호출되므로 보조 인덱스.
+  @@index([analysisErrorAt])
+  @@map("plan_proposal")
+  @@schema("claim")
+}
+
+// ============================================================
+// plan_proposal_analysis_report — 외부 분석 파이프라인 (eightytwo_judge) 결과
+// ============================================================
+// 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 분석 완료 콜백 수신 시 INSERT.
+// plan_proposal 과 1:1 (`proposal_id` PK + FK). SQS metadata 로 보낸 plan_proposal.id 가
+// 콜백에 그대로 passthrough 되어 식별 키로 사용됨.
+//
+// 버전 정책: 매 schema 진화 시 row 교체 운영 (`schemaVersion` 컬럼 + 읽을 때
+// `CURRENT_REPORT_VERSION` 필터). v6 도입 시 새 row 가 v6 로 들어오고, 코드의
+// `analysis-schema.ts` zod + `CURRENT_REPORT_VERSION` 갱신.
+
+model PlanProposalAnalysisReport {
+  proposalId    String @id @map("proposal_id")
+
+  /// 리포트 schema 버전 (현재 5). 읽을 때 `WHERE schema_version = CURRENT_REPORT_VERSION` 로 gate.
+  schemaVersion Int    @map("schema_version")
+
+  /// AnalysisReportV5 (zod) 의 직렬화. Prisma 가 Json 으로 들고, 읽을 때 parse() 통과.
+  /// `schema_version` 은 본문에 들어가지 않음 (별도 컬럼) — 웹훅이 분리 저장.
+  report        Json
+
+  /// 분석 소요 시간 (ms). 운영 모니터링용. null 허용.
+  durationMs    Int?   @map("duration_ms")
+
+  createdAt     DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  proposal PlanProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([schemaVersion])
+  @@map("plan_proposal_analysis_report")
+  @@schema("claim")
+}
+
+// ============================================================
+// app_settings — 운영 튜닝 값 (single row)
+// ============================================================
+// id 는 항상 'app' 한 row 만. CHECK constraint 로 single-row 강제 (migration SQL).
+// admin 화면이 mutation → 모든 후보 산출 / 배정 흐름이 이 값을 함수로 읽음 (cache 금지).
+
+model AppSettings {
+  id String @id @default("app")
+
+  /// N — 가입자에게 노출할 후보 수
+  candidateCount         Int @default(5)  @map("candidate_count")
+  /// K — 가입자가 선택 가능한 최대 인원
+  selectLimit            Int @default(3)  @map("select_limit")
+  /// T — 설계사 제안서 제출 제한시간 (시간 단위)
+  submissionDeadlineHours Int @default(48) @map("submission_deadline_hours")
+  /// 미제출률 페널티 산정 윈도우 (최근 N건)
+  penaltyWindow          Int @default(10) @map("penalty_window")
+
+  /// 결과 페이지 보관 기간 (일). dispatchedAt + N일 경과 시 결과 토큰 만료.
+  resultRetentionDays    Int @default(7)  @map("result_retention_days")
+
+  /// 결과 페이지 시나리오 우선순위. category_payouts.category 값의 ordered array.
+  /// 앞에서부터 top3 후보. 보장 없는 카테고리는 자동 스킵 후 다음으로 대체.
+  /// 리스트에 없는 카테고리는 모달 "기타" 영역에 가나다순으로 노출.
+  scenarioPriority       String[] @default([]) @map("scenario_priority")
+
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@map("app_settings")
+  @@schema("claim")
+}
+
+// ============================================================
+// admin — 운영자 추가 정보 (User 와 1:1, PK 공유)
+// ============================================================
+// 이 row 의 존재(+active) 자체가 admin 권한 — User.role 같은 별도 discriminator 없음.
+// 운영자 추가/제거는 운영 SQL 또는 admin 운영 UI 로 수동 — 자체 signup 흐름 없음.
+// RBAC permissions 는 추후 컬럼 추가로 도입 예정 (현재는 active 만 체크).
+
+model Admin {
+  id          String   @id                                 // = User.id (공유 nanoid)
+  active      Boolean  @default(true)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  user User @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@map("admin")
+  @@schema("claim")
+}

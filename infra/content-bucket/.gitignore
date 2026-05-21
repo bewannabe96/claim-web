@@ -1,0 +1,15 @@
+.terraform/
+terraform.tfstate
+terraform.tfstate.*
+terraform.tfstate.d/
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# 환경별 prod.tfvars / dev.tfvars 는 config 라 commit.
+# 로컬 override 용 default 파일 / auto-load 파일만 ignore.
+terraform.tfvars
+*.auto.tfvars
