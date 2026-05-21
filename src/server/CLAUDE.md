@@ -63,8 +63,7 @@
   - `UI_0735` (`buildNewAssignmentAlimtalk`) — 파트너 선택 알림 (가입자 → 설계사)
   - `UI_0738` (`buildContactRequestAlimtalk`) — 연락 요청 알림 (가입자 → 설계사)
   - `UI_0741` (`buildAnalysisCompletedAlimtalk`) — AI 분석 완료 알림 (시스템 → 가입자)
-  원본 본문은 [kakao-template.md](../../kakao-template.md). 카카오 검수본이 바뀌면 이 파일
-  먼저 갱신 + 알리고 콘솔 동시 반영.
+  검수본은 알리고 콘솔이 진실 공급원 — 카카오 측 템플릿 변경 시 이 파일과 알리고 콘솔을 동시에 반영.
 - `branding.ts` — 서비스 표시 이름 (`getServiceName()`). SMS prefix 등 사용자 노출 문구의 단일 진입점.
   env: `SERVICE_NAME`. 추후 이메일/알림톡 문구에서도 재사용.
 - `get-client-ip.ts` — `headers()` 기반 client IP 추출 (`x-forwarded-for` → `x-real-ip` → fallback).

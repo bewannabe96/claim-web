@@ -6,8 +6,7 @@ import type { AlimtalkButton } from "./aligo";
  * 알리고에 등록된 알림톡 템플릿 카탈로그.
  *
  * **본문 / 버튼 / 변수 자리는 알리고 콘솔의 검수본과 1바이트라도 다르면 발송 거부**되므로
- * 이 파일이 검수본의 단일 미러. 카카오 측 템플릿 변경 시 이 파일도 함께 갱신.
- * 원본 매핑은 [kakao-template.md](../../kakao-template.md).
+ * 이 파일이 검수본의 단일 미러. 카카오 측 템플릿 변경 시 알리고 콘솔과 함께 갱신.
  *
  * 각 빌더는 `{ subject, message, button?, failover? }` 형태의 알리고 페이로드 일부를
  * 반환. 호출자는 `sendAlimtalk(phone, { templateCode, ...builder(vars) })` 패턴.
