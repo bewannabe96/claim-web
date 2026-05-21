@@ -16,7 +16,7 @@
 - **수명**: 한 번 INSERT 후 status 만 전이 (`draft → selecting → confirming → dispatched → analyzing → completed`).
 - **위치**: features/plan-requests/
 - **소유 라우트** (가입자): `/plan-request/*`
-- **`price` 컬럼**: Step1 생성 시점에 `PlanRequestPriceTier` 에서 매칭한 가격을 snapshot. 이후 admin 이 tier 가격을 바꿔도 진행 중 요청에는 영향 없음. 결과 페이지 "문자 보내기" 시 이 가격으로 partner 크레딧 차감.
+- **`price` 컬럼**: Step1 생성 시점에 `PlanRequestPriceTier` 에서 매칭한 가격을 snapshot. 이후 admin 이 tier 가격을 바꿔도 진행 중 요청에는 영향 없음. 보관 기간 만료 시점에 contactedAt 받은 파트너 N명에게 `price/N` (1000원 단위 반올림) 분할 차감 (자세한 흐름은 [credits.md §7](credits.md)).
 
 #### `PlanRequestPriceTier` (요청서 가격 tier)
 - **정의**: 가입자 budget 범위 → 요청서당 차감 가격 매핑. 가변 row, 비중첩 + 연속 구간 (boundary 모델). step1-wizard 의 budget chip 이 이 테이블에서 동적으로 로드됨 (부모 server component 가 `listPriceTiers()` 호출 → client wizard 에 prop).

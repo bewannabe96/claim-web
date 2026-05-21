@@ -66,7 +66,10 @@ export function ResultView({
     startTransition(async () => {
       const result = await requestPlanProposalContact(resultToken, id);
       if (!result.ok) {
-        // 서버에서 not_found — 토큰 불일치 등 비정상 케이스. 토글 롤백.
+        // not_found — 토큰 불일치 등 비정상 케이스.
+        // settled — 보관 기간 지나 cron 정산 완료된 요청 (stale 탭에서 늦게 도착한 클릭).
+        //   새로고침하면 ExpiredState 가 렌더되어 자연스럽게 이탈하므로 별도 토스트 없이
+        //   토글 롤백만 (사용자는 단순히 button 이 다시 활성된 것으로 보임).
         setContacted((s) => {
           const next = new Set(s);
           next.delete(id);
