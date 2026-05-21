@@ -335,6 +335,9 @@ function AssignmentItem({
                 erroredAt={proposal.analysisErrorAt}
               />
             )}
+            {!proposal.analyzedAt && !proposal.analysisError && (
+              <AnalysisPendingBlock proposalId={proposal.id} />
+            )}
           </div>
         ) : (
           <p className="text-xs text-[#afafaf]">
@@ -429,6 +432,22 @@ function AnalysisFailureBlock({
       <div className="flex justify-end">
         <RetryAnalysisButton proposalId={proposalId} size="sm" />
       </div>
+    </div>
+  );
+}
+
+/**
+ * 분석 응답이 오지 않고 정체된 proposal — 어드민이 수기로 재요청 트리거.
+ * 외부 파이프라인이 실패 콜백조차 못 보낸 경우 "분석중" 이 영구 박히는 걸 풀기 위함.
+ * 시간 임계값은 두지 않음 (사람이 보고 판단).
+ */
+function AnalysisPendingBlock({ proposalId }: { proposalId: string }) {
+  return (
+    <div className="mt-1 rounded-xl border border-[#efefef] bg-[#fafafa] px-3 py-2.5 flex items-center justify-between gap-3">
+      <p className="text-xs text-[#4b4b4b]">
+        분석 응답을 기다리는 중이에요. 비정상적으로 오래 걸리면 재요청해주세요.
+      </p>
+      <RetryAnalysisButton proposalId={proposalId} size="sm" />
     </div>
   );
 }
