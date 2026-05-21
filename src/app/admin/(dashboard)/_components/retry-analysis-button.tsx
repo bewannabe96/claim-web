@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { Button } from "@/components/ui/button";
 import { retryPlanProposalAnalysis } from "@/features/plan-proposals/actions";
 import { cn } from "@/lib/utils";
 
@@ -9,9 +10,7 @@ import { cn } from "@/lib/utils";
  * 분석 재시도 버튼 — 어드민 "분석 실패" 페이지 + 요청 상세에서 공유.
  *
  * 클릭 → `retryPlanProposalAnalysis(proposalId)` 호출 → 결과를 인라인 텍스트로 표시
- * (성공 시 "재요청됨", 실패 시 사유). 서버가 `revalidatePath` 를 부르므로 위 row
- * 는 곧 사라지지만, 1) 네비게이션 race, 2) 동시 다른 row 처리 가능성 때문에 버튼
- * 자체는 결과 메시지를 자신의 상태로 들고 있음.
+ * (성공 시 "재요청됨", 실패 시 사유).
  */
 export function RetryAnalysisButton({
   proposalId,
@@ -31,7 +30,7 @@ export function RetryAnalysisButton({
 
   return (
     <div className="inline-flex items-center gap-2">
-      <button
+      <Button
         type="button"
         disabled={disabled}
         onClick={() =>
@@ -59,20 +58,17 @@ export function RetryAnalysisButton({
           })
         }
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-lg font-medium transition-colors",
-          size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-1.5 text-sm",
-          disabled
-            ? "bg-[#efefef] text-[#afafaf] cursor-not-allowed"
-            : "bg-black text-white hover:bg-[#1f1f1f]",
+          "rounded-full font-medium",
+          size === "sm" ? "h-8 px-3 text-xs" : "h-9 px-4 text-sm",
         )}
       >
         {pending ? "재요청 중…" : "분석 재시도"}
-      </button>
+      </Button>
       {result?.kind === "success" && (
         <span className="text-xs text-black">재요청됨</span>
       )}
       {result?.kind === "error" && (
-        <span className="text-xs text-[#c2410c]">{result.message}</span>
+        <span className="text-xs text-red-600">{result.message}</span>
       )}
     </div>
   );

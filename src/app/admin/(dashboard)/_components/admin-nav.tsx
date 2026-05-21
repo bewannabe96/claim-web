@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "/admin", label: "대시보드", exact: true },
-  { href: "/admin/requests", label: "요청 모니터링", exact: false },
+  { href: "/admin/requests", label: "요청", exact: false },
   { href: "/admin/analysis-failures", label: "분석 실패", exact: false },
-  { href: "/admin/partners", label: "설계사 풀", exact: false },
-  { href: "/admin/settings", label: "시스템 설정", exact: false },
+  { href: "/admin/partners", label: "설계사", exact: false },
+  { href: "/admin/settings", label: "설정", exact: false },
 ] as const satisfies ReadonlyArray<{
   href:
     | "/admin"
@@ -22,12 +22,16 @@ const TABS = [
   exact: boolean;
 }>;
 
+/**
+ * 어드민 상단 네비 — 헤더 inline. pill 형 탭으로 active 시 검정 배경.
+ * DESIGN.md 의 chip-style category nav 를 따른다.
+ */
 export function AdminNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="border-b border-[#efefef] bg-white">
-      <ul className="mx-auto max-w-[1280px] px-8 flex items-center gap-1 overflow-x-auto">
+    <nav className="flex-1 min-w-0">
+      <ul className="flex items-center gap-1 overflow-x-auto">
         {TABS.map((tab) => {
           const active = tab.exact
             ? pathname === tab.href
@@ -37,10 +41,10 @@ export function AdminNav() {
               <Link
                 href={tab.href}
                 className={cn(
-                  "inline-flex items-center h-12 px-4 text-sm font-medium border-b-2 transition-colors",
+                  "inline-flex items-center h-8 px-3 rounded-full text-[13px] font-medium transition-colors whitespace-nowrap",
                   active
-                    ? "border-black text-black"
-                    : "border-transparent text-[#4b4b4b] hover:text-black",
+                    ? "bg-black text-white"
+                    : "text-[#4b4b4b] hover:bg-[#efefef] hover:text-black",
                 )}
               >
                 {tab.label}

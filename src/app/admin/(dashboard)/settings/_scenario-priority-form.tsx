@@ -12,16 +12,10 @@ import {
 } from "@/features/plan-proposals/category-labels";
 import { cn } from "@/lib/utils";
 
+import { Banner, Card } from "../_components/page-shell";
+
 /**
  * 결과 페이지 시나리오 우선순위 편집 — 어드민이 카테고리를 골라 ordered list 로 관리.
- *
- * UI 흐름:
- *  - 좌: 현재 우선순위 (위→아래 = 1순위→N순위). 위/아래 이동 + 삭제.
- *  - 우: 미등재 카테고리 (가나다순). 클릭으로 우선순위 끝에 추가.
- *  - 저장 시 ordered JSON 으로 server action 호출.
- *
- * KNOWN_CATEGORIES 외부 키만 추가 가능 (category-labels.ts 에 라벨 있는 것만).
- * 외부 schema 가 새 카테고리 도입 시 라벨 먼저 추가하면 자동 노출.
  */
 export function ScenarioPriorityForm({
   initial,
@@ -79,27 +73,21 @@ export function ScenarioPriorityForm({
   }
 
   return (
-    <form action={formAction} className="flex flex-col gap-4">
-      {/* hidden — 액션이 받아 zod 검증. JSON 문자열로 ordered 보존. */}
+    <form action={formAction} className="flex flex-col gap-5">
       <input
         type="hidden"
         name="scenarioPriority"
         value={JSON.stringify(priority)}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* 우선순위 (ordered) */}
-        <div className="rounded-xl border border-[#efefef] bg-white">
-          <div className="px-4 py-3 border-b border-[#efefef]">
-            <h3 className="text-sm font-bold text-black">
-              우선순위 ({priority.length}개)
-            </h3>
-            <p className="mt-0.5 text-xs text-[#4b4b4b]">
-              결과 페이지 top3 와 모달 상단 노출. 위→아래 순서대로 표시.
-            </p>
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <ListPanel
+          title="우선순위"
+          count={priority.length}
+          hint="위→아래 순서대로 표시"
+        >
           {priority.length === 0 ? (
-            <p className="px-4 py-8 text-center text-xs text-[#afafaf]">
+            <p className="px-5 py-10 text-center text-xs text-[#afafaf]">
               우선순위가 비어 있어요.
               <br />
               오른쪽에서 카테고리를 골라 추가하세요.
@@ -111,66 +99,42 @@ export function ScenarioPriorityForm({
                   key={category}
                   className="flex items-center gap-2 px-4 py-2.5"
                 >
-                  <span className="w-6 text-xs font-bold text-[#4b4b4b] tabular-nums">
+                  <span className="w-6 text-xs font-bold text-[#afafaf] tabular-nums">
                     {idx + 1}
                   </span>
                   <span className="flex-1 text-sm text-black truncate">
                     {labelForCategory(category)}
                   </span>
-                  <button
-                    type="button"
+                  <IconButton
                     onClick={() => moveUp(idx)}
                     disabled={idx === 0}
-                    aria-label="위로"
-                    className={cn(
-                      "w-7 h-7 rounded-md text-xs grid place-items-center",
-                      idx === 0
-                        ? "text-[#d4d4d4] cursor-default"
-                        : "text-[#4b4b4b] hover:bg-[#f4f4f4]",
-                    )}
+                    label="위로"
                   >
                     ↑
-                  </button>
-                  <button
-                    type="button"
+                  </IconButton>
+                  <IconButton
                     onClick={() => moveDown(idx)}
                     disabled={idx === priority.length - 1}
-                    aria-label="아래로"
-                    className={cn(
-                      "w-7 h-7 rounded-md text-xs grid place-items-center",
-                      idx === priority.length - 1
-                        ? "text-[#d4d4d4] cursor-default"
-                        : "text-[#4b4b4b] hover:bg-[#f4f4f4]",
-                    )}
+                    label="아래로"
                   >
                     ↓
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(idx)}
-                    aria-label="제거"
-                    className="w-7 h-7 rounded-md text-xs grid place-items-center text-[#4b4b4b] hover:bg-[#f4f4f4]"
-                  >
+                  </IconButton>
+                  <IconButton onClick={() => remove(idx)} label="제거">
                     ×
-                  </button>
+                  </IconButton>
                 </li>
               ))}
             </ol>
           )}
-        </div>
+        </ListPanel>
 
-        {/* 미등재 (가나다순) */}
-        <div className="rounded-xl border border-[#efefef] bg-white">
-          <div className="px-4 py-3 border-b border-[#efefef]">
-            <h3 className="text-sm font-bold text-black">
-              미등재 ({available.length}개)
-            </h3>
-            <p className="mt-0.5 text-xs text-[#4b4b4b]">
-              결과 페이지 모달 &ldquo;기타&rdquo; 영역에 가나다순으로 노출.
-            </p>
-          </div>
+        <ListPanel
+          title="미등재"
+          count={available.length}
+          hint="모달 “기타” 영역에 가나다순 노출"
+        >
           {available.length === 0 ? (
-            <p className="px-4 py-8 text-center text-xs text-[#afafaf]">
+            <p className="px-5 py-10 text-center text-xs text-[#afafaf]">
               모든 카테고리가 우선순위에 등재됐어요.
             </p>
           ) : (
@@ -185,32 +149,24 @@ export function ScenarioPriorityForm({
                     <span className="text-sm text-black truncate">
                       {labelForCategory(category)}
                     </span>
-                    <span className="text-xs text-[#4b4b4b]">+ 추가</span>
+                    <span className="text-xs text-[#afafaf]">＋</span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </ListPanel>
       </div>
 
       {errors?.scenarioPriority && (
-        <p className="text-xs text-red-600">
-          {errors.scenarioPriority[0]}
-        </p>
+        <Banner tone="error">{errors.scenarioPriority[0]}</Banner>
       )}
-      {errors?._form && (
-        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
-          {errors._form[0]}
-        </p>
-      )}
+      {errors?._form && <Banner tone="error">{errors._form[0]}</Banner>}
       {success && (
-        <p className="text-sm text-black bg-[#efefef] px-3 py-2 rounded-lg">
-          저장되었습니다. 결과 페이지에 즉시 반영돼요.
-        </p>
+        <Banner tone="success">저장되었습니다. 결과 페이지에 즉시 반영돼요.</Banner>
       )}
 
-      <div className="flex justify-end pt-2">
+      <div className="flex justify-end">
         <Button
           type="submit"
           disabled={pending}
@@ -220,5 +176,61 @@ export function ScenarioPriorityForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function ListPanel({
+  title,
+  count,
+  hint,
+  children,
+}: {
+  title: string;
+  count: number;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card padding="none">
+      <div className="px-4 py-3 border-b border-[#efefef] flex items-baseline justify-between gap-2">
+        <h3 className="text-sm font-bold text-black tracking-tight">
+          {title}{" "}
+          <span className="text-xs font-medium text-[#afafaf] tabular-nums">
+            {count}
+          </span>
+        </h3>
+        <p className="text-[11px] text-[#afafaf]">{hint}</p>
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+function IconButton({
+  onClick,
+  disabled,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className={cn(
+        "w-7 h-7 rounded-md text-xs grid place-items-center transition-colors",
+        disabled
+          ? "text-[#d4d4d4] cursor-default"
+          : "text-[#4b4b4b] hover:bg-[#f4f4f4] hover:text-black",
+      )}
+    >
+      {children}
+    </button>
   );
 }
