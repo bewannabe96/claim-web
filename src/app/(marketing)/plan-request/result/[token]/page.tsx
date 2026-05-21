@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
@@ -18,6 +19,12 @@ import { ResultView } from "./_components/result-view";
 import { adaptPlanProposal } from "./_lib/adapt-proposal";
 
 const MS_PER_DAY = 86_400_000;
+
+export const metadata: Metadata = {
+  title: "제안서 결과",
+  description:
+    "도착한 가입설계 제안서를 AI 비교 분석 결과와 함께 한눈에 확인하세요.",
+};
 
 /**
  * 결과 열람 — 알림톡 일회용 토큰으로 진입.

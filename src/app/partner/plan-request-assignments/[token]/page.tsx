@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { AlertIcon, StatusScreen } from "@/components/status-screen";
@@ -7,6 +8,11 @@ import { getRequestById } from "@/features/plan-requests/queries";
 import { nowMs } from "@/lib/wall-clock";
 
 import { PlanProposalForm } from "./_components/proposal-form";
+
+export const metadata: Metadata = {
+  title: "제안서 제출",
+  description: "가입자에게 보낼 가입설계 제안서를 등록해주세요.",
+};
 
 /**
  * 설계사 제안서 제출 — 알림톡 일회용 토큰으로 진입.

@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
+
 import { TopupAmountForm } from "@/features/credits/ui/topup-amount-form";
 import { requirePartnerSession } from "@/server/dal";
+
+export const metadata: Metadata = {
+  title: "크레딧 충전",
+  description: "충전할 금액을 입력하면 결제 페이지로 이동해요.",
+};
 
 /**
  * 충전 페이지 — 금액 입력 → server action 이 paymentId 생성 + stash + provider 초기화 →
