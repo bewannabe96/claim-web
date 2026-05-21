@@ -40,7 +40,9 @@ type FieldErrors = {
  * 제출 클릭 → presign → S3 직접 PUT → submitPlanProposal action. PDF 바이트는 우리
  * 함수를 거치지 않음 (Vercel body 한도 회피 + 메모리 효율).
  *
- * 휴대폰 번호는 노출하지 않음 — 가입자 PII 는 결과 화면의 "문자 받기" 통해 platform 이 relay.
+ * 휴대폰 번호는 "보험사 정보동의 절차용" 으로만 노출 — 가입자 직접 콘택트는 여전히
+ * 결과 화면의 "문자 받기" 통해 platform 이 relay (크레딧 과금). UI 에서 발신 유도
+ * 요소 (tel: 링크 / 전화 아이콘) 를 두지 않고 plain 텍스트 + 사용 안내로 표시.
  */
 export function PlanProposalForm({
   token,
@@ -249,7 +251,7 @@ function ClockIcon() {
 }
 
 /* ============================================================
- * 가입자 컨텍스트 — 휴대폰만 가린 가입자 요청 요약.
+ * 가입자 컨텍스트 — 가입자 요청 요약 + 연락처.
  * ============================================================ */
 
 function CustomerContext({ request }: { request: PlanRequest }) {
@@ -257,6 +259,7 @@ function CustomerContext({ request }: { request: PlanRequest }) {
   const budgetLabel = `${formatBudget(step1.monthlyBudgetMin)}~${formatBudget(step1.monthlyBudgetMax)}`;
   // 설계사가 보는 시점은 dispatched 이후라 step3 + gender 가 항상 존재. 방어적 fallback.
   const customerName = step3?.name ?? "이름 미상";
+  const phone = step3?.phone;
 
   return (
     <section className="mt-6 rounded-xl border border-[#e2e2e2] p-5 flex flex-col gap-4">
@@ -270,6 +273,19 @@ function CustomerContext({ request }: { request: PlanRequest }) {
           {gender ? GENDER_LABEL[gender] : "—"} · {step1.occupation}
         </p>
       </div>
+
+      {phone && (
+        <div className="flex flex-col gap-0.5">
+          <p className="text-[11px] text-[#afafaf]">가입자 휴대폰</p>
+          <p className="text-sm font-medium text-black tabular-nums">
+            {formatPhone(phone)}
+          </p>
+          <p className="mt-1 text-[11px] text-[#afafaf] leading-relaxed">
+            주의 — 직접 연락은 삼가주세요. 가입자가 결과 페이지에서 요청하면
+            알림톡으로 연결돼요.
+          </p>
+        </div>
+      )}
 
       <div className="h-px bg-[#efefef]" />
 
@@ -503,3 +519,11 @@ function formatBudget(n: number): string {
   }
   return `${n.toLocaleString("ko-KR")}원`;
 }
+
+/** 01012345678 → 010-1234-5678 (11자리) / 0123456789 → 012-345-6789 (10자리) */
+function formatPhone(p: string): string {
+  if (p.length === 11) return `${p.slice(0, 3)}-${p.slice(3, 7)}-${p.slice(7)}`;
+  if (p.length === 10) return `${p.slice(0, 3)}-${p.slice(3, 6)}-${p.slice(6)}`;
+  return p;
+}
+
