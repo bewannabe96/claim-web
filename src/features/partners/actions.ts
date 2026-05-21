@@ -5,6 +5,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { newId, newToken } from "@/lib/id";
+import {
+  PARTNER_AVATAR_MAX_BYTES,
+  deleteContentObject,
+  isPartnerAvatarContentType,
+  isPartnerAvatarKeyFor,
+  presignPartnerAvatarUpload,
+  verifyPartnerAvatarObject,
+  type PartnerAvatarContentType,
+} from "@/server/content-storage";
 import { requireAdminSession } from "@/server/dal";
 import { prisma } from "@/server/db/prisma";
 
@@ -461,4 +470,133 @@ export async function updatePartner(
   revalidatePath("/admin/partners");
   revalidatePath(`/admin/partners/${partnerId}`);
   return { ok: true, id: partnerId };
+}
+
+/* ============================================================
+ * 파트너 프로필 사진 — presign / finalize / remove (어드민 전용)
+ * ============================================================ */
+
+export type PresignAvatarResult =
+  | { ok: true; url: string; s3Key: string; cacheControl: string }
+  | { ok: false; error: string };
+
+/**
+ * 프로필 사진 업로드용 presigned PUT URL 발급. 클라가 같은 Content-Type +
+ * Cache-Control 헤더로 직접 S3 에 PUT.
+ *
+ * 가드: 어드민 세션 + 대상 partner 존재. partner 검증을 presign 단계에서 한 번,
+ * finalize 단계에서 또 한 번 — 양쪽 모두 admin 가드라 forgery 우려는 낮지만 일관성.
+ */
+export async function presignAvatarUploadForPartner(
+  partnerId: string,
+  contentType: string,
+): Promise<PresignAvatarResult> {
+  await requireAdminSession();
+
+  if (!isPartnerAvatarContentType(contentType)) {
+    return {
+      ok: false,
+      error: "지원하지 않는 형식입니다. jpg / png / webp 만 가능합니다.",
+    };
+  }
+
+  const partner = await prisma.partner.findUnique({
+    where: { id: partnerId },
+    select: { id: true },
+  });
+  if (!partner) {
+    return { ok: false, error: "설계사를 찾을 수 없습니다." };
+  }
+
+  const { url, s3Key, cacheControl } = await presignPartnerAvatarUpload(
+    partner.id,
+    contentType as PartnerAvatarContentType,
+  );
+  return { ok: true, url, s3Key, cacheControl };
+}
+
+/**
+ * S3 업로드 완료 후 호출 — HEAD 검증 + DB 의 avatarKey 갱신 + 구 키 청소.
+ *
+ * 트랜잭션 안에서 partner.avatarKey 만 교체. 구 키 삭제는 트랜잭션 밖 best-effort
+ * (S3 실패가 DB 갱신을 막지 않음 — 사용자 영향은 새 사진이 즉시 노출되는 것이 우선).
+ */
+export async function setPartnerAvatar(
+  partnerId: string,
+  s3Key: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAdminSession();
+
+  if (!isPartnerAvatarKeyFor(s3Key, partnerId)) {
+    return { ok: false, error: "잘못된 업로드 경로입니다." };
+  }
+
+  const verified = await verifyPartnerAvatarObject(s3Key);
+  if (verified === null) {
+    return { ok: false, error: "업로드된 파일을 찾을 수 없습니다." };
+  }
+  if (verified === "too-large") {
+    return {
+      ok: false,
+      error: `파일이 너무 큽니다. 최대 ${Math.floor(PARTNER_AVATAR_MAX_BYTES / 1024 / 1024)}MB 까지 가능합니다.`,
+    };
+  }
+  if (verified === "invalid-type") {
+    return {
+      ok: false,
+      error: "지원하지 않는 형식입니다. jpg / png / webp 만 가능합니다.",
+    };
+  }
+
+  const existing = await prisma.partner.findUnique({
+    where: { id: partnerId },
+    select: { avatarKey: true },
+  });
+  if (!existing) {
+    return { ok: false, error: "설계사를 찾을 수 없습니다." };
+  }
+
+  await prisma.partner.update({
+    where: { id: partnerId },
+    data: { avatarKey: s3Key },
+  });
+
+  // best-effort 구 키 청소 — 트랜잭션 밖, 실패 무시.
+  if (existing.avatarKey && existing.avatarKey !== s3Key) {
+    await deleteContentObject(existing.avatarKey);
+  }
+
+  revalidatePath("/admin/partners");
+  revalidatePath(`/admin/partners/${partnerId}`);
+  return { ok: true };
+}
+
+/**
+ * 프로필 사진 제거. avatarKey NULL 로 되돌리고 S3 객체 best-effort 삭제.
+ */
+export async function removePartnerAvatar(
+  partnerId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAdminSession();
+
+  const existing = await prisma.partner.findUnique({
+    where: { id: partnerId },
+    select: { avatarKey: true },
+  });
+  if (!existing) {
+    return { ok: false, error: "설계사를 찾을 수 없습니다." };
+  }
+  if (!existing.avatarKey) {
+    return { ok: true };
+  }
+
+  await prisma.partner.update({
+    where: { id: partnerId },
+    data: { avatarKey: null },
+  });
+  await deleteContentObject(existing.avatarKey);
+
+  revalidatePath("/admin/partners");
+  revalidatePath(`/admin/partners/${partnerId}`);
+  return { ok: true };
 }
