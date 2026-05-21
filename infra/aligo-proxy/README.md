@@ -7,7 +7,7 @@
 
 ```
 Vercel (Server Action / src/server/aligo.ts)
-    │  POST https://<proxy-host>/aligo/{send,alimtalk/send}/
+    │  POST https://<proxy-host>/aligo/{send,alimtalk/send,template/list}/
     │  Authorization: Bearer <PROXY_SHARED_SECRET>
     │  Content-Type: application/x-www-form-urlencoded
     │  body: key=...&user_id=...&sender=...&receiver=...&msg=...
@@ -17,13 +17,15 @@ Lightsail (Seoul, 고정 IP — 알리고 콘솔에 등록)
     │  ① Bearer secret 검증
     │  ② path 기반 upstream 라우팅
     ▼
-SMS/LMS  : /aligo/send/          → https://apis.aligo.in/send/
-알림톡    : /aligo/alimtalk/send/ → https://kakaoapi.aligo.in/akv10/alimtalk/send/
+SMS/LMS     : /aligo/send/          → https://apis.aligo.in/send/
+알림톡 발송 : /aligo/alimtalk/send/ → https://kakaoapi.aligo.in/akv10/alimtalk/send/
+템플릿 조회 : /aligo/template/list/ → https://kakaoapi.aligo.in/akv10/template/list/
 ```
 
-알리고는 SMS/LMS 와 알림톡 호스트/경로가 다르므로 (`apis.aligo.in` vs
-`kakaoapi.aligo.in` + `/akv10/alimtalk` prefix), 프록시가 `/aligo/alimtalk/*` 만 별도
-호스트로 분기해 매핑한다. 클라이언트는 양쪽 모두 동일한 `/aligo/...` prefix 로 호출.
+알리고는 SMS/LMS (`apis.aligo.in`) 와 카카오 — 알림톡 발송 + 검수 템플릿 조회 —
+(`kakaoapi.aligo.in` + `/akv10` prefix) 의 호스트/경로가 다르므로, 프록시가
+`/aligo/{alimtalk,template}/*` 를 별도 호스트로 분기해 매핑한다. 클라이언트는 양쪽
+모두 동일한 `/aligo/...` prefix 로 호출.
 
 프록시는 **인증 + 경로 매핑만** 책임. 요청/응답 바디 무수정 패스 →
 `ALIGO_KEY`/`USER_ID`/`SENDER`/`KAKAO_SENDER_KEY` 는 Vercel env 그대로 유지, 코드 변경 최소.

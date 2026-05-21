@@ -13,9 +13,10 @@ import { getServiceName } from "./branding";
  *   - `sendOtpSms`           — 본인인증 6자리 코드 SMS (90byte 본문 한도).
  *   - `sendNotificationLms`  — URL 포함 알림 LMS (2000byte 본문 한도). 알림톡 미적용
  *                              시나리오(예: 만료 안내) 폴백용으로 남겨둠.
- *   - `sendAlimtalk`         — 카카오 알림톡 (사전 검수 템플릿). 본인인증 이외 모든
- *                              사용자 알림(파트너 배정 / 연락 요청 / 분석 완료)의 기본
- *                              발송 채널. failover=Y 시 알리고가 LMS 로 자동 대체.
+ *   - `sendAlimtalk`         — 카카오 알림톡. 본인인증 이외 모든 사용자 알림(파트너
+ *                              배정 / 연락 요청 / 분석 완료)의 기본 발송 채널. 알리고
+ *                              콘솔의 검수 템플릿을 `template/list` 로 가져와 `#{변수}`
+ *                              만 치환해 발송 — 코드가 본문을 미러링하지 않음.
  *
  * 자격:
  *   - ALIGO_KEY              : 알리고 콘솔의 API key (SMS/LMS/알림톡 공용)
@@ -27,7 +28,7 @@ import { getServiceName } from "./branding";
  *   - ALIGO_PROXY_URL        : (선택) 고정 IP 프록시 base URL. 알리고 IP whitelist 통과용
  *                              (Vercel egress 가 동적이라 직접 호출 불가). 설정 시
  *                              https://apis.aligo.in / https://kakaoapi.aligo.in 대신
- *                              ${url}/aligo/send/ + ${url}/aligo/alimtalk/send/ 로 호출.
+ *                              ${url}/aligo/* 로 호출 (프록시가 SMS/알림톡/템플릿 분기).
  *                              인프라: infra/aligo-proxy/ (Lightsail + Caddy + Node).
  *   - ALIGO_PROXY_SECRET     : (선택) 프록시 Bearer 인증 secret. ALIGO_PROXY_URL 설정 시 필수.
  *
@@ -87,6 +88,20 @@ const AligoResponseSchema = z.object({
 });
 
 /**
+ * 알리고 호출 공통 헤더. 폼 인코딩은 SMS/LMS/알림톡/템플릿 공통, 프록시 경유 시
+ * Bearer 인증 헤더 추가 (직접 호출이면 Authorization 없음).
+ */
+function proxyHeaders(env: AligoEnv): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  if (env.ALIGO_PROXY_SECRET) {
+    headers.Authorization = `Bearer ${env.ALIGO_PROXY_SECRET}`;
+  }
+  return headers;
+}
+
+/**
  * 알리고 send/ 엔드포인트 호출 공통 — SMS/LMS 분기는 호출자 책임.
  *
  * 실패 시 throw. 알리고 result_code: 1=성공, 그 외=실패.
@@ -115,16 +130,9 @@ async function callAligo(params: {
     ? `${env.ALIGO_PROXY_URL}/aligo/send/`
     : "https://apis.aligo.in/send/";
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/x-www-form-urlencoded",
-  };
-  if (env.ALIGO_PROXY_SECRET) {
-    headers.Authorization = `Bearer ${env.ALIGO_PROXY_SECRET}`;
-  }
-
   const res = await fetch(targetUrl, {
     method: "POST",
-    headers,
+    headers: proxyHeaders(env),
     body,
   });
 
@@ -185,83 +193,210 @@ export async function sendNotificationLms(
 /* ============================================================
  * 알림톡 (KakaoTalk Alimtalk)
  *
- * 엔드포인트: POST https://kakaoapi.aligo.in/akv10/alimtalk/send/
- * 인증: apikey + userid (SMS 와 공유)
- * 발신자: senderkey (카카오 비즈채널 발신프로파일 — SMS sender 와 별개)
- * 템플릿: tpl_code 로 사전 검수된 본문 식별. message_1 은 검수 본문과 글자/개행이
- *         완전히 일치해야 통과 (변수 치환만 다름).
+ * 발송 모델: 알리고 콘솔의 검수 템플릿이 본문/버튼의 단일 진실 공급원.
+ *   1. `template/list` 로 검수본(`templtContent` + `buttons`)을 가져온다.
+ *   2. 본문 / 버튼 / 강조 타이틀의 `#{변수}` 자리를 호출자 변수맵으로 치환한다.
+ *   3. `alimtalk/send/` 로 발송한다.
+ * 코드가 본문을 미러링하지 않으므로 "검수본과 1바이트라도 다르면 거부" 문제가
+ * 원천 차단된다. 도메인 데이터 → 변수맵 변환은 kakao-templates.ts 의 빌더가 담당.
  *
- * 응답: { code, message, info? } — code=0 성공, 그 외 실패.
- *       SMS/LMS 의 result_code=1 성공 규약과 다르므로 별도 스키마.
+ * 엔드포인트 (POST, x-www-form-urlencoded):
+ *   - 템플릿 조회: https://kakaoapi.aligo.in/akv10/template/list/
+ *   - 발송:        https://kakaoapi.aligo.in/akv10/alimtalk/send/
+ * 인증: apikey + userid (SMS 와 공유) + senderkey (카카오 비즈채널 발신프로파일).
+ * 응답: { code, message, ... } — code=0 성공. (SMS 의 result_code=1 규약과 다름.)
  * ============================================================ */
 
-/** 알림톡 버튼. 템플릿 등록 시 검수된 형태와 일치해야 함 (이름/타입/링크 도메인). */
-export interface AlimtalkButton {
-  /** 버튼 라벨. 템플릿에 등록된 텍스트와 1바이트라도 다르면 거부. */
-  name: string;
-  /**
-   * 링크 종류:
-   *   - WL: 웹 링크 (linkMo + linkPc 필수)
-   *   - AL: 앱 링크 (linkIos + linkAnd 필수)
-   *   - AC: 채널 추가
-   *   - DS: 배송 조회
-   *   - BK: 봇 키워드
-   *   - MD: 메시지 전달
-   */
-  linkType: "WL" | "AL" | "AC" | "DS" | "BK" | "MD";
-  linkMo?: string;
-  linkPc?: string;
-  linkIos?: string;
-  linkAnd?: string;
-}
+/** template/list 응답의 버튼 한 개. 모든 string 필드에 `#{변수}` 가 올 수 있음. */
+const TemplateButtonSchema = z.object({
+  ordering: z.string().optional(),
+  name: z.string(),
+  linkType: z.string(),
+  linkTypeName: z.string().optional(),
+  linkMo: z.string().optional(),
+  linkPc: z.string().optional(),
+  linkIos: z.string().optional(),
+  linkAnd: z.string().optional(),
+});
+type TemplateButton = z.infer<typeof TemplateButtonSchema>;
 
-/** 알리고 알림톡 응답 — code=0 성공, 그 외 실패 (예: -99 포인트 부족). */
+/** template/list 응답. tpl_code 를 지정하면 list 는 해당 1건. */
+const TemplateListResponseSchema = z.object({
+  code: z.coerce.number(),
+  message: z.string().optional(),
+  list: z
+    .array(
+      z.object({
+        templtCode: z.string(),
+        templtName: z.string().optional(),
+        templtContent: z.string(),
+        templtTitle: z.string().optional(),
+        buttons: z.array(TemplateButtonSchema).optional(),
+        inspStatus: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+/** 알리고 알림톡 발송 응답 — code=0 성공, 그 외 실패 (예: -99 포인트 부족). */
 const AlimtalkResponseSchema = z.object({
   code: z.coerce.number(),
   message: z.string().optional(),
   info: z
-    .object({
-      mid: z.union([z.string(), z.number()]).optional(),
-    })
+    .object({ mid: z.union([z.string(), z.number()]).optional() })
     .partial()
     .optional(),
 });
 
+/** 정규화한 검수 템플릿 — 본문/버튼은 `#{변수}` 가 치환되기 전 상태. */
+interface AlimtalkTemplate {
+  /** 콘솔 표시용 템플릿명 — subject_1 로 사용 (수신자 화면 비노출). */
+  name: string;
+  /** 검수본 본문 (`#{변수}` 포함). */
+  content: string;
+  /** 강조표기형 템플릿의 타이틀 (`#{변수}` 포함). 일반 템플릿은 null. */
+  emphasizeTitle: string | null;
+  /** 검수본 버튼 목록 (`#{변수}` 포함). */
+  buttons: TemplateButton[];
+}
+
 /**
- * 알림톡 발송 — 사전 검수 템플릿 코드 + 치환된 본문 + (선택) 버튼.
+ * 검수 템플릿 캐시. 검수본은 재심사 없이는 안 바뀌므로 안전하게 캐시 가능.
+ * 값이 아닌 Promise 를 캐시 — finalizeRequest 처럼 같은 템플릿으로 N건을 동시
+ * 발송할 때 fetch 가 1회로 합쳐진다. 실패한 Promise 는 evict (다음 호출이 재시도).
+ */
+const TEMPLATE_CACHE_TTL_MS = 60 * 60 * 1000; // 1h
+const templateCache = new Map<
+  string,
+  { promise: Promise<AlimtalkTemplate>; fetchedAt: number }
+>();
+
+/** template/list 한 번 호출 — 캐시 미스 시 fetchAlimtalkTemplate 가 위임. */
+async function fetchAlimtalkTemplateUncached(
+  templateCode: string,
+): Promise<AlimtalkTemplate> {
+  const env = getEnv();
+  if (!env.ALIGO_KAKAO_SENDER_KEY) {
+    throw new Error(
+      "ALIGO_KAKAO_SENDER_KEY missing — required for Alimtalk template fetch",
+    );
+  }
+
+  const body = new URLSearchParams({
+    apikey: env.ALIGO_KEY,
+    userid: env.ALIGO_USER_ID,
+    senderkey: env.ALIGO_KAKAO_SENDER_KEY,
+    tpl_code: templateCode,
+  });
+
+  const targetUrl = env.ALIGO_PROXY_URL
+    ? `${env.ALIGO_PROXY_URL}/aligo/template/list/`
+    : "https://kakaoapi.aligo.in/akv10/template/list/";
+
+  const res = await fetch(targetUrl, {
+    method: "POST",
+    headers: proxyHeaders(env),
+    body,
+  });
+  if (!res.ok) {
+    throw new Error(`Aligo template/list HTTP ${res.status}`);
+  }
+
+  const json = await res.json();
+  const parsed = TemplateListResponseSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new Error(
+      `Aligo template/list response shape invalid: ${JSON.stringify(json)}`,
+    );
+  }
+  if (parsed.data.code !== 0) {
+    throw new Error(
+      `Aligo template/list code=${parsed.data.code} message=${parsed.data.message ?? ""}`,
+    );
+  }
+
+  const entry = parsed.data.list?.find((t) => t.templtCode === templateCode);
+  if (!entry) {
+    throw new Error(
+      `Aligo template/list: template ${templateCode} not found in response`,
+    );
+  }
+  if (entry.inspStatus && entry.inspStatus !== "APR") {
+    console.warn("[aligo] alimtalk template not approved", {
+      templateCode,
+      inspStatus: entry.inspStatus,
+    });
+  }
+
+  return {
+    name: entry.templtName ?? templateCode,
+    content: entry.templtContent,
+    emphasizeTitle:
+      entry.templtTitle && entry.templtTitle.length > 0
+        ? entry.templtTitle
+        : null,
+    buttons: entry.buttons ?? [],
+  };
+}
+
+/** 검수 템플릿 조회 — TTL 캐시 + 동시호출 dedupe. */
+function fetchAlimtalkTemplate(templateCode: string): Promise<AlimtalkTemplate> {
+  const cached = templateCache.get(templateCode);
+  if (cached && Date.now() - cached.fetchedAt < TEMPLATE_CACHE_TTL_MS) {
+    return cached.promise;
+  }
+  const promise = fetchAlimtalkTemplateUncached(templateCode);
+  templateCache.set(templateCode, { promise, fetchedAt: Date.now() });
+  // 실패한 fetch 는 캐시에 남기지 않음 — 동일 entry 일 때만 삭제 (경쟁 안전).
+  promise.catch(() => {
+    if (templateCache.get(templateCode)?.promise === promise) {
+      templateCache.delete(templateCode);
+    }
+  });
+  return promise;
+}
+
+/** `#{변수}` placeholder. 변수명은 공백 trim 후 변수맵에서 조회. */
+const ALIMTALK_PLACEHOLDER_RE = /#\{([^}]+)\}/g;
+
+/** text 의 `#{key}` 를 variables[key] 로 치환. variables 에 없는 키는 빈 문자열로 치환. */
+function substituteAlimtalkVariables(
+  text: string,
+  variables: Record<string, string>,
+): string {
+  return text.replace(ALIMTALK_PLACEHOLDER_RE, (_match, rawName: string) => {
+    const key = rawName.trim();
+    return Object.prototype.hasOwnProperty.call(variables, key)
+      ? variables[key]
+      : "";
+  });
+}
+
+/**
+ * 알림톡 발송 — 검수 템플릿 코드 + 변수맵.
  *
- * 검수 규칙(중요):
- *   - `message` 는 템플릿 본문과 글자/개행 모두 동일해야 함. 변수 자리만 치환.
- *   - `subject` 는 알리고 콘솔 표시용 — 강조표기형이 아닌 일반 템플릿에선 수신자
- *     화면에 직접 노출 안 됨. 호출자가 식별 가능한 짧은 라벨을 넘기면 됨.
- *   - 버튼은 템플릿 등록된 그대로 (이름/타입/링크 도메인 일치). 변수는 URL 안에서만.
+ *   1. `template/list` 로 검수본을 가져온다 (TTL 캐시).
+ *   2. 본문 / 버튼 / 강조 타이틀의 `#{변수}` 를 `variables` 로 치환한다.
+ *      (`variables` 에 없는 placeholder 는 빈 문자열로 치환.)
+ *   3. `alimtalk/send/` 로 발송한다.
  *
- * 실패 처리: 발송 실패 시 자동 SMS/LMS 폴백 원하면 `failover` 전달. 알리고가
- * 알림톡 실패 시 fsubject/fmessage 로 자동 대체 발송.
+ * `variables` 키는 검수본의 `#{...}` placeholder 이름과 정확히 일치해야 함.
+ * 도메인 데이터 → 변수맵 변환은 kakao-templates.ts 의 typed 빌더 사용.
  *
  * test mode 일 때는 알리고 호출 자체를 skip + console.log 로 dry-run — dev 에서
- * ALIGO_KAKAO_SENDER_KEY 등 자격 없이도 동작 (LMS 와 동일 패턴, 호출자 분기 불필요).
- * 실패 throw — 호출자가 fire-and-forget 으로 .catch(log) 처리.
+ * 자격 없이도 동작. 실패 throw — 호출자가 fire-and-forget 으로 .catch(log) 처리.
  */
 export async function sendAlimtalk(
   receiver: string,
-  args: {
-    /** 알리고 콘솔에서 검수 받은 템플릿 코드 (예: "UI_0735"). */
-    templateCode: string;
-    /** 알리고 콘솔 표시용 식별 라벨 — 수신자 화면엔 노출 안 됨. */
-    subject: string;
-    /** 템플릿 본문에 변수 치환을 적용한 결과 문자열 (개행 포함). */
-    message: string;
-    /** 강조표기형 템플릿의 타이틀. 일반 템플릿에선 미사용. */
-    emphasizeTitle?: string;
-    /** 템플릿 등록된 버튼 (현재 0~1개). 미정의면 버튼 없음. */
-    button?: AlimtalkButton[];
-    /** 발송 실패 시 알리고가 대체 발송할 SMS/LMS 본문. 미정의면 폴백 없음. */
-    failover?: { subject?: string; message: string };
-  },
+  templateCode: string,
+  variables: Record<string, string>,
 ): Promise<void> {
   if (isAligoTestMode()) {
-    console.log("[aligo:test-mode] Alimtalk dry-run", { receiver, ...args });
+    console.log("[aligo:test-mode] Alimtalk dry-run", {
+      receiver,
+      templateCode,
+      variables,
+    });
     return;
   }
 
@@ -272,30 +407,38 @@ export async function sendAlimtalk(
     );
   }
 
+  const template = await fetchAlimtalkTemplate(templateCode);
+
+  const message = substituteAlimtalkVariables(template.content, variables);
+  const emphasizeTitle = template.emphasizeTitle
+    ? substituteAlimtalkVariables(template.emphasizeTitle, variables)
+    : null;
+  const buttons = template.buttons.map((btn) => {
+    const substituted: Record<string, string> = {};
+    for (const [field, value] of Object.entries(btn)) {
+      if (typeof value === "string") {
+        substituted[field] = substituteAlimtalkVariables(value, variables);
+      }
+    }
+    return substituted;
+  });
+
   const body = new URLSearchParams({
     apikey: env.ALIGO_KEY,
     userid: env.ALIGO_USER_ID,
     senderkey: env.ALIGO_KAKAO_SENDER_KEY,
-    tpl_code: args.templateCode,
+    tpl_code: templateCode,
     sender: env.ALIGO_SENDER,
     receiver_1: receiver,
-    subject_1: args.subject,
-    message_1: args.message,
+    subject_1: template.name,
+    message_1: message,
     testMode: "N",
   });
-
-  if (args.emphasizeTitle) {
-    body.append("emtitle_1", args.emphasizeTitle);
+  if (emphasizeTitle) {
+    body.append("emtitle_1", emphasizeTitle);
   }
-  if (args.button && args.button.length > 0) {
-    body.append("button_1", JSON.stringify({ button: args.button }));
-  }
-  if (args.failover) {
-    body.append("failover", "Y");
-    if (args.failover.subject) {
-      body.append("fsubject_1", args.failover.subject);
-    }
-    body.append("fmessage_1", args.failover.message);
+  if (buttons.length > 0) {
+    body.append("button_1", JSON.stringify({ button: buttons }));
   }
 
   // 프록시 설정 시 ${url}/aligo/alimtalk/send/ 로 라우팅. 미설정 시 알리고 직접 호출 —
@@ -304,16 +447,9 @@ export async function sendAlimtalk(
     ? `${env.ALIGO_PROXY_URL}/aligo/alimtalk/send/`
     : "https://kakaoapi.aligo.in/akv10/alimtalk/send/";
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/x-www-form-urlencoded",
-  };
-  if (env.ALIGO_PROXY_SECRET) {
-    headers.Authorization = `Bearer ${env.ALIGO_PROXY_SECRET}`;
-  }
-
   const res = await fetch(targetUrl, {
     method: "POST",
-    headers,
+    headers: proxyHeaders(env),
     body,
   });
 

@@ -8,10 +8,7 @@ import { requireAdminSession } from "@/server/dal";
 import { newId } from "@/lib/id";
 import { sendAlimtalk } from "@/server/aligo";
 import { prisma } from "@/server/db/prisma";
-import {
-  KAKAO_TEMPLATE_CONTACT_REQUEST,
-  buildContactRequestAlimtalk,
-} from "@/server/kakao-templates";
+import { buildContactRequestAlimtalk } from "@/server/kakao-templates";
 import {
   fetchObjectSha256,
   isPlanProposalKeyForAssignment,
@@ -358,17 +355,14 @@ async function notifyPartnerOfContactRequest(args: {
   }
   const partnerName = args.partnerName ?? "파트너";
   const customerName = args.customerName ?? "고객";
-  const payload = buildContactRequestAlimtalk({
+  const { templateCode, variables } = buildContactRequestAlimtalk({
     partnerName,
     customerName,
     customerPhoneNo: args.customerPhone,
     contactMethod: CONTACT_CHANNEL_LABEL[args.channel],
   });
   try {
-    await sendAlimtalk(args.partnerPhone, {
-      templateCode: KAKAO_TEMPLATE_CONTACT_REQUEST,
-      ...payload,
-    });
+    await sendAlimtalk(args.partnerPhone, templateCode, variables);
   } catch (err) {
     console.error(
       "[requestPlanProposalContact] partner notification alimtalk failed",
