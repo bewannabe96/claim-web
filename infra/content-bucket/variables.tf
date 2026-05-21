@@ -1,7 +1,15 @@
-variable "aws_region" {
-  description = "AWS region. 한국 사용자 기준 ap-northeast-2 권장."
+variable "environment" {
+  description = <<-EOT
+    환경 식별자. `terraform.workspace` 와 반드시 일치해야 함 — 일치 검증은 main.tf 의
+    `aws_s3_bucket` precondition 이 담당. 환경별 tfvars (prod.tfvars / dev.tfvars) 가
+    이 값을 박음 → workspace 와 tfvars 가 어긋난 조합으로 apply 하는 사고 차단.
+  EOT
   type        = string
-  default     = "ap-northeast-2"
+
+  validation {
+    condition     = contains(["prod", "dev"], var.environment)
+    error_message = "environment 는 prod 또는 dev. 새 환경 추가 시 이 validation 확장."
+  }
 }
 
 variable "namespace" {
@@ -10,25 +18,30 @@ variable "namespace" {
     `<account_id>-<region>-<namespace>` 로 자동 조합 — 예 namespace=`claim-content-prod`
     → `123456789012-ap-northeast-2-claim-content-prod`.
 
-    account_id + region 이 앞에 박혀 전 AWS 통틀어 충돌 사실상 불가능 + audit 시 어느
-    계정/리전 버킷인지 즉시 식별.
+    환경별 tfvars 에서 박을 것 (prod=claim-content-prod, dev=claim-content-dev).
   EOT
   type        = string
 
   validation {
-    # 길이 2~35자 — 가장 긴 region (`ap-northeast-2` 14자) 기준 conservative 캡:
-    # account_id(12) + "-" + region(14) + "-" + namespace(35) = 63 (S3 한도).
-    # 짧은 region (예: `us-east-1` 9자) 은 namespace 40 자까지 들어가지만 region-agnostic
-    # 호환을 위해 35 로 통일. 정확한 한도 체크는 main.tf 의 aws_s3_bucket precondition 이 담당.
+    # 길이 2~35자 — account_id(12) + "-" + region(14, ap-northeast-2) + "-" + namespace(35) = 63 (S3 한도).
     condition     = can(regex("^[a-z0-9][a-z0-9-]{0,33}[a-z0-9]$", var.namespace))
     error_message = "namespace 는 소문자/숫자/하이픈만, 시작·끝은 영숫자, 길이 2~35자."
   }
 }
 
-variable "environment" {
-  description = "환경 식별자. 태그에만 사용 — 버킷명 environment 구분은 namespace 에 박을 것 (예: claim-content-prod)."
+variable "cors_allowed_origins" {
+  description = <<-EOT
+    presigned PUT / 공개 GET 모두 허용할 브라우저 origin 목록. 환경별 tfvars 에서 박을 것.
+    S3 CORS 는 origin 당 와일드카드 1개 허용 — `http://localhost:*` 같이 port 자리 와일드카드도
+    동작 (dev 한정 권장).
+  EOT
+  type        = list(string)
+}
+
+variable "aws_region" {
+  description = "AWS region. 한국 사용자 기준 ap-northeast-2 권장."
   type        = string
-  default     = "prod"
+  default     = "ap-northeast-2"
 }
 
 variable "public_read_prefixes" {
@@ -36,32 +49,11 @@ variable "public_read_prefixes" {
     공개 GET 허용 prefix 목록. 이 prefix 하위 객체는 인증 없이 누구나 GET 가능 (공개 CDN
     대용). 다른 prefix 는 100% private — bucket policy 가 prefix 화이트리스트 방식.
 
-    초기값: 파트너 프로필 사진. 새 컨텐츠 도메인 추가 시 여기에 prefix 만 추가하면 됨.
+    prod / dev 공통 — 앱 코드의 키 생성 컨벤션도 공유. 그래서 default 로 두고 env tfvars
+    에서는 override 안 함 (양쪽 sync 누락 사고 방지).
   EOT
   type        = list(string)
   default     = ["partners/avatar/"]
-}
-
-variable "cors_allowed_origins" {
-  description = <<-EOT
-    presigned PUT / 공개 GET 모두 허용할 브라우저 origin 목록. prod / staging /
-    Vercel preview / 로컬 dev 까지 묶어서 지정.
-  EOT
-  type        = list(string)
-  default = [
-    "http://localhost:3000",
-    "https://*.vercel.app",
-  ]
-}
-
-variable "iam_user_name" {
-  description = <<-EOT
-    이 버킷에 대한 PUT/GET/HEAD/DELETE 권한을 attach 할 기존 IAM user 이름.
-    빈 문자열이면 새 dedicated IAM user 를 만들고 access key 를 outputs 로 노출
-    (sensitive). 기존 user (예: 제안서 버킷용) 와 자격증명을 공유하려면 그 user 이름 지정.
-  EOT
-  type        = string
-  default     = ""
 }
 
 variable "abort_incomplete_multipart_days" {
@@ -71,7 +63,7 @@ variable "abort_incomplete_multipart_days" {
 }
 
 variable "tags" {
-  description = "모든 리소스에 적용할 태그"
+  description = "모든 리소스에 적용할 태그 (Environment 태그는 var.environment 로 자동 주입)."
   type        = map(string)
   default = {
     Project   = "claim-web"

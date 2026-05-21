@@ -3,22 +3,20 @@ provider "aws" {
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
 
 locals {
   tags = merge(var.tags, { Environment = var.environment })
 
   # AWS 권장 namespace 패턴 — `<account_id>-<region>-<namespace>`.
   # 전 AWS 통틀어 충돌 사실상 불가능 + audit 시 어느 계정/리전인지 즉시 식별.
-  bucket_name = "${data.aws_caller_identity.current.account_id}-${var.aws_region}-${var.namespace}"
+  bucket_name = "${data.aws_caller_identity.current.account_id}-${data.aws_region.current.name}-${var.namespace}"
 
   # 공개 GET prefix 마다 한 statement — wildcard 형태로 Resource 패턴 생성.
   public_read_resources = [
     for p in var.public_read_prefixes :
     "arn:aws:s3:::${local.bucket_name}/${p}*"
   ]
-
-  create_iam_user = var.iam_user_name == ""
-  iam_user_name   = local.create_iam_user ? aws_iam_user.content[0].name : var.iam_user_name
 }
 
 # ============================================================
@@ -29,12 +27,18 @@ resource "aws_s3_bucket" "content" {
   tags   = local.tags
 
   lifecycle {
-    # S3 한도 (63자) 사전 검증 — 짧은 region 은 namespace 길이 여유 있고, 긴 region
-    # (ap-northeast-2 등) 은 변수 검증 + 이 precondition 으로 이중 보호.
-    # AWS API 의 cryptic 에러 대신 명확한 한도 안내.
+    # var.environment (tfvars 가 박는 값) 와 terraform.workspace 가 어긋나면 차단.
+    # workspace=prod 에서 dev.tfvars 로 apply 같은 사고 방지. default workspace 도
+    # var.environment validation 이 prod/dev 만 허용하므로 여기서 잡힘.
+    precondition {
+      condition     = var.environment == terraform.workspace
+      error_message = "var.environment ('${var.environment}') 와 terraform.workspace ('${terraform.workspace}') 불일치 — 잘못된 tfvars + workspace 조합. `terraform workspace select ${var.environment}` 또는 다른 tfvars 사용."
+    }
+
+    # S3 한도 (63자) 사전 검증.
     precondition {
       condition     = length(local.bucket_name) <= 63
-      error_message = "버킷명 ${local.bucket_name} 이 S3 한도 63자를 초과합니다 (${length(local.bucket_name)}자). namespace 를 더 짧게 잡으세요."
+      error_message = "버킷명 ${local.bucket_name} 이 S3 한도 63자를 초과합니다 (${length(local.bucket_name)}자)."
     }
   }
 }
@@ -130,45 +134,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "content" {
 }
 
 # ============================================================
-# IAM — 앱이 사용할 user / policy. PUT/GET/HEAD/DELETE on public prefix 만 허용.
+# IAM (user / policy / access key) 는 이 stack 범위 밖.
+# 외부에서 별도 관리. 정책 작성에 필요한 ARN 은 outputs 로 노출:
+#   - bucket_arn
+#   - app_object_resource_arns
+# 권장 정책 형태:
+#   {
+#     "Effect": "Allow",
+#     "Action": ["s3:PutObject", "s3:GetObject", "s3:HeadObject", "s3:DeleteObject"],
+#     "Resource": ["<bucket_arn>/partners/avatar/*", ...]
+#   }
 # ============================================================
-data "aws_iam_policy_document" "app_policy" {
-  statement {
-    sid    = "ContentObjectReadWrite"
-    effect = "Allow"
-    actions = [
-      "s3:PutObject",
-      "s3:GetObject",
-      "s3:HeadObject",
-      "s3:DeleteObject",
-    ]
-    resources = local.public_read_resources
-  }
-}
-
-resource "aws_iam_policy" "app" {
-  # IAM 은 계정-내 unique 라 account_id/region prefix 불필요 — namespace 만 사용.
-  # IAM name 한도 (policy 128 / user 64) 보호 차원에서도 유리.
-  name        = "${var.namespace}-app"
-  description = "App-side access to ${local.bucket_name} content prefixes"
-  policy      = data.aws_iam_policy_document.app_policy.json
-  tags        = local.tags
-}
-
-# iam_user_name 미지정 시 dedicated user 생성. 지정 시 기존 user 재사용 (data source).
-resource "aws_iam_user" "content" {
-  count = local.create_iam_user ? 1 : 0
-  name  = "${var.namespace}-app"
-  tags  = local.tags
-}
-
-resource "aws_iam_user_policy_attachment" "app" {
-  user       = local.iam_user_name
-  policy_arn = aws_iam_policy.app.arn
-}
-
-# 새 user 만든 경우만 access key 생성. 기존 user 면 이미 key 가 있다고 가정 (수동 회전).
-resource "aws_iam_access_key" "content" {
-  count = local.create_iam_user ? 1 : 0
-  user  = aws_iam_user.content[0].name
-}
