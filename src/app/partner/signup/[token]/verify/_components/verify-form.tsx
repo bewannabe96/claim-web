@@ -88,7 +88,7 @@ export function VerifyForm({
         <Input
           value={name}
           disabled
-          className="h-14 px-4 text-base bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
+          className="h-14 px-4 text-sm bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
         />
       </Field>
 
@@ -97,7 +97,7 @@ export function VerifyForm({
           <Input
             value={formatPhone(phone)}
             disabled
-            className="h-14 px-4 text-base tracking-wider flex-1 bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
+            className="h-14 px-4 text-sm tracking-wider flex-1 bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
           />
           <button
             type="button"
@@ -137,7 +137,7 @@ export function VerifyForm({
             onChange={(e) =>
               setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
             }
-            className="h-14 px-4 text-base tracking-[0.4em] text-center"
+            className="h-14 px-4 text-sm tracking-[0.4em] text-center"
           />
           {verifyError && (
             <p className="mt-2 text-xs text-red-600">{verifyError}</p>

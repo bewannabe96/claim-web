@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -33,6 +33,16 @@ export const metadata: Metadata = {
   },
   description:
     "관심 보장 분야를 입력하면 검증된 설계사가 맞춤 보험 제안서를 보내드립니다.",
+};
+
+// iOS Safari 는 font-size < 16px 인 input/textarea/select 에 focus 시 자동 zoom-in 한다.
+// maximumScale=1 로 zoom 자체를 잠가서 input font-size 를 자유롭게 설정할 수 있게 함.
+// 트레이드오프: pinch-zoom 도 차단됨 (WCAG 1.4.4) — 디자인 일관성 우선 결정.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({

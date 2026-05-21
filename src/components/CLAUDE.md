@@ -3,6 +3,7 @@
 ## 무엇이 들어가나
 
 - **`ui/`** — shadcn 생성 프리미티브 (button, card, input...). **수동 편집 금지** — `pnpm dlx shadcn@latest add <component>`로 추가하거나 `shadcn apply`로 재적용.
+  - **의도된 divergence**: `input.tsx` / `textarea.tsx` 의 `text-sm` 단일 폰트 — shadcn upstream 은 `text-base md:text-sm` (iOS Safari auto-zoom 회피용 분기) 인데, [src/app/layout.tsx](../app/layout.tsx) 의 viewport `maximumScale=1` 로 zoom 자체를 잠갔으므로 모바일도 14px 통일. `shadcn apply` 후 회귀 시 다시 `text-sm` 으로 복원할 것.
 - 그 외 `components/` 직속 — 진짜로 여러 라우트가 공유하는 컴포넌트 (예: `Logo`, `EmptyState`, `PageHeader` 같은 일반 UI).
 
 ## 무엇이 안 들어가나
