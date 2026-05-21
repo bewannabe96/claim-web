@@ -12,6 +12,7 @@ import type {
 const PARTNER_INCLUDE = {
   user: { select: { id: true, email: true, name: true, phone: true } },
   assignmentStats: true,
+  creditBalance: { select: { balance: true, debt: true } },
 } as const;
 
 /**
