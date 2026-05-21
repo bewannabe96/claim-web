@@ -7,16 +7,17 @@ import { AdjustmentForm } from "@/features/credits/ui/adjustment-form";
 import { CreditBalanceCard } from "@/features/credits/ui/credit-balance-card";
 import { LedgerList } from "@/features/credits/ui/ledger-list";
 import { RefundForm } from "@/features/credits/ui/refund-form";
+import { contentPublicUrl } from "@/server/content-storage";
 
 import { PartnerForm } from "../../_components/partner-form";
 import {
   BackLink,
   Card,
   CardHeader,
-  PageHeader,
   Section,
   Stat,
 } from "../../_components/page-shell";
+import { AvatarUpload } from "./_components/avatar-upload";
 
 export default async function AdminPartnerDetailPage({
   params,
@@ -28,6 +29,7 @@ export default async function AdminPartnerDetailPage({
   if (!partner) notFound();
 
   const refundableTopups = await listRefundableTopups(partner.id);
+  const avatarUrl = partner.avatarKey ? contentPublicUrl(partner.avatarKey) : null;
 
   const action = updatePartner.bind(null, partner.id);
 
@@ -35,10 +37,17 @@ export default async function AdminPartnerDetailPage({
     <div className="flex flex-col gap-8">
       <div>
         <BackLink href="/admin/partners">설계사 풀</BackLink>
-        <PageHeader
-          title={partner.user.name}
-          description={`${partner.id} · ${partner.user.phone ?? partner.user.email}`}
-        />
+        <header className="flex items-start gap-5">
+          <AvatarUpload partnerId={partner.id} currentUrl={avatarUrl} />
+          <div className="flex flex-col gap-1.5 min-w-0 mt-1">
+            <h1 className="text-[28px] leading-tight font-bold tracking-tight text-black">
+              {partner.user.name}
+            </h1>
+            <p className="text-sm text-[#4b4b4b]">
+              {partner.id} · {partner.user.phone ?? partner.user.email}
+            </p>
+          </div>
+        </header>
       </div>
 
       <Card>

@@ -20,6 +20,10 @@
 - `db/prisma.ts` — **Prisma client 싱글톤. 모든 DB 쿼리/트랜잭션의 단일 진입점.**
 - `s3.ts` — 제안서 PDF 업로드/다운로드 S3 헬퍼. presigned PUT/GET URL + HEAD 검증
   (`verifyUploadedObject`) + 본문 SHA-256 계산 (`fetchObjectSha256`, stream-based — 외부 분석 리포트와 join 할 hash).
+- `content-storage.ts` — 서비스 컨텐츠 (이미지/사진 등) 버킷 헬퍼. **제안서 PDF 와 분리된 별도 버킷** (`S3_BUCKET_CONTENT`).
+  presigned PUT + HEAD 검증 + 공개 GET URL 빌더 + best-effort 삭제. lazy env init 패턴은 `s3.ts` 와 동일.
+  첫 입주자: 파트너 프로필 사진 (`partners/avatar/{partnerId}/{nanoid}.{ext}`).
+  CDN 도입 시 `CONTENT_PUBLIC_BASE_URL` env 만 갱신 (코드 변경 없음). 인프라: [infra/content-bucket/](../../infra/content-bucket/).
 - `settings.ts` — single-row `app_settings` 로드/갱신. `SettingsPatch` 가 admin 폼에서 갱신
   가능한 필드 (candidateCount / selectLimit / submissionDeadlineHours / penaltyWindow /
   resultRetentionDays / scenarioPriority).
@@ -84,6 +88,29 @@
 - **Key 패턴**: `proposals/{assignment_id}/{nanoid(16)}.pdf` — assignment 가 경로에 박혀 있어
   forgery 1차 방어 (`isPlanProposalKeyForAssignment`) 가능. submit 단계의 HEAD 가 2차 방어.
 - **Size 한도**: `PROPOSAL_PDF_MAX_BYTES` (default 10MB) — presigned PUT 으론 강제 못 함, HEAD-then-reject 방식.
+
+## S3 버킷 설정 (서비스 컨텐츠 — 이미지/사진 등)
+
+문서 (제안서 PDF) 와는 별도 버킷. 인프라는 [infra/content-bucket/](../../infra/content-bucket/) terraform.
+
+- **버킷명**: `S3_BUCKET_CONTENT` env 로 지정. AWS 권장 namespace 패턴 `<account_id>-<region>-<namespace>`.
+- **접근 모델**: `public_read_prefixes` (현재 `partners/avatar/*`) 만 bucket policy 로 공개 GET 허용 +
+  BlockPublicAccess 켜져 있어 ACL 기반 공개는 차단. 다른 prefix 는 100% private.
+- **공개 URL**: `CONTENT_PUBLIC_BASE_URL` env 설정 시 그 도메인 사용 (CloudFront / 커스텀 도메인),
+  미설정 시 virtual-hosted S3 URL (`<bucket>.s3.<region>.amazonaws.com`) 자동 폴백. CDN 도입 시 env 1줄만 갱신.
+- **IAM 정책**: 위 제안서 버킷 user 와 자격증명 공유 가능 (terraform `iam_user_name` 변수). 동일 prefix-limited 정책.
+- **Key 패턴**: `partners/avatar/{partnerId}/{nanoid(16)}.{jpg|png|webp}` — partnerId 가 경로에 박혀
+  forgery 1차 방어 (`isPartnerAvatarKeyFor`). finalize 단계의 HEAD 가 2차 (`verifyPartnerAvatarObject`).
+- **허용 타입**: `image/jpeg` / `image/png` / `image/webp` 만 — presigned PUT 의 ContentType 강제 + HEAD 재검증.
+- **Size 한도**: `PARTNER_AVATAR_MAX_BYTES` (5MB) — HEAD-then-reject.
+- **객체 메타데이터**: presigned PUT 서명에 `Cache-Control: public, max-age=31536000, immutable` 포함 →
+  클라가 동일 헤더 전송 → S3 가 객체에 저장 → 후속 GET 응답에 그대로 박힘 (브라우저 캐시 1년).
+  키에 nanoid 박혀 immutable URL 이라 안전.
+- **교체 시 구 키 청소**: `setPartnerAvatar` 액션이 DB 갱신 후 best-effort 로 구 객체 DELETE (실패 무시 + 로그).
+  S3 lifecycle 의 orphan cleanup 은 미설정.
+
+새 컨텐츠 도메인 추가 절차: terraform `public_read_prefixes` 에 prefix 추가 → content-storage.ts 에
+`presignXxx` / `verifyXxx` / `isXxxKeyFor` 헬퍼 추가 → action / page 에서 사용.
 
 ## SQS (분석 파이프라인 잡 큐)
 
