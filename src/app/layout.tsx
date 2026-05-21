@@ -23,7 +23,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Partner Match — 보험 설계사 매칭",
+  title: {
+    // 랜딩 (/) 처럼 page metadata 가 title 을 안 주는 경우 default 사용.
+    default: "Partner Match — 보험 설계사 매칭",
+    // 자식 페이지가 `title: "요청서 작성"` 만 주면 "요청서 작성 | CLAIM" 으로 합성.
+    template: "%s | CLAIM",
+  },
   description:
     "관심 보장 분야를 입력하면 검증된 설계사가 맞춤 보험 제안서를 보내드립니다.",
 };

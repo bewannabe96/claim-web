@@ -1,8 +1,15 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { MailIcon, StatusScreen } from "@/components/status-screen";
 import { getRequestById } from "@/features/plan-requests/queries";
 import { nowMs } from "@/lib/wall-clock";
+
+export const metadata: Metadata = {
+  title: "요청 전달 완료",
+  description:
+    "선택하신 설계사가 제안서를 준비하고 있어요. 도착하면 카카오 알림톡으로 알려드릴게요.",
+};
 
 /**
  * dispatched 상태 안내 — 가입자에게 "보냈어요, 기다리시면 돼요" + 도착 예상 시간.

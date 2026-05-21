@@ -1,8 +1,14 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { buttonVariants } from "@/components/ui/button";
 import { acknowledgeTopup } from "@/features/credits/actions";
 import { cn } from "@/lib/utils";
+
+export const metadata: Metadata = {
+  title: "결제 결과",
+  description: "크레딧 충전 결제 결과를 확인하세요.",
+};
 
 /**
  * 모바일 SDK redirectUrl 착지 페이지.

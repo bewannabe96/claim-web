@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { Route } from "next";
 import { redirect } from "next/navigation";
 
@@ -5,6 +6,11 @@ import { safeNextPath } from "@/lib/safe-next-path";
 import { getOptionalPartnerSession } from "@/server/dal";
 
 import { signInWithKakao } from "./actions";
+
+export const metadata: Metadata = {
+  title: "설계사 로그인",
+  description: "카카오톡 계정으로 빠르게 로그인하고 받은 요청을 확인하세요.",
+};
 
 const ERROR_MESSAGES: Record<string, string> = {
   oauth_failed: "카카오 로그인에 실패했습니다. 다시 시도해주세요.",

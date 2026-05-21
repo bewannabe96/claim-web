@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { BrandMark } from "@/components/brand-mark";
@@ -7,7 +8,20 @@ import { BrandMark } from "@/components/brand-mark";
  * 일회용 토큰 진입과 로그인 진입 두 흐름이 공존.
  *
  * DESIGN.md — 모노크롬 헤더, 워드마크 옆에 작은 sub-mark.
+ *
+ * metadata.robots — `/partner/*` 전 페이지 noindex. 로그인 / 토큰 / 가입 초청
+ * 흐름이라 검색 노출 가치 없음. admin 처럼 HTTP X-Robots-Tag 까지 가지 않고
+ * `<meta name="robots">` 만으로도 충분 (의도적 공개 페이지 아니라 hostile 크롤러
+ * 차단 목적 아님 — 일반 검색엔진에게만 색인 제외 신호).
  */
+export const metadata: Metadata = {
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
+};
+
 export default function PartnerLayout({
   children,
 }: {

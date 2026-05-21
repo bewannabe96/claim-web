@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
+
 import { CreditBalanceCard } from "@/features/credits/ui/credit-balance-card";
 import { LedgerList } from "@/features/credits/ui/ledger-list";
 import { requirePartnerSession } from "@/server/dal";
+
+export const metadata: Metadata = {
+  title: "크레딧",
+  description: "크레딧 잔액과 충전·차감 거래 내역을 확인하세요.",
+};
 
 /**
  * 파트너 크레딧 페이지 — 잔액 + 거래 내역 (페이지네이션).

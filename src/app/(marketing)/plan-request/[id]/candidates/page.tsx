@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { getPartnerCardsByIds } from "@/features/partners/queries";
@@ -9,6 +10,11 @@ import {
 import { getSettings } from "@/server/settings";
 
 import { CandidatesSelector } from "./_components/candidates-selector";
+
+export const metadata: Metadata = {
+  title: "설계사 선택",
+  description: "추천된 설계사 카드 중 제안서를 받을 분들을 선택해주세요.",
+};
 
 export default async function CandidatesPage({
   params,

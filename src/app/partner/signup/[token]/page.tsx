@@ -1,9 +1,16 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { getPartnerSignupInvitationByToken } from "@/features/partners/queries";
 import { getOptionalAdminSession } from "@/server/dal";
 
 import { signUpWithKakao } from "./actions";
+
+export const metadata: Metadata = {
+  title: "설계사 가입",
+  description:
+    "카카오톡 가입 후 본인인증으로 설계사 등록을 마무리해주세요.",
+};
 
 const SIGNUP_ERRORS: Record<string, string> = {
   oauth_failed: "카카오 로그인에 실패했습니다. 다시 시도해주세요.",

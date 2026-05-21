@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { getPartnerSignupInvitationByToken } from "@/features/partners/queries";
@@ -5,6 +6,12 @@ import { getOptionalAdminSession } from "@/server/dal";
 import { getSupabaseServerClient } from "@/server/supabase";
 
 import { VerifyForm } from "./_components/verify-form";
+
+export const metadata: Metadata = {
+  title: "설계사 가입 — 본인인증",
+  description:
+    "등록된 휴대폰 번호로 인증번호를 받아 설계사 가입을 마무리해주세요.",
+};
 
 const VERIFY_ERRORS: Record<string, string> = {
   already_registered:

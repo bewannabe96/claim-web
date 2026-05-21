@@ -23,7 +23,7 @@
   로그인 페이지 → action → callback URL 까지 forward → 로그인 성공 후 원 위치 복귀.
   화이트리스트 (`safeNextPath`, `/partner/*` 만) 는 페이지/액션/콜백 3 단계 검증.
 - **Carve-out**: `/partner/login`, `/partner/plan-request-assignments/*` (알림톡 토큰), `/partner/signup/*` (가입 초청 token) 는 auth 체크 스킵.
-- **X-Robots-Tag 미부착** — partner 영역은 가입자/마케팅과 동등 노출 정책.
+- **X-Robots-Tag 미부착** — admin 처럼 HTTP 헤더로 강제 차단하지는 않음. 단, `partner/layout.tsx` 의 `metadata.robots` 가 `<meta name="robots">` noindex 를 모든 `/partner/*` 페이지에 자동 주입 — 로그인 / 토큰 / 가입 초청 흐름이라 검색엔진 색인 가치 없음. hostile 크롤러 차단 목적은 아니므로 메타 태그 한 겹으로 충분.
 
 ### ② `(dashboard)/layout.tsx` (진짜 auth boundary)
 
