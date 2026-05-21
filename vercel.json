@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/assignment-deadline-expiry",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/plan-request-settlement",
+      "schedule": "0 * * * *"
     }
   ]
 }

@@ -187,7 +187,9 @@ PortOne 흐름에서 webhook 도착 대기 없이 잔액 즉시 갱신:
 
 | 트리거 | 호출처 | idempotencyKey | amount |
 |---|---|---|---|
-| 가입자 연락 요청 | [features/plan-proposals/actions.ts](../plan-proposals/actions.ts) `requestPlanProposalContact` | `proposal-contact:${proposalId}` | `PlanRequest.price` (snapshot) |
+| 요청서 보관 기간 만료 정산 | [features/plan-requests/settlement.ts](../plan-requests/settlement.ts) `settlePlanRequest` (cron `/api/cron/plan-request-settlement` 발화) | `plan-request-settlement:${requestId}:${partnerId}` | `round(PlanRequest.price / N / 1000) * 1000` (전화요청 받은 파트너 N명 균등 분할, 1000원 단위 반올림) |
+
+**정책 변경 이력**: 이전엔 가입자 연락 요청 시점 ([requestPlanProposalContact](../plan-proposals/actions.ts)) 에 파트너 1명에게 전액 차감. 현재는 보관 기간 만료 시점에 contactedAt 있는 파트너 N명에게 균등 분할 차감으로 전환. `requestPlanProposalContact` 는 contactedAt 마킹 + 알림 LMS 만 담당, 차감은 발화하지 않음.
 
 신규 spend 트리거 추가 시 템플릿:
 

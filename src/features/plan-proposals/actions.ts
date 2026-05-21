@@ -4,7 +4,6 @@ import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { spendCredit } from "@/features/credits/actions";
 import { requireAdminSession } from "@/server/dal";
 import { newId } from "@/lib/id";
 import { sendNotificationLms } from "@/server/aligo";
@@ -196,21 +195,24 @@ export async function submitPlanProposal(
  * resultToken (가입자의 일회용 토큰) — 페이지 자체가 토큰 기반이라 액션도 동일.
  *
  * 멱등성: 같은 (resultToken, proposalId) 로 여러 번 호출돼도 카운터는 1 만 올라감.
- * `proposal.contactedAt IS NULL` 조건의 updateMany 가 0 row 면 (이미 마킹됨) 카운터
- * 증가 트랜잭션 자체를 스킵. 새 탭 / 새로고침으로 button 재활성 케이스 방어.
+ * updateMany 의 `contactedAt: null` + `request.settledAt: null` 복합 조건이 0 row 면
+ * (이미 마킹됐거나 cron 이 정산 완료) 카운터 증가 트랜잭션 자체를 스킵. 새 탭 /
+ * 새로고침으로 button 재활성 케이스 방어 + 정산 후 늦은 클릭 차단 양쪽 커버.
  *
  * 검증:
  *   1. resultToken → plan_request 존재 확인
  *   2. proposalId → assignment.requestId 가 위 plan_request 와 일치
- *   3. proposal.contactedAt 이 NULL 일 때만 set + counter +1
+ *   3. request.settledAt 이 NULL (보관 기간 만료 cron 정산 전) — 늦은 클릭 차단
+ *   4. proposal.contactedAt 이 NULL 일 때만 set + counter +1 (멱등 + race-safe)
  *
- * 외부 SMS 발송은 본 액션 책임 아님 (향후 작업) — 본 액션은 "가입자가 연락을
- * 원했다" 라는 사실의 기록만 담당.
+ * 과금 분리: 이 시점엔 **차감하지 않음**. 보관 기간 만료 cron 이 contactedAt 있는
+ * 파트너 N명에게 PlanRequest.price/N (1000원 단위 반올림) 을 일괄 차감.
+ * 자세한 정책은 features/plan-requests/settlement.ts.
  * ============================================================ */
 
 export type RequestContactResult =
   | { ok: true; alreadyContacted: boolean }
-  | { ok: false; error: "not_found" };
+  | { ok: false; error: "not_found" | "settled" };
 
 export async function requestPlanProposalContact(
   resultToken: string,
@@ -222,9 +224,9 @@ export async function requestPlanProposalContact(
   });
   if (!request) return { ok: false, error: "not_found" };
 
-  // partner.user.name/phone + request.name/phone/price 까지 join — 마킹 성공 분기에서
-  // 설계사 알림 LMS 본문에 양측 이름 + 가입자 연락처를 박고, 차감 시점에 snapshot 된
-  // request.price 를 그대로 사용 (DB 재조회 회피).
+  // partner.user.name/phone + request.name/phone 은 마킹 성공 분기의 설계사 알림 LMS
+  // 본문 (양측 이름 + 가입자 연락처) 에 사용. request.settledAt 은 보관 기간 만료
+  // cron 정산 후 늦은 클릭 차단 가드 (사전검사 + 아래 updateMany WHERE).
   const proposal = await prisma.planProposal.findUnique({
     where: { id: proposalId },
     select: {
@@ -239,7 +241,7 @@ export async function requestPlanProposalContact(
               user: { select: { name: true, phone: true } },
             },
           },
-          request: { select: { name: true, phone: true, price: true } },
+          request: { select: { name: true, phone: true, settledAt: true } },
         },
       },
     },
@@ -248,16 +250,31 @@ export async function requestPlanProposalContact(
     return { ok: false, error: "not_found" };
   }
 
+  // 보관 기간 만료 + cron 정산 완료된 요청에는 늦은 연락요청 차단. stale 결과
+  // 페이지 탭에서 도착하는 클릭이 정산 후 contactedAt 만 set 되어 무상 LMS 발송
+  // 되는 케이스 방지. 사전 검사로 대부분 잡고, 동시 race 의 잔여 윈도우는 아래
+  // updateMany WHERE 의 `request.settledAt: null` 조건이 닫음.
+  if (proposal.assignment.request.settledAt) {
+    return { ok: false, error: "settled" };
+  }
+
   if (proposal.contactedAt) {
     // 멱등 — UI 가 button 을 disabled 로 풀어줄 수 있도록 ok=true 로 응답.
     return { ok: true, alreadyContacted: true };
   }
 
-  // race-safe 마킹 + 카운터 증가 — 한 트랜잭션. count=0 이면 다른 호출이 먼저 마킹한
-  // 것이고 그 경우 spend / LMS 도 모두 건너뛰어 중복 차감 / 중복 LMS 방지.
+  // race-safe 마킹 + 카운터 증가 — 한 트랜잭션. count=0 이면 두 가지 경우:
+  //   a) 다른 호출이 먼저 contactedAt 마킹 (legit 멱등)
+  //   b) 사전 검사 직후 cron 이 settledAt 마킹 (late race)
+  // 두 케이스 모두 spend/LMS 는 건너뛰는 게 맞고, 응답만 분기하기 위해 transaction
+  // 종료 후 한 번 더 settledAt 확인.
   const { newlyMarked } = await prisma.$transaction(async (tx) => {
     const m = await tx.planProposal.updateMany({
-      where: { id: proposalId, contactedAt: null },
+      where: {
+        id: proposalId,
+        contactedAt: null,
+        assignment: { request: { settledAt: null } },
+      },
       data: { contactedAt: new Date() },
     });
     if (m.count === 0) return { newlyMarked: false };
@@ -268,56 +285,31 @@ export async function requestPlanProposalContact(
     return { newlyMarked: true };
   });
 
-  if (newlyMarked) {
-    // 크레딧 차감 — Step1 시점에 PlanRequest.price 로 snapshot 된 금액. price 가 null
-    // 인 경우는 가격 모델 도입 이전 row (정상 흐름에선 Step1 트랜잭션이 항상 채움) —
-    // defensive 로 0 처리해 차감 없이 흐름 통과 (audit 로그만).
-    //
-    // 트랜잭션 경계: applyLedger 가 자체 트랜잭션을 보유해 contactedAt 마킹 트랜잭션과
-    // 분리됨. crash 시점에 마킹 후 spend 전이면 다음 retry 에서 newlyMarked=false 라
-    // spend 도 발화 안 함 (corner case — MVP 수준에서 운영 모니터링).
-    //
-    // 멱등키: proposal-contact:${proposalId} — 같은 proposal 에 대한 어떤 재시도도
-    // alreadyApplied 로 흡수. 음수 잔액은 debt 분배로 자동 처리 (insufficient_balance
-    // 반환 없음).
-    const price = proposal.assignment.request.price ?? 0;
-    if (price > 0) {
-      const spend = await spendCredit({
-        partnerId: proposal.assignment.partnerId,
-        amount: price,
-        referenceType: "plan_proposal",
-        referenceId: proposalId,
-        idempotencyKey: `proposal-contact:${proposalId}`,
-        reason: "가입자 연락 요청",
-      });
-      if (!spend.ok) {
-        // conflict / invalid_input — 운영 모니터링용 로그. 사용자 흐름은 그대로 진행
-        // (마킹은 이미 commit 됐고, 빈번하면 별도 reconciliation job 으로 보정).
-        console.error("[requestPlanProposalContact] spendCredit failed", {
-          proposalId,
-          partnerId: proposal.assignment.partnerId,
-          amount: price,
-          error: spend.error,
-        });
-      }
-    } else {
-      console.warn(
-        "[requestPlanProposalContact] missing price snapshot — skipping spend",
-        { proposalId, requestId: request.id },
-      );
-    }
-
-    await notifyPartnerOfContactRequest({
-      proposalId,
-      partnerName: proposal.assignment.partner.user.name,
-      partnerPhone: proposal.assignment.partner.user.phone,
-      customerName: proposal.assignment.request.name,
-      customerPhone: proposal.assignment.request.phone,
+  if (!newlyMarked) {
+    // 두 케이스 구별 — settledAt 가 set 됐는지 확인 (late race) vs contactedAt 가 이미
+    // 있었는지 (legit 멱등). 한 번의 추가 SELECT 비용 < 정확한 UX 응답.
+    const after = await prisma.planRequest.findUnique({
+      where: { id: request.id },
+      select: { settledAt: true },
     });
-    // TODO: 알림 발송 (1-5) — 가입자 ack ("설계사에게 연락 요청이 전달되었어요").
-    // 우선순위 낮음. 결과 페이지 UI 에서 button disabled 로 즉시 피드백 주고 있어
-    // 별도 LMS 가 필요한지 정책 결정 필요. 발송 매체 미정.
+    if (after?.settledAt) return { ok: false, error: "settled" };
+    return { ok: true, alreadyContacted: true };
   }
+
+  // 차감은 본 액션에서 발화하지 않음 — 보관 기간 만료 cron 이 한 PlanRequest 의
+  // contactedAt 있는 파트너들을 모아 PlanRequest.price/N (1000원 반올림) 으로
+  // 일괄 정산. 자세한 흐름은 features/plan-requests/settlement.ts.
+
+  await notifyPartnerOfContactRequest({
+    proposalId,
+    partnerName: proposal.assignment.partner.user.name,
+    partnerPhone: proposal.assignment.partner.user.phone,
+    customerName: proposal.assignment.request.name,
+    customerPhone: proposal.assignment.request.phone,
+  });
+  // TODO: 알림 발송 (1-5) — 가입자 ack ("설계사에게 연락 요청이 전달되었어요").
+  // 우선순위 낮음. 결과 페이지 UI 에서 button disabled 로 즉시 피드백 주고 있어
+  // 별도 LMS 가 필요한지 정책 결정 필요. 발송 매체 미정.
 
   revalidatePath(`/plan-request/result/${resultToken}`);
   return { ok: true, alreadyContacted: false };
