@@ -8,14 +8,13 @@ import { redirect } from "next/navigation";
 import { findAssignmentCandidates } from "@/features/partners/queries";
 import { getPriceForBudget } from "@/features/plan-request-pricing/queries";
 import { newId, newToken } from "@/lib/id";
-import {
-  isAligoTestMode,
-  sendNotificationLms,
-  sendOtpSms,
-} from "@/server/aligo";
-import { getServiceName } from "@/server/branding";
+import { isAligoTestMode, sendAlimtalk, sendOtpSms } from "@/server/aligo";
 import { prisma } from "@/server/db/prisma";
 import { getClientIp } from "@/server/get-client-ip";
+import {
+  KAKAO_TEMPLATE_NEW_ASSIGNMENT,
+  buildNewAssignmentAlimtalk,
+} from "@/server/kakao-templates";
 import { getPublicBaseUrl } from "@/server/origin";
 import { getRedis } from "@/server/redis";
 import { getSettings } from "@/server/settings";
@@ -363,8 +362,8 @@ export async function sendOtp(
  * 키에서 GET 으로 비교, 성공 시 DEL 로 즉시 무효화 (재사용 차단).
  *
  * 알림 발송 (트랜잭션 직후):
- *   - 설계사 (2-3) 구현됨 — 선택된 각 설계사에게 일회용 token 링크 LMS.
- *   - 가입자 (1-1) TODO — 디스패치 확인 LMS. 발송 매체/본문 정책 미정.
+ *   - 설계사 (2-3) 구현됨 — 선택된 각 설계사에게 일회용 token 링크 알림톡 (UI_0735).
+ *   - 가입자 (1-1) TODO — 디스패치 확인 알림. 발송 매체/본문 정책 미정.
  */
 export async function finalizeRequest(
   requestId: string,
@@ -405,7 +404,7 @@ export async function finalizeRequest(
   await redis.del(key);
 
   // 3) 요청 상태 + 선택된 후보 확인. 요청서 본문 (budget/coverage) 과 partner
-  //    이름/휴대폰까지 join — 트랜잭션 직후 설계사 알림 LMS 본문에 재사용
+  //    이름/휴대폰까지 join — 트랜잭션 직후 설계사 알림톡 (UI_0735) 본문에 재사용
   //    (DB 재조회 회피).
   const req = await prisma.planRequest.findUnique({
     where: { id: requestId },
@@ -463,7 +462,7 @@ export async function finalizeRequest(
     now.getTime() + settings.submissionDeadlineHours * 3600 * 1000,
   );
 
-  // assignment row 를 트랜잭션 진입 전에 build — 트랜잭션 후 LMS 발송에서
+  // assignment row 를 트랜잭션 진입 전에 build — 트랜잭션 후 알림톡 발송에서
   // 동일 token 을 재사용 (DB 재조회 없이 partner 별 제출 URL 생성).
   const assignmentsToCreate = req.candidates.map((c) => ({
     id: newId(),
@@ -512,7 +511,7 @@ export async function finalizeRequest(
     }),
   ]);
 
-  // 설계사 알림 LMS 발송 (2-3) — 각 선택된 설계사 휴대폰으로 제출 페이지 링크.
+  // 설계사 알림톡 발송 (2-3) — 각 선택된 설계사 휴대폰으로 알림톡 (UI_0735).
   // Promise.allSettled 로 한 설계사 실패가 다른 설계사 발송을 막지 않게. await 으로
   // redirect 전에 완료 보장 (Vercel serverless 의 fire-and-forget 회피).
   await notifyPartnersOfNewAssignment({
@@ -523,20 +522,20 @@ export async function finalizeRequest(
     assignments: assignmentsToCreate,
   });
 
-  // TODO: 알림 발송 (1-1) — 가입자에게 디스패치 확인 LMS. dispatched 페이지가 "최대
+  // TODO: 알림 발송 (1-1) — 가입자에게 디스패치 확인 알림. dispatched 페이지가 "최대
   // N시간 안에 결과가 옴" 이라는 expectation 을 약속하고 있으므로 (`request/[id]/
   // dispatched/page.tsx`, `confirm-wizard.tsx`) 발송 시점은 여기 (트랜잭션 직후).
-  // 본문엔 결과 페이지 링크 (resultToken) + 예상 도착 시간. 발송 매체 미정.
+  // 본문엔 결과 페이지 링크 (resultToken) + 예상 도착 시간. 신규 알림톡 템플릿 검수 필요.
 
   revalidatePath("/admin/requests");
   redirect(`/plan-request/${requestId}/dispatched`);
 }
 
 /**
- * 신규 제안서 요청 배정 — 선택된 설계사들에게 일회용 token 링크 LMS.
+ * 신규 제안서 요청 배정 — 선택된 설계사들에게 일회용 token 링크 알림톡 (UI_0735).
  *
- * 본문엔 가입자 이름 / 희망 보험료 / 필요 담보 + 제출 페이지 URL. 설계사가 본문
- * 만으로 요청서 개요를 파악하고 링크로 진입해 제안서 작성 시작.
+ * 본문엔 가입자 이름 / 희망 보험료 / 필요 담보, 버튼은 제출 페이지 URL. 설계사가
+ * 본문만으로 요청서 개요를 파악하고 버튼 진입해 제안서 작성 시작.
  *
  * partnerPhone 이 누락된 row 는 skip + 경고 로그 (Partner.user.phone 은 invitation
  * 단계부터 검증돼 사실상 항상 채워져 있음 — defensive only). coverage parse 실패도
@@ -558,7 +557,6 @@ async function notifyPartnersOfNewAssignment(args: {
   }>;
 }): Promise<void> {
   const origin = await getPublicBaseUrl();
-  const serviceName = getServiceName();
 
   const budget = formatBudgetRange(args.monthlyBudgetMin, args.monthlyBudgetMax);
   const coverageParsed = CoverageRequestSchema.safeParse(args.coverage);
@@ -575,30 +573,29 @@ async function notifyPartnersOfNewAssignment(args: {
         );
         return;
       }
-      const url = `${origin}/partner/plan-request-assignments/${a.token}`;
       const partnerName = a.partnerName ?? "파트너";
-      const msg = [
-        `[${serviceName}] ${partnerName} 파트너님,`,
-        `${args.customerName}님이 파트너님을 선택해서 요청서를 보내셨어요:)`,
-        ``,
-        `*희망보험료 : ${budget}`,
-        `*필요 담보 : ${requestText}`,
-        ``,
-        `고객님의 요청을 수락하시면 진설계에 필요한 정보를 전달드려요.`,
-        `지금 바로 요청서를 확인하시고 설계제안서를 보내보세요!`,
-        ``,
-        url,
-        ``,
-        `(해당 메시지는 파트너님께서 '요청서 도착 알림'을 설정하신 경우 발송됩니다.)`,
-      ].join("\n");
+      const payload = buildNewAssignmentAlimtalk({
+        partnerName,
+        customerName: args.customerName,
+        budget,
+        requestText,
+        token: a.token,
+        origin,
+      });
       try {
-        await sendNotificationLms(a.partnerPhone, msg);
-      } catch (err) {
-        console.error("[finalizeRequest] partner notification LMS failed", {
-          assignmentId: a.id,
-          partnerId: a.partnerId,
-          error: err instanceof Error ? err.message : err,
+        await sendAlimtalk(a.partnerPhone, {
+          templateCode: KAKAO_TEMPLATE_NEW_ASSIGNMENT,
+          ...payload,
         });
+      } catch (err) {
+        console.error(
+          "[finalizeRequest] partner notification alimtalk failed",
+          {
+            assignmentId: a.id,
+            partnerId: a.partnerId,
+            error: err instanceof Error ? err.message : err,
+          },
+        );
       }
     }),
   );

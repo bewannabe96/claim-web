@@ -247,9 +247,9 @@ export async function GET(req: Request) {
 
 #### 알림 발송 (현황)
 
-- 분석 완료 (`analyzing → completed`) 시 가입자 결과 페이지 링크 LMS — **구현 완료**. 책임 위치는 `state-transition.ts:notifyAnalysisCompleted` 로 이동 (cron / 웹훅 양쪽 진입 통합).
-- `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4) — **구현 완료** (cron route 의 `notifyPartnersOfExpiry`).
-- `dispatched → rematching` 전이 시 가입자 재매칭 알림 LMS (시점 1-4) — **미구현**. 실제 새 후보 산출 + 재송부 로직 (작업 #4) 미구현이라 "다시 요청드릴게요" LMS 만 먼저 보내면 misleading. 작업 #4 와 함께 추가. `plan-requests/schema.ts` 의 status enum 옆 TODO 주석으로 마킹.
+- 분석 완료 (`analyzing → completed`) 시 가입자 결과 페이지 링크 알림톡 (UI_0741) — **구현 완료**. 책임 위치는 `state-transition.ts:notifyAnalysisCompleted` 로 이동 (cron / 웹훅 양쪽 진입 통합).
+- `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4) — **구현 완료** (cron route 의 `notifyPartnersOfExpiry`). 알림톡 템플릿 미발급 시나리오라 LMS 폴백 유지.
+- `dispatched → rematching` 전이 시 가입자 재매칭 알림 (시점 1-4) — **미구현**. 실제 새 후보 산출 + 재송부 로직 (작업 #4) 미구현이라 "다시 요청드릴게요" 알림만 먼저 보내면 misleading. 작업 #4 와 함께 추가. `plan-requests/schema.ts` 의 status enum 옆 TODO 주석으로 마킹.
 
 ---
 
@@ -401,7 +401,7 @@ export async function GET(req: Request) {
 
 #### 배경
 
-- PRD §5.7: "1회 자동 재매칭 — 새 N명 후보 추천 → 가입자에게 알림으로 재선택 요청" (현재 알림 채널은 알리고 LMS).
+- PRD §5.7: "1회 자동 재매칭 — 새 N명 후보 추천 → 가입자에게 알림으로 재선택 요청" (알림 채널은 신규 알림톡 템플릿 검수 필요 — 현재 미구현).
 - `PlanRequest.rematchCount` 필드 존재 ([prisma/schema.prisma:68](../prisma/schema.prisma)), 기본 0.
 - `PlanRequestStatus.rematching` 상태 정의됨 ([src/features/plan-requests/schema.ts:294](../src/features/plan-requests/schema.ts)).
 - 재매칭 실행 로직은 **구현 안 됨**.
@@ -416,7 +416,7 @@ export async function GET(req: Request) {
    - 새 `PlanRequestAssignmentCandidate` rows insert.
    - 새 `PlanRequestAssignment` rows 생성 (가입자가 다시 선택해야 하므로 즉시 송부 아님 — UX 결정 필요).
    - **UX 분기 결정 필요**:
-     - 옵션 A: 가입자에게 "재선택" 알림 (LMS) → 가입자가 새 후보 중 K명 다시 골라야 함.
+     - 옵션 A: 가입자에게 "재선택" 알림 (신규 알림톡 템플릿) → 가입자가 새 후보 중 K명 다시 골라야 함.
      - 옵션 B: 시스템이 자동으로 상위 K명 선택 → 즉시 송부 (UX 단순, 가입자 의사 무시).
    - `rematchCount = 1`, `dispatchedAt = now`, `deadlineAt = now + submissionDeadlineHours`.
 3. 2회 실패하면 `status='failed'` 로 종결.
@@ -426,7 +426,7 @@ export async function GET(req: Request) {
 - [ ] **UX 결정**: 옵션 A vs B
 - [ ] `findAssignmentCandidates()` 의 "이전 후보 제외" 옵션 — 현재 시그니처 확인 필요
 
-(알림 발송 인프라는 `server/aligo.ts:sendNotificationLms` 로 이미 제공됨 — cron 구현 시 호출만 추가.)
+(알림 발송 인프라는 `server/aligo.ts:sendAlimtalk` 로 이미 제공됨 — 신규 템플릿 검수 후 호출만 추가.)
 
 #### 구현 우선순위
 
@@ -542,7 +542,7 @@ export async function GET(req: Request) {
 
 #### 현재 구현
 
-- 알리고 SMS / LMS 게이트웨이 통합 완료: [src/server/aligo.ts](../src/server/aligo.ts) (`sendOtpSms` + `sendNotificationLms`).
+- 알리고 SMS / 알림톡 / LMS 게이트웨이 통합 완료: [src/server/aligo.ts](../src/server/aligo.ts) (`sendOtpSms` + `sendAlimtalk` + `sendNotificationLms`).
 - 가입자 본인인증 OTP 발송: [src/features/plan-requests/actions.ts](../src/features/plan-requests/actions.ts) `sendOtp`.
 - 설계사 가입 OTP 발송: [src/app/partner/signup/[token]/actions.ts](../src/app/partner/signup/[token]/actions.ts).
 - 코드 저장: Redis 키 `otp:code:{requestId}:{phone}`, TTL = **180초** (`OTP_TTL_SECONDS`). TTL 이 곧 재전송 쿨다운 + 만료.
@@ -652,7 +652,7 @@ Phase 1 (1~2주)
   └─ 2.3 작업 #3 (invitation 정리)
 
 Phase 2 (1개월 후)
-  ├─ 3.1 작업 #4 (자동 재매칭) — LMS 알림 인프라 이미 존재
+  ├─ 3.1 작업 #4 (자동 재매칭) — 알림톡 인프라 이미 존재 (신규 템플릿 검수 필요)
   └─ 3.2 작업 #5 (분석 재시도)
 
 Phase 3 (필요 시)

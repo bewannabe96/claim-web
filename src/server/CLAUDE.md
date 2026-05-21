@@ -37,23 +37,44 @@
   - `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` → Upstash REST (HTTP, prod / serverless 권장).
   - 그 외 → `REDIS_URL` 로 ioredis (TCP, 로컬 Docker Redis).
   호출부는 `RedisClient` 만 의존 — 새 백엔드 추가는 어댑터 함수 한 개 추가 + env 분기.
-- `aligo.ts` — 알리고 SMS / LMS 게이트웨이. https://smartsms.aligo.in/admin/api/spec.html.
-  공통 호출은 internal `callAligo` 헬퍼가 담당, 두 종류의 export:
+- `aligo.ts` — 알리고 SMS / LMS / 알림톡 게이트웨이.
+  - SMS/LMS spec: https://smartsms.aligo.in/admin/api/spec.html
+  - 알림톡 spec: https://smartsms.aligo.in/alimapi.html
+
+  공통 호출은 internal `callAligo` (SMS/LMS) 헬퍼가 담당, 세 종류의 export:
   - `sendOtpSms(receiver, code)` — 본인인증 6자리 코드 SMS (90byte 본문 한도).
     `ALIGO_TEST_MODE=Y` 일 때는 **호출자가** 알리고 호출 자체를 생략 + 코드 "000000" 고정 (`isAligoTestMode()`) — 코드가 의미를 가져 호출자 분기 필요.
-  - `sendNotificationLms(receiver, message)` — URL 포함 사용자 알림 LMS (2000byte 본문). 분석 완료 → 가입자, 신규 제안서 요청 → 설계사, 연락 요청 → 설계사 세 시점에서 호출. `ALIGO_TEST_MODE=Y` 일 때는 **함수 내부에서** 알리고 호출 skip + console.log 만 (OTP 와 다른 패턴 — 호출자 분기 불필요).
+  - `sendNotificationLms(receiver, message)` — URL 포함 사용자 알림 LMS (2000byte 본문).
+    본인인증 이외 알림은 기본 알림톡으로 발송하지만, 템플릿이 검수되지 않은 시나리오(예:
+    마감 시간 만료 안내) 폴백 채널로 남겨둠. `ALIGO_TEST_MODE=Y` 일 때는 **함수 내부에서**
+    알리고 호출 skip + console.log 만 (OTP 와 다른 패턴).
+  - `sendAlimtalk(receiver, { templateCode, subject, message, button?, failover? })` —
+    카카오 알림톡. 본인인증 이외 모든 사용자 알림의 기본 발송 채널. **본문/버튼은 알리고
+    콘솔에서 검수 받은 템플릿과 1바이트라도 다르면 거부됨** — 본문 작성은
+    [kakao-templates.ts](kakao-templates.ts) 의 빌더만 사용. `ALIGO_TEST_MODE=Y` 일 때는
+    함수 내부에서 호출 skip + console dry-run.
 
   운영 (Vercel) 에선 `ALIGO_PROXY_URL` + `ALIGO_PROXY_SECRET` 설정 시 알리고 직접 호출
-  대신 고정 IP 프록시 (`$URL/aligo/send/` + `Authorization: Bearer ...`) 경유 — Vercel egress
-  IP 가 동적이라 알리고 whitelist 통과 불가, 프록시 인프라는 [infra/aligo-proxy/](../../infra/aligo-proxy/).
-  EnvSchema refine 으로 "URL 만 있고 SECRET 누락" misconfig 차단.
+  대신 고정 IP 프록시 경유 — SMS/LMS 는 `$URL/aligo/send/`, 알림톡은 `$URL/aligo/alimtalk/send/`.
+  Vercel egress IP 가 동적이라 알리고 whitelist 통과 불가, 프록시 인프라는
+  [infra/aligo-proxy/](../../infra/aligo-proxy/). EnvSchema refine 으로 "URL 만 있고 SECRET
+  누락" misconfig 차단.
+
+- `kakao-templates.ts` — 알림톡 템플릿 카탈로그. 알리고 콘솔의 검수본을 **이 파일이
+  단일 미러**. 각 빌더는 변수 객체를 받아 `{ subject, message, button?, failover? }` 페이로드
+  일부를 반환 — 호출자는 `sendAlimtalk(phone, { templateCode, ...builder(vars) })` 패턴.
+  현재 등록 템플릿:
+  - `UI_0735` (`buildNewAssignmentAlimtalk`) — 파트너 선택 알림 (가입자 → 설계사)
+  - `UI_0738` (`buildContactRequestAlimtalk`) — 연락 요청 알림 (가입자 → 설계사)
+  - `UI_0741` (`buildAnalysisCompletedAlimtalk`) — AI 분석 완료 알림 (시스템 → 가입자)
+  검수본은 알리고 콘솔이 진실 공급원 — 카카오 측 템플릿 변경 시 이 파일과 알리고 콘솔을 동시에 반영.
 - `branding.ts` — 서비스 표시 이름 (`getServiceName()`). SMS prefix 등 사용자 노출 문구의 단일 진입점.
   env: `SERVICE_NAME`. 추후 이메일/알림톡 문구에서도 재사용.
 - `get-client-ip.ts` — `headers()` 기반 client IP 추출 (`x-forwarded-for` → `x-real-ip` → fallback).
   IP 기반 레이트리밋의 best-effort 입력. 강한 보장은 reverse proxy (Vercel/Cloudflare) 단의
   헤더로 격상 가능.
 - `origin.ts` — 사용자 노출 base URL (`getPublicBaseUrl()`) 단일 진입점. Kakao OAuth `redirectTo`,
-  SMS LMS 본문 링크, PortOne redirect URL, 어드민 가입 안내 URL 등 외부 노출 절대 URL 생성에
+  알림톡 버튼 링크 / LMS 본문 링크, PortOne redirect URL, 어드민 가입 안내 URL 등 외부 노출 절대 URL 생성에
   모두 사용. 우선순위: `PUBLIC_BASE_URL` env → 요청 헤더 (`Origin` > `x-forwarded-*` > `host`) 폴백.
   prod / staging 에선 반드시 env 박을 것 (Vercel branch deployment 의 vercel.app URL 누출 방지).
   로컬 dev 는 env 미설정 시 헤더 폴백으로 LAN IP / ngrok 모두 자동 대응. **Supabase Dashboard 의
