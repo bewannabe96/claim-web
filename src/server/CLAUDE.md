@@ -20,6 +20,10 @@
 - `db/prisma.ts` — **Prisma client 싱글톤. 모든 DB 쿼리/트랜잭션의 단일 진입점.**
 - `s3.ts` — 제안서 PDF 업로드/다운로드 S3 헬퍼. presigned PUT/GET URL + HEAD 검증
   (`verifyUploadedObject`) + 본문 SHA-256 계산 (`fetchObjectSha256`, stream-based — 외부 분석 리포트와 join 할 hash).
+- `content-storage.ts` — 서비스 컨텐츠 (이미지/사진 등) 버킷 헬퍼. **제안서 PDF 와 분리된 별도 버킷** (`S3_BUCKET_CONTENT`).
+  presigned PUT + HEAD 검증 + 공개 GET URL 빌더 + best-effort 삭제. lazy env init 패턴은 `s3.ts` 와 동일.
+  첫 입주자: 파트너 프로필 사진 (`partners/avatar/{partnerId}/{nanoid}.{ext}`).
+  CDN 도입 시 `CONTENT_PUBLIC_BASE_URL` env 만 갱신 (코드 변경 없음). 인프라: [infra/content-bucket/](../../infra/content-bucket/).
 - `settings.ts` — single-row `app_settings` 로드/갱신. `SettingsPatch` 가 admin 폼에서 갱신
   가능한 필드 (candidateCount / selectLimit / submissionDeadlineHours / penaltyWindow /
   resultRetentionDays / scenarioPriority).
@@ -33,23 +37,44 @@
   - `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` → Upstash REST (HTTP, prod / serverless 권장).
   - 그 외 → `REDIS_URL` 로 ioredis (TCP, 로컬 Docker Redis).
   호출부는 `RedisClient` 만 의존 — 새 백엔드 추가는 어댑터 함수 한 개 추가 + env 분기.
-- `aligo.ts` — 알리고 SMS / LMS 게이트웨이. https://smartsms.aligo.in/admin/api/spec.html.
-  공통 호출은 internal `callAligo` 헬퍼가 담당, 두 종류의 export:
+- `aligo.ts` — 알리고 SMS / LMS / 알림톡 게이트웨이.
+  - SMS/LMS spec: https://smartsms.aligo.in/admin/api/spec.html
+  - 알림톡 spec: https://smartsms.aligo.in/alimapi.html
+
+  공통 호출은 internal `callAligo` (SMS/LMS) 헬퍼가 담당, 세 종류의 export:
   - `sendOtpSms(receiver, code)` — 본인인증 6자리 코드 SMS (90byte 본문 한도).
     `ALIGO_TEST_MODE=Y` 일 때는 **호출자가** 알리고 호출 자체를 생략 + 코드 "000000" 고정 (`isAligoTestMode()`) — 코드가 의미를 가져 호출자 분기 필요.
-  - `sendNotificationLms(receiver, message)` — URL 포함 사용자 알림 LMS (2000byte 본문). 분석 완료 → 가입자, 신규 제안서 요청 → 설계사, 연락 요청 → 설계사 세 시점에서 호출. `ALIGO_TEST_MODE=Y` 일 때는 **함수 내부에서** 알리고 호출 skip + console.log 만 (OTP 와 다른 패턴 — 호출자 분기 불필요).
+  - `sendNotificationLms(receiver, message)` — URL 포함 사용자 알림 LMS (2000byte 본문).
+    본인인증 이외 알림은 기본 알림톡으로 발송하지만, 템플릿이 검수되지 않은 시나리오(예:
+    마감 시간 만료 안내) 폴백 채널로 남겨둠. `ALIGO_TEST_MODE=Y` 일 때는 **함수 내부에서**
+    알리고 호출 skip + console.log 만 (OTP 와 다른 패턴).
+  - `sendAlimtalk(receiver, { templateCode, subject, message, button?, failover? })` —
+    카카오 알림톡. 본인인증 이외 모든 사용자 알림의 기본 발송 채널. **본문/버튼은 알리고
+    콘솔에서 검수 받은 템플릿과 1바이트라도 다르면 거부됨** — 본문 작성은
+    [kakao-templates.ts](kakao-templates.ts) 의 빌더만 사용. `ALIGO_TEST_MODE=Y` 일 때는
+    함수 내부에서 호출 skip + console dry-run.
 
   운영 (Vercel) 에선 `ALIGO_PROXY_URL` + `ALIGO_PROXY_SECRET` 설정 시 알리고 직접 호출
-  대신 고정 IP 프록시 (`$URL/aligo/send/` + `Authorization: Bearer ...`) 경유 — Vercel egress
-  IP 가 동적이라 알리고 whitelist 통과 불가, 프록시 인프라는 [infra/aligo-proxy/](../../infra/aligo-proxy/).
-  EnvSchema refine 으로 "URL 만 있고 SECRET 누락" misconfig 차단.
+  대신 고정 IP 프록시 경유 — SMS/LMS 는 `$URL/aligo/send/`, 알림톡은 `$URL/aligo/alimtalk/send/`.
+  Vercel egress IP 가 동적이라 알리고 whitelist 통과 불가, 프록시 인프라는
+  [infra/aligo-proxy/](../../infra/aligo-proxy/). EnvSchema refine 으로 "URL 만 있고 SECRET
+  누락" misconfig 차단.
+
+- `kakao-templates.ts` — 알림톡 템플릿 카탈로그. 알리고 콘솔의 검수본을 **이 파일이
+  단일 미러**. 각 빌더는 변수 객체를 받아 `{ subject, message, button?, failover? }` 페이로드
+  일부를 반환 — 호출자는 `sendAlimtalk(phone, { templateCode, ...builder(vars) })` 패턴.
+  현재 등록 템플릿:
+  - `UI_0735` (`buildNewAssignmentAlimtalk`) — 파트너 선택 알림 (가입자 → 설계사)
+  - `UI_0738` (`buildContactRequestAlimtalk`) — 연락 요청 알림 (가입자 → 설계사)
+  - `UI_0741` (`buildAnalysisCompletedAlimtalk`) — AI 분석 완료 알림 (시스템 → 가입자)
+  검수본은 알리고 콘솔이 진실 공급원 — 카카오 측 템플릿 변경 시 이 파일과 알리고 콘솔을 동시에 반영.
 - `branding.ts` — 서비스 표시 이름 (`getServiceName()`). SMS prefix 등 사용자 노출 문구의 단일 진입점.
   env: `SERVICE_NAME`. 추후 이메일/알림톡 문구에서도 재사용.
 - `get-client-ip.ts` — `headers()` 기반 client IP 추출 (`x-forwarded-for` → `x-real-ip` → fallback).
   IP 기반 레이트리밋의 best-effort 입력. 강한 보장은 reverse proxy (Vercel/Cloudflare) 단의
   헤더로 격상 가능.
 - `origin.ts` — 사용자 노출 base URL (`getPublicBaseUrl()`) 단일 진입점. Kakao OAuth `redirectTo`,
-  SMS LMS 본문 링크, PortOne redirect URL, 어드민 가입 안내 URL 등 외부 노출 절대 URL 생성에
+  알림톡 버튼 링크 / LMS 본문 링크, PortOne redirect URL, 어드민 가입 안내 URL 등 외부 노출 절대 URL 생성에
   모두 사용. 우선순위: `PUBLIC_BASE_URL` env → 요청 헤더 (`Origin` > `x-forwarded-*` > `host`) 폴백.
   prod / staging 에선 반드시 env 박을 것 (Vercel branch deployment 의 vercel.app URL 누출 방지).
   로컬 dev 는 env 미설정 시 헤더 폴백으로 LAN IP / ngrok 모두 자동 대응. **Supabase Dashboard 의
@@ -84,6 +109,29 @@
 - **Key 패턴**: `proposals/{assignment_id}/{nanoid(16)}.pdf` — assignment 가 경로에 박혀 있어
   forgery 1차 방어 (`isPlanProposalKeyForAssignment`) 가능. submit 단계의 HEAD 가 2차 방어.
 - **Size 한도**: `PROPOSAL_PDF_MAX_BYTES` (default 10MB) — presigned PUT 으론 강제 못 함, HEAD-then-reject 방식.
+
+## S3 버킷 설정 (서비스 컨텐츠 — 이미지/사진 등)
+
+문서 (제안서 PDF) 와는 별도 버킷. 인프라는 [infra/content-bucket/](../../infra/content-bucket/) terraform.
+
+- **버킷명**: `S3_BUCKET_CONTENT` env 로 지정. AWS 권장 namespace 패턴 `<account_id>-<region>-<namespace>`.
+- **접근 모델**: `public_read_prefixes` (현재 `partners/avatar/*`) 만 bucket policy 로 공개 GET 허용 +
+  BlockPublicAccess 켜져 있어 ACL 기반 공개는 차단. 다른 prefix 는 100% private.
+- **공개 URL**: `CONTENT_PUBLIC_BASE_URL` env 설정 시 그 도메인 사용 (CloudFront / 커스텀 도메인),
+  미설정 시 virtual-hosted S3 URL (`<bucket>.s3.<region>.amazonaws.com`) 자동 폴백. CDN 도입 시 env 1줄만 갱신.
+- **IAM 정책**: 위 제안서 버킷 user 와 자격증명 공유 가능 (terraform `iam_user_name` 변수). 동일 prefix-limited 정책.
+- **Key 패턴**: `partners/avatar/{partnerId}/{nanoid(16)}.{jpg|png|webp}` — partnerId 가 경로에 박혀
+  forgery 1차 방어 (`isPartnerAvatarKeyFor`). finalize 단계의 HEAD 가 2차 (`verifyPartnerAvatarObject`).
+- **허용 타입**: `image/jpeg` / `image/png` / `image/webp` 만 — presigned PUT 의 ContentType 강제 + HEAD 재검증.
+- **Size 한도**: `PARTNER_AVATAR_MAX_BYTES` (5MB) — HEAD-then-reject.
+- **객체 메타데이터**: presigned PUT 서명에 `Cache-Control: public, max-age=31536000, immutable` 포함 →
+  클라가 동일 헤더 전송 → S3 가 객체에 저장 → 후속 GET 응답에 그대로 박힘 (브라우저 캐시 1년).
+  키에 nanoid 박혀 immutable URL 이라 안전.
+- **교체 시 구 키 청소**: `setPartnerAvatar` 액션이 DB 갱신 후 best-effort 로 구 객체 DELETE (실패 무시 + 로그).
+  S3 lifecycle 의 orphan cleanup 은 미설정.
+
+새 컨텐츠 도메인 추가 절차: terraform `public_read_prefixes` 에 prefix 추가 → content-storage.ts 에
+`presignXxx` / `verifyXxx` / `isXxxKeyFor` 헬퍼 추가 → action / page 에서 사용.
 
 ## SQS (분석 파이프라인 잡 큐)
 

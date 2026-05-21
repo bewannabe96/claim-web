@@ -409,7 +409,7 @@ pnpm exec tsx scripts/test-credit-concurrency.ts <partnerId> spend    # debt 분
 
 가격 결정은 `PlanRequestPriceTier` (budget 범위별 row, admin 페이지에서 추가/삭제/가격수정) → `PlanRequest.price` 컬럼 snapshot. 자세한 가격 모델은 [domain-glossary.md](domain-glossary.md) 참조. 잔액 부족 시 ledger 가 정상 작성되고 부족분이 `debt` 로 누적되므로 호출자는 별도 분기 처리 불요.
 
-**정책 변경 이력**: 이전엔 가입자 연락 요청 시점 (`requestPlanProposalContact`) 에 파트너 1명에게 전액 차감 (멱등키 `proposal-contact:${proposalId}`). 현재는 보관 기간 만료 cron 이 contactedAt 있는 파트너 N명에게 균등 분할 차감. `requestPlanProposalContact` 는 contactedAt 마킹 + 알림 LMS 만 담당, 차감은 발화하지 않음.
+**정책 변경 이력**: 이전엔 가입자 연락 요청 시점 (`requestPlanProposalContact`) 에 파트너 1명에게 전액 차감 (멱등키 `proposal-contact:${proposalId}`). 현재는 보관 기간 만료 cron 이 contactedAt 있는 파트너 N명에게 균등 분할 차감. `requestPlanProposalContact` 는 contactedAt 마킹 + 알림톡(UI_0738) 발송만 담당, 차감은 발화하지 않음.
 
 ## 8. 후속 작업 (이번 범위 외)
 

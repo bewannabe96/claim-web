@@ -2,9 +2,12 @@ import "server-only";
 
 import { revalidatePath } from "next/cache";
 
-import { sendNotificationLms } from "@/server/aligo";
-import { getServiceName } from "@/server/branding";
+import { sendAlimtalk } from "@/server/aligo";
 import { prisma } from "@/server/db/prisma";
+import {
+  KAKAO_TEMPLATE_ANALYSIS_COMPLETED,
+  buildAnalysisCompletedAlimtalk,
+} from "@/server/kakao-templates";
 import { getPublicBaseUrl } from "@/server/origin";
 
 /**
@@ -17,13 +20,13 @@ import { getPublicBaseUrl } from "@/server/origin";
  *
  * 분기:
  *   - pending 이 1건이라도 남아있으면 no-op (아직 미종결).
- *   - submitted=0 (전부 expired) → `dispatched|analyzing → rematching` (LMS 미발송).
+ *   - submitted=0 (전부 expired) → `dispatched|analyzing → rematching` (알림 미발송).
  *     실제 새 후보 산출 + 재송부 로직은 미구현 (docs/cron-jobs.md 작업 #4) — 가입자
  *     알림은 그 작업과 함께 추가해야 함 ("다시 요청드릴게요" 약속만 보내고 실제 재매칭은
  *     안 일어나는 misleading 상황 회피).
- *   - submitted >= 1 AND submitted === analyzed → `analyzing → completed` + 가입자 LMS.
+ *   - submitted >= 1 AND submitted === analyzed → `analyzing → completed` + 가입자 알림톡 (UI_0741).
  *
- * 알림 발송은 첫 전이 (updateMany count===1) 시점에만 — 멱등 호출 시 중복 LMS 차단.
+ * 알림 발송은 첫 전이 (updateMany count===1) 시점에만 — 멱등 호출 시 중복 알림 차단.
  */
 export async function finalizeRequestStatus(requestId: string): Promise<void> {
   const [total, pending, submitted, analyzed] = await Promise.all([
@@ -46,8 +49,8 @@ export async function finalizeRequestStatus(requestId: string): Promise<void> {
   if (pending > 0) return;
 
   if (submitted === 0) {
-    // 작업 #4 (자동 재매칭) 미구현 — 여기선 status 만 전이. 가입자 LMS ("다시 요청드릴게요")
-    // 는 새 후보 산출 + 재송부가 실제로 일어나는 작업 #4 구현 시 같이 추가.
+    // 작업 #4 (자동 재매칭) 미구현 — 여기선 status 만 전이. 가입자 알림 ("다시 요청드릴게요")
+    // 은 새 후보 산출 + 재송부가 실제로 일어나는 작업 #4 구현 시 같이 추가.
     const transitioned = await prisma.planRequest.updateMany({
       where: { id: requestId, status: { in: ["dispatched", "analyzing"] } },
       data: { status: "rematching" },
@@ -71,7 +74,7 @@ export async function finalizeRequestStatus(requestId: string): Promise<void> {
 }
 
 /**
- * 분석 완료 알림 — 가입자 휴대폰으로 결과 페이지 링크 LMS 발송.
+ * 분석 완료 알림 — 가입자 휴대폰으로 결과 페이지 링크 알림톡 (UI_0741).
  *
  * finalizeRequest 가 consentMessaging=true 를 강제하므로 dispatched 까지 간 모든
  * request 는 수신 동의 완료 상태. phone/resultToken 은 finalize 트랜잭션이 함께 set.
@@ -91,21 +94,25 @@ async function notifyAnalysisCompleted(planRequestId: string): Promise<void> {
   }
 
   const origin = await getPublicBaseUrl();
-  const url = `${origin}/plan-request/result/${request.resultToken}`;
   const customerName = request.name ?? "고객";
-  const msg = [
-    `[${getServiceName()}] ${customerName}님께서 선택하신 파트너님들의 제안서를 Claim AI가 분석했어요:)`,
-    `지금 바로 분석 결과를 확인해보시고 마음에 드는 파트너님께 연락을 요청해보세요!`,
-    ``,
-    url,
-  ].join("\n");
+  const payload = buildAnalysisCompletedAlimtalk({
+    customerName,
+    token: request.resultToken,
+    origin,
+  });
   try {
-    await sendNotificationLms(request.phone, msg);
-  } catch (err) {
-    console.error("[state-transition] completed notification LMS failed", {
-      planRequestId,
-      error: err instanceof Error ? err.message : err,
+    await sendAlimtalk(request.phone, {
+      templateCode: KAKAO_TEMPLATE_ANALYSIS_COMPLETED,
+      ...payload,
     });
+  } catch (err) {
+    console.error(
+      "[state-transition] completed notification alimtalk failed",
+      {
+        planRequestId,
+        error: err instanceof Error ? err.message : err,
+      },
+    );
   }
 }
 

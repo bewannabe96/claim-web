@@ -9,11 +9,10 @@ export const CONTACT_CHANNELS = ["kakao", "sms"] as const;
 export const ContactChannelSchema = z.enum(CONTACT_CHANNELS);
 export type ContactChannel = z.infer<typeof ContactChannelSchema>;
 
-/** LMS 본문에 "...로 연락" 형태로 들어가는 라벨. 조사 (으로 / 로) 포함 — 채널이
- *  두 개로 고정이고 받침 유무도 채널마다 고정이라 동적 분기 대신 매핑에 박음. */
-export const CONTACT_CHANNEL_LABEL_WITH_PARTICLE: Record<ContactChannel, string> = {
-  kakao: "카카오톡으로",
-  sms: "문자로",
+/** 알림톡 본문의 `연락 요청 방법 : {label}` 슬롯에 들어가는 한글 라벨. */
+export const CONTACT_CHANNEL_LABEL: Record<ContactChannel, string> = {
+  kakao: "카카오톡",
+  sms: "문자",
 };
 
 /* ============================================================

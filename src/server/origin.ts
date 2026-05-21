@@ -5,8 +5,8 @@ import { headers } from "next/headers";
 /**
  * 사용자 노출 base URL (scheme + host[:port], trailing slash 없음) 단일 진입점.
  *
- * Kakao OAuth `redirectTo` / 어드민의 가입 URL 안내 / SMS LMS 본문 링크 / PG redirect
- * URL 등 외부 노출 절대 URL 생성에 모두 이걸 사용. 같은 결정 로직이 여러 곳에 흩어지면
+ * Kakao OAuth `redirectTo` / 어드민의 가입 URL 안내 / 알림톡 버튼 링크 / LMS 본문 링크 /
+ * PG redirect URL 등 외부 노출 절대 URL 생성에 모두 이걸 사용. 같은 결정 로직이 여러 곳에 흩어지면
  * 한 곳만 고쳐 다른 곳에서 Supabase 화이트리스트 mismatch (→ Site URL fallback) 같은
  * 사고가 재발.
  *

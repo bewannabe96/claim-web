@@ -229,6 +229,9 @@ model Partner {
   trustMetric        String   @map("trust_metric")
   /// 설계사 자격번호 — 운영자가 등록 시 기입. UNIQUE 제약으로 중복 등록 차단.
   licenseNumber      String   @unique @map("license_number")
+  /// 프로필 사진 S3 key — `partners/avatar/{partnerId}/{nanoid}.{ext}` 형태. nullable (미업로드).
+  /// 공개 GET 허용 prefix 라 URL 은 `<bucket>.s3.<region>.amazonaws.com/<key>` 로 직접 노출.
+  avatarKey          String?  @map("avatar_key")
   active             Boolean  @default(true)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")

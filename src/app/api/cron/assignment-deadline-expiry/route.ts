@@ -17,7 +17,7 @@ import { prisma } from "@/server/db/prisma";
  *   2. status='expired' 로 updateMany (WHERE status='pending' 로 race-safe).
  *   3. 각 설계사에게 마감 안내 LMS (Promise.allSettled — 한 건 실패가 다른 건 막지 않게).
  *   4. 영향받은 requestId 별로 `finalizeRequestStatus` 호출 — 전부 expired 면 rematching,
- *      submitted 가 모두 analyzed 면 completed, 그 외엔 no-op. 가입자 LMS 발송 포함.
+ *      submitted 가 모두 analyzed 면 completed, 그 외엔 no-op. 가입자 알림톡 (UI_0741) 발송 포함.
  *
  * 멱등성: 두 번 호출돼도 같은 결과. updateMany WHERE 가 이미 expired 인 행은 건드리지 않음.
  * finalizeRequestStatus 의 updateMany 도 `WHERE status: { in: [...] }` 로 멱등.

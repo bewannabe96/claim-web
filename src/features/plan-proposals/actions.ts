@@ -6,9 +6,12 @@ import { redirect } from "next/navigation";
 
 import { requireAdminSession } from "@/server/dal";
 import { newId } from "@/lib/id";
-import { sendNotificationLms } from "@/server/aligo";
-import { getServiceName } from "@/server/branding";
+import { sendAlimtalk } from "@/server/aligo";
 import { prisma } from "@/server/db/prisma";
+import {
+  KAKAO_TEMPLATE_CONTACT_REQUEST,
+  buildContactRequestAlimtalk,
+} from "@/server/kakao-templates";
 import {
   fetchObjectSha256,
   isPlanProposalKeyForAssignment,
@@ -18,7 +21,7 @@ import {
 import { publishAnalysisJob } from "@/server/sqs";
 
 import {
-  CONTACT_CHANNEL_LABEL_WITH_PARTICLE,
+  CONTACT_CHANNEL_LABEL,
   ContactChannelSchema,
   PlanProposalSubmissionSchema,
   type ContactChannel,
@@ -164,10 +167,10 @@ export async function submitPlanProposal(
     }),
   ]);
 
-  // TODO: 알림 발송 (1-2) — 첫 제안서 도착 시 가입자에게 LMS ("첫 설계사 제안서
+  // TODO: 알림 발송 (1-2) — 첫 제안서 도착 시 가입자에게 알림 ("첫 설계사 제안서
   // 도착, 결과 페이지에서 미리 보기"). 트리거는 dispatched → analyzing 전이가 1 row
   // 갱신된 호출만 (race-safe). 본문엔 resultToken 기반 결과 페이지 URL.
-  // 우선순위 결정 후 발송 매체 확정.
+  // 우선순위 결정 후 신규 알림톡 템플릿 검수 필요.
 
   // DB commit 후 SQS publish — eightytwo_judge 파이프라인 트리거.
   // proposal.id + plan_request.id 를 metadata 로 실어 보내 콜백이 정확히 이 row 들을
@@ -234,9 +237,9 @@ export async function requestPlanProposalContact(
   });
   if (!request) return { ok: false, error: "not_found" };
 
-  // partner.user.name/phone + request.name/phone 은 마킹 성공 분기의 설계사 알림 LMS
-  // 본문 (양측 이름 + 가입자 연락처) 에 사용. request.settledAt 은 보관 기간 만료
-  // cron 정산 후 늦은 클릭 차단 가드 (사전검사 + 아래 updateMany WHERE).
+  // partner.user.name/phone + request.name/phone 은 마킹 성공 분기의 설계사 알림톡
+  // (UI_0738) 본문 (양측 이름 + 가입자 연락처) 에 사용. request.settledAt 은 보관 기간
+  // 만료 cron 정산 후 늦은 클릭 차단 가드 (사전검사 + 아래 updateMany WHERE).
   const proposal = await prisma.planProposal.findUnique({
     where: { id: proposalId },
     select: {
@@ -261,7 +264,7 @@ export async function requestPlanProposalContact(
   }
 
   // 보관 기간 만료 + cron 정산 완료된 요청에는 늦은 연락요청 차단. stale 결과
-  // 페이지 탭에서 도착하는 클릭이 정산 후 contactedAt 만 set 되어 무상 LMS 발송
+  // 페이지 탭에서 도착하는 클릭이 정산 후 contactedAt 만 set 되어 무상 알림톡 발송
   // 되는 케이스 방지. 사전 검사로 대부분 잡고, 동시 race 의 잔여 윈도우는 아래
   // updateMany WHERE 의 `request.settledAt: null` 조건이 닫음.
   if (proposal.assignment.request.settledAt) {
@@ -276,7 +279,7 @@ export async function requestPlanProposalContact(
   // race-safe 마킹 + 카운터 증가 — 한 트랜잭션. count=0 이면 두 가지 경우:
   //   a) 다른 호출이 먼저 contactedAt 마킹 (legit 멱등)
   //   b) 사전 검사 직후 cron 이 settledAt 마킹 (late race)
-  // 두 케이스 모두 spend/LMS 는 건너뛰는 게 맞고, 응답만 분기하기 위해 transaction
+  // 두 케이스 모두 spend/알림톡은 건너뛰는 게 맞고, 응답만 분기하기 위해 transaction
   // 종료 후 한 번 더 settledAt 확인.
   const { newlyMarked } = await prisma.$transaction(async (tx) => {
     const m = await tx.planProposal.updateMany({
@@ -320,16 +323,19 @@ export async function requestPlanProposalContact(
   });
   // TODO: 알림 발송 (1-5) — 가입자 ack ("설계사에게 연락 요청이 전달되었어요").
   // 우선순위 낮음. 결과 페이지 UI 에서 button disabled 로 즉시 피드백 주고 있어
-  // 별도 LMS 가 필요한지 정책 결정 필요. 발송 매체 미정.
+  // 별도 알림이 필요한지 정책 결정 필요.
 
   revalidatePath(`/plan-request/result/${resultToken}`);
   return { ok: true, alreadyContacted: false };
 }
 
 /**
- * 연락 요청 → 설계사 LMS (2-5). 양측 이름 + 가입자 번호를 본문에 그대로 박아
- * 설계사가 별도 페이지 진입 없이 바로 연락 가능. finalize 가 request.name/phone 을
- * 항상 채우므로 둘 다 누락은 사실상 불가능 — defensive 로만 체크.
+ * 연락 요청 → 설계사 알림톡 (UI_0738). 양측 이름 + 가입자 번호 + 연락 요청 방법을
+ * 본문에 박아 설계사가 별도 페이지 진입 없이 바로 연락 가능. finalize 가
+ * request.name/phone 을 항상 채우므로 둘 다 누락은 사실상 불가능 — defensive 로만 체크.
+ *
+ * `channel` 은 가입자가 결과 페이지 바텀 시트에서 선택한 상담 수단 — 한글 라벨로
+ * 변환되어 알림톡 본문 `*연락 요청 방법 : {label}` 슬롯에 박힘.
  */
 async function notifyPartnerOfContactRequest(args: {
   proposalId: string;
@@ -352,22 +358,20 @@ async function notifyPartnerOfContactRequest(args: {
   }
   const partnerName = args.partnerName ?? "파트너";
   const customerName = args.customerName ?? "고객";
-  const channelLabel = CONTACT_CHANNEL_LABEL_WITH_PARTICLE[args.channel];
-  const msg = [
-    `[${getServiceName()}] ${partnerName} 파트너님,`,
-    `${customerName}님이 파트너님의 설계제안서를 보시고, 연락을 요청하셨어요:)`,
-    ``,
-    `원활한 상담을 위하여 ${customerName}님께서 요청하신 ${channelLabel} 지금 연락해보세요!`,
-    ``,
-    `*전화번호 : ${args.customerPhone}`,
-    ``,
-    `(해당 메시지는 파트너님께서 '연락 요청 알림'을 설정하신 경우 발송됩니다.)`,
-  ].join("\n");
+  const payload = buildContactRequestAlimtalk({
+    partnerName,
+    customerName,
+    customerPhoneNo: args.customerPhone,
+    contactMethod: CONTACT_CHANNEL_LABEL[args.channel],
+  });
   try {
-    await sendNotificationLms(args.partnerPhone, msg);
+    await sendAlimtalk(args.partnerPhone, {
+      templateCode: KAKAO_TEMPLATE_CONTACT_REQUEST,
+      ...payload,
+    });
   } catch (err) {
     console.error(
-      "[requestPlanProposalContact] partner notification LMS failed",
+      "[requestPlanProposalContact] partner notification alimtalk failed",
       {
         proposalId: args.proposalId,
         error: err instanceof Error ? err.message : err,
