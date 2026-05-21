@@ -21,7 +21,8 @@ export function SurrenderLossChart({
   activeId: string;
 }) {
   // 가입 나이 = surrenderLoss 첫 점의 age (adapter: customerAge + elapsed_year 0).
-  const entryAge = proposals[0]?.surrenderLoss[0]?.age ?? 33;
+  // surrenderLoss 전부 비어있는 경우는 아래 두 가드로 차트 자체가 return null — fallback 값은 미관찰.
+  const entryAge = proposals[0]?.surrenderLoss[0]?.age ?? 0;
   const [cursorAge, setCursorAge] = useState<number>(() => entryAge + 1);
   const svgRef = useRef<SVGSVGElement | null>(null);
 

@@ -10,6 +10,7 @@ import {
   type PlanProposalCard,
 } from "@/features/plan-proposals/queries";
 import { getRequestByResultToken } from "@/features/plan-requests/queries";
+import { computeAge } from "@/lib/age";
 import { nowMs } from "@/lib/wall-clock";
 import { getSettings } from "@/server/settings";
 
@@ -92,9 +93,21 @@ export default async function ResultPage({
     ),
   );
 
+  // 가입자 만 나이 (KST 기준). result_token 발급 = finalize 통과 = birthDate 채워짐
+  // 이 invariant. step3 / birthDate 가 비어있다면 데이터 무결성 오류.
+  const birthDate = req.step3?.birthDate;
+  const customerAge = birthDate
+    ? computeAge(birthDate, new Date(nowMs()))
+    : null;
+  if (customerAge == null) {
+    throw new Error(
+      `plan_request ${req.id} has resultToken but missing/invalid birthDate`,
+    );
+  }
+
   // 실 데이터 → 결과 페이지 컴포넌트가 기대하는 PlanProposalData shape 으로 변환.
   const proposals = cards.map((card) =>
-    adaptPlanProposal(card, reportsById[card.proposal.id] ?? null),
+    adaptPlanProposal(card, reportsById[card.proposal.id] ?? null, customerAge),
   );
 
   // 분석 진행 현황 — 분석 안 된 proposal 이 있으면 progress 배지, 모두 완료면 "결과 준비됨".
