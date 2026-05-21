@@ -18,7 +18,10 @@ import {
 import { publishAnalysisJob } from "@/server/sqs";
 
 import {
+  CONTACT_CHANNEL_LABEL_WITH_PARTICLE,
+  ContactChannelSchema,
   PlanProposalSubmissionSchema,
+  type ContactChannel,
   type PresignUploadState,
   type PlanProposalSubmissionInput,
   type PlanProposalSubmissionState,
@@ -189,10 +192,12 @@ export async function submitPlanProposal(
 }
 
 /* ============================================================
- * 연락 요청 — 결과 페이지 "문자 보내기" CTA
+ * 연락 요청 — 결과 페이지 "상담 진행하기" CTA
  *
  * 가입자가 제안서 비교 후 특정 설계사에게 연락을 요청한 시점에 호출. 인증은
  * resultToken (가입자의 일회용 토큰) — 페이지 자체가 토큰 기반이라 액션도 동일.
+ * `channel` 은 가입자가 바텀 시트에서 선택한 상담 수단 (카카오톡 / 문자) — 설계사
+ * LMS 본문에 그대로 박혀 어느 채널로 연락할지 지시.
  *
  * 멱등성: 같은 (resultToken, proposalId) 로 여러 번 호출돼도 카운터는 1 만 올라감.
  * updateMany 의 `contactedAt: null` + `request.settledAt: null` 복합 조건이 0 row 면
@@ -200,10 +205,11 @@ export async function submitPlanProposal(
  * 새로고침으로 button 재활성 케이스 방어 + 정산 후 늦은 클릭 차단 양쪽 커버.
  *
  * 검증:
- *   1. resultToken → plan_request 존재 확인
- *   2. proposalId → assignment.requestId 가 위 plan_request 와 일치
- *   3. request.settledAt 이 NULL (보관 기간 만료 cron 정산 전) — 늦은 클릭 차단
- *   4. proposal.contactedAt 이 NULL 일 때만 set + counter +1 (멱등 + race-safe)
+ *   1. channel → enum 검증 (서버측 zod gate)
+ *   2. resultToken → plan_request 존재 확인
+ *   3. proposalId → assignment.requestId 가 위 plan_request 와 일치
+ *   4. request.settledAt 이 NULL (보관 기간 만료 cron 정산 전) — 늦은 클릭 차단
+ *   5. proposal.contactedAt 이 NULL 일 때만 set + counter +1 (멱등 + race-safe)
  *
  * 과금 분리: 이 시점엔 **차감하지 않음**. 보관 기간 만료 cron 이 contactedAt 있는
  * 파트너 N명에게 PlanRequest.price/N (1000원 단위 반올림) 을 일괄 차감.
@@ -212,12 +218,16 @@ export async function submitPlanProposal(
 
 export type RequestContactResult =
   | { ok: true; alreadyContacted: boolean }
-  | { ok: false; error: "not_found" | "settled" };
+  | { ok: false; error: "not_found" | "settled" | "invalid_channel" };
 
 export async function requestPlanProposalContact(
   resultToken: string,
   proposalId: string,
+  channel: ContactChannel,
 ): Promise<RequestContactResult> {
+  const parsedChannel = ContactChannelSchema.safeParse(channel);
+  if (!parsedChannel.success) return { ok: false, error: "invalid_channel" };
+
   const request = await prisma.planRequest.findFirst({
     where: { resultToken },
     select: { id: true },
@@ -306,6 +316,7 @@ export async function requestPlanProposalContact(
     partnerPhone: proposal.assignment.partner.user.phone,
     customerName: proposal.assignment.request.name,
     customerPhone: proposal.assignment.request.phone,
+    channel: parsedChannel.data,
   });
   // TODO: 알림 발송 (1-5) — 가입자 ack ("설계사에게 연락 요청이 전달되었어요").
   // 우선순위 낮음. 결과 페이지 UI 에서 button disabled 로 즉시 피드백 주고 있어
@@ -326,6 +337,7 @@ async function notifyPartnerOfContactRequest(args: {
   partnerPhone: string | null;
   customerName: string | null;
   customerPhone: string | null;
+  channel: ContactChannel;
 }): Promise<void> {
   if (!args.partnerPhone || !args.customerPhone) {
     console.warn(
@@ -340,11 +352,12 @@ async function notifyPartnerOfContactRequest(args: {
   }
   const partnerName = args.partnerName ?? "파트너";
   const customerName = args.customerName ?? "고객";
+  const channelLabel = CONTACT_CHANNEL_LABEL_WITH_PARTICLE[args.channel];
   const msg = [
     `[${getServiceName()}] ${partnerName} 파트너님,`,
     `${customerName}님이 파트너님의 설계제안서를 보시고, 연락을 요청하셨어요:)`,
     ``,
-    `원활한 상담을 위하여 ${customerName}님께서 요청하신 방법으로 지금 연락해보세요!`,
+    `원활한 상담을 위하여 ${customerName}님께서 요청하신 ${channelLabel} 지금 연락해보세요!`,
     ``,
     `*전화번호 : ${args.customerPhone}`,
     ``,
