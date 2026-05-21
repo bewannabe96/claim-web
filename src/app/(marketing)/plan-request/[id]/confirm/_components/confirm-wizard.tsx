@@ -174,7 +174,7 @@ export function ConfirmWizard({
             placeholder="홍길동"
             value={data.name}
             onChange={(e) => setData((d) => ({ ...d, name: e.target.value }))}
-            className="h-14 px-4 text-base"
+            className="h-14 px-4 text-sm"
             autoComplete="name"
           />
         </Field>
@@ -195,7 +195,7 @@ export function ConfirmWizard({
                   rrnFront: e.target.value.replace(/\D/g, "").slice(0, 6),
                 }))
               }
-              className="h-14 px-4 text-base tracking-wider flex-1"
+              className="h-14 px-4 text-sm tracking-wider flex-1"
               aria-invalid={state?.errors?.rrnFront ? true : undefined}
               autoComplete="off"
             />
@@ -213,7 +213,7 @@ export function ConfirmWizard({
                   rrnBack1: e.target.value.replace(/\D/g, "").slice(0, 1),
                 }))
               }
-              className="h-14 px-3 text-base text-center w-12"
+              className="h-14 px-3 text-sm text-center w-12"
               aria-invalid={state?.errors?.rrnBack1 ? true : undefined}
               autoComplete="off"
             />
@@ -248,7 +248,7 @@ export function ConfirmWizard({
               onChange={(e) =>
                 setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))
               }
-              className="h-14 px-4 text-base tracking-wider flex-1"
+              className="h-14 px-4 text-sm tracking-wider flex-1"
             />
             <button
               type="button"
@@ -290,7 +290,7 @@ export function ConfirmWizard({
                   otpCode: e.target.value.replace(/\D/g, "").slice(0, 6),
                 }))
               }
-              className="h-14 px-4 text-base tracking-[0.4em] text-center"
+              className="h-14 px-4 text-sm tracking-[0.4em] text-center"
               autoFocus
             />
             {state?.errors?.code?.[0] && (
