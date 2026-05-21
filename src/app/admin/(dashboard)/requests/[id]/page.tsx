@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { getPartnerCardsByIds } from "@/features/partners/queries";
 import type { PartnerCard } from "@/features/partners/schema";
+import { PartnerAvatar } from "@/features/partners/ui/partner-avatar";
 import { listAssignmentDetailsForRequest } from "@/features/plan-proposals/queries";
 import {
   type AnalysisError,
@@ -260,7 +261,6 @@ function PartnerProfileCard({
   partner: PartnerCard;
   selected: boolean;
 }) {
-  const initial = partner.name.charAt(0);
   return (
     <li
       className={cn(
@@ -270,14 +270,14 @@ function PartnerProfileCard({
           : "border-[#efefef] bg-white",
       )}
     >
-      <div
-        className={cn(
-          "flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold shrink-0",
-          selected ? "bg-black text-white" : "bg-[#efefef] text-[#4b4b4b]",
-        )}
-      >
-        {initial}
-      </div>
+      <PartnerAvatar
+        name={partner.name}
+        avatarUrl={partner.avatarUrl}
+        className="w-9 h-9 text-sm font-bold"
+        fallbackClassName={
+          selected ? "bg-black text-white" : "bg-[#efefef] text-[#4b4b4b]"
+        }
+      />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-bold text-black truncate">
@@ -306,13 +306,15 @@ function AssignmentItem({
   detail: Awaited<ReturnType<typeof listAssignmentDetailsForRequest>>[number];
 }) {
   const { assignment, partner, proposal } = detail;
-  const initial = partner.name.charAt(0);
 
   return (
     <li className="py-4 flex items-start gap-4">
-      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-black text-white text-sm font-bold shrink-0">
-        {initial}
-      </div>
+      <PartnerAvatar
+        name={partner.name}
+        avatarUrl={partner.avatarUrl}
+        className="w-10 h-10 text-sm font-bold"
+        fallbackClassName="bg-black text-white"
+      />
 
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="flex items-center gap-2 flex-wrap">

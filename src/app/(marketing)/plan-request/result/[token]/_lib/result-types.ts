@@ -54,6 +54,8 @@ export type PlanProposalData = {
     name: string;
     yearsOfExperience: number;
     trustMetric: string;
+    /** 프로필 사진 public URL. 미등록 partner 는 null (이니셜 fallback). */
+    avatarUrl: string | null;
   };
 
   /**
