@@ -10,11 +10,19 @@ import {
 } from "@/features/partners/actions";
 import { cn } from "@/lib/utils";
 
+import { resizeToSquareWebp } from "../_lib/resize-image";
+
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 const ACCEPT = ALLOWED_TYPES.join(",");
 const MAX_BYTES = 5 * 1024 * 1024;
 
-type Phase = "idle" | "presigning" | "uploading" | "finalizing" | "removing";
+type Phase =
+  | "idle"
+  | "processing"
+  | "presigning"
+  | "uploading"
+  | "finalizing"
+  | "removing";
 
 /**
  * 어드민 — 파트너 프로필 사진 업로드 (페이지 헤더 inline 변형).
@@ -22,8 +30,9 @@ type Phase = "idle" | "presigning" | "uploading" | "finalizing" | "removing";
  * 원형 아바타 자체가 click 대상 — file picker 호출. 사진이 있으면 우상단 ✕ 으로
  * 제거. busy 상태는 아바타에 spinner overlay + label. 에러는 아래 row 에 표시.
  *
- * 흐름: presignAvatarUploadForPartner → S3 PUT (Content-Type + Cache-Control) →
- * setPartnerAvatar (HEAD 검증 + DB 갱신). 교체 시 구 키 청소는 서버 best-effort.
+ * 흐름: 브라우저 리사이즈 (300x300 cover-crop + webp) → presignAvatarUploadForPartner →
+ * S3 PUT (Content-Type + Cache-Control) → setPartnerAvatar (HEAD 검증 + DB 갱신).
+ * 교체 시 구 키 청소는 서버 best-effort.
  */
 export function AvatarUpload({
   partnerId,
@@ -41,15 +50,17 @@ export function AvatarUpload({
 
   const pending = phase !== "idle";
   const busyLabel =
-    phase === "presigning"
-      ? "준비"
-      : phase === "uploading"
-        ? "업로드"
-        : phase === "finalizing"
-          ? "저장"
-          : phase === "removing"
-            ? "삭제"
-            : null;
+    phase === "processing"
+      ? "처리"
+      : phase === "presigning"
+        ? "준비"
+        : phase === "uploading"
+          ? "업로드"
+          : phase === "finalizing"
+            ? "저장"
+            : phase === "removing"
+              ? "삭제"
+              : null;
 
   function pickFile() {
     if (pending) return;
@@ -73,8 +84,23 @@ export function AvatarUpload({
     setError(null);
 
     startTransition(async () => {
+      // 브라우저에서 300x300 cover-crop + webp 변환 — 업로드 전 단계. 어떤 입력
+      // 포맷이어도 최종은 image/webp 라서 presign / PUT 도 webp 고정.
+      setPhase("processing");
+      let resized: Blob;
+      try {
+        resized = await resizeToSquareWebp(file);
+      } catch {
+        setPhase("idle");
+        setError("이미지 처리에 실패했어요. 다른 사진으로 시도해주세요.");
+        return;
+      }
+
       setPhase("presigning");
-      const presign = await presignAvatarUploadForPartner(partnerId, ct);
+      const presign = await presignAvatarUploadForPartner(
+        partnerId,
+        "image/webp",
+      );
       if (!presign.ok) {
         setPhase("idle");
         setError(presign.error);
@@ -86,10 +112,10 @@ export function AvatarUpload({
         const putRes = await fetch(presign.url, {
           method: "PUT",
           headers: {
-            "Content-Type": ct,
+            "Content-Type": "image/webp",
             "Cache-Control": presign.cacheControl,
           },
-          body: file,
+          body: resized,
         });
         if (!putRes.ok) {
           setPhase("idle");
