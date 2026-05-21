@@ -3,6 +3,8 @@ import localFont from "next/font/local";
 import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+import { EnvBanner } from "@/components/env-banner";
+
 /**
  * Pretendard 가변(variable) 폰트.
  * 한글 글리프를 포함한 모던 산세리프. 가중치 45–920 지원.
@@ -48,6 +50,7 @@ export default function RootLayout({
        * 결정. body 는 bg + min-height 만 책임.
        */}
       <body className="min-h-full flex flex-col bg-[#efefef]">
+        <EnvBanner />
         {children}
       </body>
     </html>
