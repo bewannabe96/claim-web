@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { PartnerAvatar } from "@/features/partners/ui/partner-avatar";
 import { requestPlanProposalContact } from "@/features/plan-proposals/actions";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import type { ContactChannel } from "@/features/plan-proposals/schema";
@@ -109,16 +110,16 @@ export function ResultView({
                       : "bg-[#efefef] text-black hover:bg-[#e2e2e2]",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold",
+                  <PartnerAvatar
+                    name={p.partner.name}
+                    avatarUrl={p.partner.avatarUrl}
+                    className="w-7 h-7 text-xs font-bold"
+                    fallbackClassName={
                       selected
                         ? "bg-white text-black"
-                        : "bg-black text-white",
-                    )}
-                  >
-                    {p.partner.name.charAt(0)}
-                  </span>
+                        : "bg-black text-white"
+                    }
+                  />
                   {p.partner.name}
                   {!p.analyzed && (
                     <span
@@ -201,9 +202,12 @@ function PlanProposalBody({
         * 카드 와 중복 같지만, 여긴 message-from-partner 톤이고 끝은 프로필/신뢰지표 톤.
         */}
       <div className="mt-6 flex items-start gap-2">
-        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-black text-white text-[11px] font-bold shrink-0">
-          {proposal.partner.name.charAt(0)}
-        </div>
+        <PartnerAvatar
+          name={proposal.partner.name}
+          avatarUrl={proposal.partner.avatarUrl}
+          className="w-8 h-8 text-[11px] font-bold"
+          fallbackClassName="bg-black text-white"
+        />
         <div className="flex-1 min-w-0">
           <p className="text-xs text-[#4b4b4b] mb-1">
             {proposal.partner.name} 설계사
@@ -338,9 +342,12 @@ function PlanProposalBody({
       {/* 설계사 attribution — 본문 끝에서 "이 한줄평의 작성자" 컨텍스트 */}
       <section className="rounded-xl border border-[#efefef] p-5">
         <header className="flex items-start gap-3">
-          <div className="flex items-center justify-center w-12 h-12 rounded-full bg-black text-white text-lg font-bold shrink-0">
-            {proposal.partner.name.charAt(0)}
-          </div>
+          <PartnerAvatar
+            name={proposal.partner.name}
+            avatarUrl={proposal.partner.avatarUrl}
+            className="w-12 h-12 text-lg font-bold"
+            fallbackClassName="bg-black text-white"
+          />
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
               <span className="text-base font-bold text-black">
