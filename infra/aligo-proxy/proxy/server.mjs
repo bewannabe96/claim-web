@@ -3,7 +3,16 @@ import http from 'node:http';
 const HOST = process.env.PROXY_LISTEN_HOST ?? '127.0.0.1';
 const PORT = Number(process.env.PROXY_LISTEN_PORT ?? '8080');
 const SECRET = process.env.PROXY_SHARED_SECRET;
-const ALIGO_BASE = 'https://apis.aligo.in';
+
+// 알리고는 SMS/LMS 와 알림톡이 호스트도 prefix 도 다름.
+//   SMS/LMS  : https://apis.aligo.in/<endpoint>
+//   알림톡    : https://kakaoapi.aligo.in/akv10/alimtalk/<endpoint>
+// 클라이언트 (src/server/aligo.ts) 는 양쪽 모두 `/aligo/...` prefix 로 보내고,
+// 프록시가 path 로 분기해서 올바른 upstream 호스트/경로로 매핑한다.
+const ALIGO_SMS_BASE = 'https://apis.aligo.in';
+const ALIGO_ALIMTALK_BASE = 'https://kakaoapi.aligo.in';
+const ALIMTALK_PREFIX = '/aligo/alimtalk/';
+const ALIGO_PREFIX = '/aligo/';
 
 if (!SECRET) {
   console.error('PROXY_SHARED_SECRET missing — refusing to start');
@@ -24,12 +33,20 @@ const server = http.createServer(async (req, res) => {
     return send(res, 401, { error: 'unauthorized' });
   }
 
-  if (!req.url || !req.url.startsWith('/aligo/')) {
+  if (!req.url || !req.url.startsWith(ALIGO_PREFIX)) {
     return send(res, 404, { error: 'not_found' });
   }
 
-  const upstreamPath = req.url.slice('/aligo'.length);
-  const upstreamUrl = `${ALIGO_BASE}${upstreamPath}`;
+  // 알림톡: /aligo/alimtalk/send/ → https://kakaoapi.aligo.in/akv10/alimtalk/send/
+  // SMS/LMS: /aligo/send/         → https://apis.aligo.in/send/
+  let upstreamUrl;
+  if (req.url.startsWith(ALIMTALK_PREFIX)) {
+    const tail = req.url.slice(ALIMTALK_PREFIX.length);
+    upstreamUrl = `${ALIGO_ALIMTALK_BASE}/akv10/alimtalk/${tail}`;
+  } else {
+    const tail = req.url.slice(ALIGO_PREFIX.length);
+    upstreamUrl = `${ALIGO_SMS_BASE}/${tail}`;
+  }
 
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
