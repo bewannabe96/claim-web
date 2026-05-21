@@ -1,7 +1,6 @@
-import Link from "next/link";
-
 import { BrandMark } from "@/components/brand-mark";
-import { Button } from "@/components/ui/button";
+
+import { LandingCtaButton } from "./_components/landing-cta-button";
 
 /**
  * 마케팅 랜딩 — 가입자(고객) 진입 페이지.
@@ -14,13 +13,18 @@ import { Button } from "@/components/ui/button";
  * (white ↔ #f7f7f7) 과 섹션 라벨 ("01 — Problem") 로만 만든다.
  */
 export default function Home() {
+  // Server Component 에서 env 읽어 client CTA 에 prop drilling — 프로젝트 규약상
+  // NEXT_PUBLIC_ prefix 금지 (.env.example 참조). dev 에선 미설정이므로 undefined
+  // → gtag 발화 스킵 + (marketing) layout 의 <Script> 도 렌더 안 됨.
+  const googleAdsConversionTarget = process.env.GOOGLE_ADS_ID;
+
   return (
     <main className="flex flex-1 flex-col bg-white">
-      <Hero />
+      <Hero googleAdsConversionTarget={googleAdsConversionTarget} />
       <ProblemSection />
       <HowItWorksSection />
       <SolutionSection />
-      <ClosingSection />
+      <ClosingSection googleAdsConversionTarget={googleAdsConversionTarget} />
       <Footer />
     </main>
   );
@@ -30,7 +34,11 @@ export default function Home() {
  * Hero
  * ------------------------------------------------------------------ */
 
-function Hero() {
+function Hero({
+  googleAdsConversionTarget,
+}: {
+  googleAdsConversionTarget?: string;
+}) {
   return (
     <section className="px-6 pt-10 pb-14">
       <BrandMark />
@@ -54,13 +62,12 @@ function Hero() {
       </p>
 
       <div className="mt-10">
-        <Button
-          render={<Link href="/plan-request/new" />}
-          nativeButton={false}
+        <LandingCtaButton
           className="h-14 w-full rounded-full text-base font-medium"
+          googleAdsConversionTarget={googleAdsConversionTarget}
         >
           요청서 작성하고 제안 받기
-        </Button>
+        </LandingCtaButton>
         <p className="mt-3 text-center text-xs text-[#8a8a8a]">
           1분이면 충분해요 · 상담 전화 없음
         </p>
@@ -281,7 +288,11 @@ function SolutionCard({
  * Closing CTA
  * ------------------------------------------------------------------ */
 
-function ClosingSection() {
+function ClosingSection({
+  googleAdsConversionTarget,
+}: {
+  googleAdsConversionTarget?: string;
+}) {
   return (
     <section className="border-t border-[#ececec] bg-black px-6 pt-16 pb-16 text-white">
       <h2 className="text-[1.75rem] font-bold leading-[1.25] tracking-tight">
@@ -296,14 +307,13 @@ function ClosingSection() {
       </p>
 
       <div className="mt-10">
-        <Button
-          render={<Link href="/plan-request/new" />}
-          nativeButton={false}
+        <LandingCtaButton
           variant="secondary"
           className="h-14 w-full rounded-full bg-white text-base font-medium text-black hover:bg-[#e2e2e2]"
+          googleAdsConversionTarget={googleAdsConversionTarget}
         >
           요청서 작성하고 제안 받기
-        </Button>
+        </LandingCtaButton>
         <p className="mt-3 text-center text-xs text-[#8a8a8a]">
           1분이면 충분해요 · 상담 전화 없음
         </p>
