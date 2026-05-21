@@ -1,3 +1,8 @@
+output "environment" {
+  description = "현재 적용된 환경 식별자 (var.environment = terraform.workspace)."
+  value       = var.environment
+}
+
 output "bucket_name" {
   description = <<-EOT
     실제 적용된 버킷명 (`<account_id>-<region>-<namespace>` 패턴).
@@ -7,8 +12,13 @@ output "bucket_name" {
 }
 
 output "bucket_arn" {
-  description = "버킷 ARN (cross-account share / 추가 정책 attach 용)"
+  description = "버킷 ARN. 외부 IAM 정책 (Resource: \"<bucket_arn>/<prefix>*\") 작성에 필요."
   value       = aws_s3_bucket.content.arn
+}
+
+output "bucket_region" {
+  description = "버킷이 생성된 region."
+  value       = data.aws_region.current.name
 }
 
 output "public_base_url" {
@@ -17,44 +27,45 @@ output "public_base_url" {
     예: 키 `partners/avatar/abc/xyz.jpg` 는 `<public_base_url>/partners/avatar/abc/xyz.jpg`.
     CloudFront 얹는 시점에 이 값을 도메인으로 교체.
   EOT
-  value       = "https://${aws_s3_bucket.content.bucket}.s3.${var.aws_region}.amazonaws.com"
+  value       = "https://${aws_s3_bucket.content.bucket}.s3.${data.aws_region.current.name}.amazonaws.com"
 }
 
-output "iam_user_name" {
-  description = "정책이 attach 된 IAM user. 신규 생성됐으면 새 이름, 기존 user 재사용했으면 var 그대로."
-  value       = local.iam_user_name
+output "public_read_prefixes" {
+  description = "공개 GET 허용 prefix 목록 (passthrough)."
+  value       = var.public_read_prefixes
 }
 
-output "iam_access_key_id" {
-  description = "신규 IAM user 의 access key id. 기존 user 재사용 시 빈 문자열."
-  value       = local.create_iam_user ? aws_iam_access_key.content[0].id : ""
-}
-
-output "iam_secret_access_key" {
+output "app_object_resource_arns" {
   description = <<-EOT
-    신규 IAM user 의 secret. 기존 user 재사용 시 빈 문자열.
-    `terraform output -raw iam_secret_access_key` 로 1회 추출 후 Vercel env 에 박을 것.
-    state 에 평문 저장되므로 backend 암호화 필수.
+    외부 IAM 정책 Resource 필드에 그대로 넣을 ARN 목록.
+    public_read_prefixes 의 각 prefix 마다 `<bucket_arn>/<prefix>*` 형태.
   EOT
-  value       = local.create_iam_user ? aws_iam_access_key.content[0].secret : ""
-  sensitive   = true
+  value       = local.public_read_resources
 }
 
 output "next_steps" {
   description = "셋업 후 다음 단계 안내"
   value       = <<-EOT
 
-    ✓ Bucket: ${aws_s3_bucket.content.bucket} (${var.aws_region})
-    ✓ Public base URL: https://${aws_s3_bucket.content.bucket}.s3.${var.aws_region}.amazonaws.com
+    ✓ Environment: ${var.environment} (workspace: ${terraform.workspace})
+    ✓ Bucket: ${aws_s3_bucket.content.bucket} (${data.aws_region.current.name})
+    ✓ Public base URL: https://${aws_s3_bucket.content.bucket}.s3.${data.aws_region.current.name}.amazonaws.com
     ✓ Public read prefixes: ${join(", ", var.public_read_prefixes)}
-    ✓ IAM user: ${local.iam_user_name}${local.create_iam_user ? " (신규 생성)" : " (기존 user 재사용)"}
+    ✓ CORS origins: ${join(", ", var.cors_allowed_origins)}
 
     다음 단계:
-      1) Vercel env 등록:
+      1) 외부에서 IAM user / policy 생성 (이 stack 범위 외):
+           Resource 에 다음 ARN 사용 ↓
+${join("\n", [for r in local.public_read_resources : "             - ${r}"])}
+           Action: s3:PutObject / s3:GetObject / s3:HeadObject / s3:DeleteObject
+
+      2) Vercel env 등록 (${var.environment} scope):
            S3_BUCKET_CONTENT=${aws_s3_bucket.content.bucket}
-${local.create_iam_user ? "           AWS_ACCESS_KEY_ID=<terraform output -raw iam_access_key_id>\n           AWS_SECRET_ACCESS_KEY=<terraform output -raw iam_secret_access_key>\n         (기존 제안서 버킷 user 와 분리됐다면 별도 키 필요 — 통합하려면 iam_user_name 변수에 기존 user 명 지정 후 destroy/apply)" : "           AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY 는 기존 user (${local.iam_user_name}) 의 키 그대로 사용"}
-           AWS_REGION=${var.aws_region}
-      2) Custom origin 추가 시 var.cors_allowed_origins 갱신 후 `terraform apply`.
-      3) 새 컨텐츠 prefix 추가 시 var.public_read_prefixes 에 prefix 추가 (앱 코드 키 컨벤션도 동기).
+           AWS_REGION=${data.aws_region.current.name}
+           AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY 는 위 1) 의 IAM user 키 사용
+
+      3) 다른 환경 작업하려면:
+           terraform workspace select <env>
+           terraform apply -var-file=<env>.tfvars
   EOT
 }
