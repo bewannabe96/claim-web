@@ -1,5 +1,6 @@
 import type {
   Partner as PrismaPartner,
+  PartnerCreditBalance as PrismaPartnerCreditBalance,
   PartnerSignupInvitation as PrismaPartnerSignupInvitation,
   PartnerAssignmentStats as PrismaPartnerAssignmentStats,
   User as PrismaUser,
@@ -7,22 +8,24 @@ import type {
 import { z } from "zod";
 
 /**
- * Partner = User (공통 정보) + Partner (설계사 추가 정보) + 배정 카운터 (1:1) 의 조인 뷰.
+ * Partner = User (공통 정보) + Partner (설계사 추가 정보) + 배정 카운터 (1:1) +
+ * 크레딧 잔액 (1:1) 의 조인 뷰.
  *
  * 가입자 노출: user.name, bio, yearsOfExperience, trustMetric
- * 후보 산출 사용 : assignmentStats.selectedCount (정렬 키), assignmentStats.exposureCount (isNew 판정)
- * 운영 사용 : user.email (로그인), user.phone (알림톡), active, licenseNumber
+ * 후보 산출 사용 : assignmentStats.selectedCount (정렬 키), assignmentStats.exposureCount (isNew 판정), creditBalance.balance (자격 필터)
+ * 운영 사용 : user.email (로그인), user.phone (알림톡), active, licenseNumber, creditBalance (잔액/부채 노출)
  *
  * Prisma 모델은 1:1 분리 (PK 공유) — 타입은 query 가 include 로 묶어서 노출.
  * 도메인 코드는 항상 이 결합형을 사용 (raw Prisma 모델 노출 X).
  *
- * `assignmentStats` 는 가입 트랜잭션 + 시더 백필이 eager-create 하므로 정상 흐름에서
- * non-null. 그러나 Prisma 의 1:1 optional 관계 타입은 항상 nullable — 호출자는
- * `?? 0` 폴백으로 레거시 partner 를 안전하게 처리.
+ * `assignmentStats` / `creditBalance` 둘 다 가입 트랜잭션 + 시더 백필이 eager-create
+ * 하므로 정상 흐름에서 non-null. 그러나 Prisma 의 1:1 optional 관계 타입은 항상
+ * nullable — 호출자는 `?? 0` 폴백으로 레거시 partner 를 안전하게 처리.
  */
 export type Partner = PrismaPartner & {
   user: Pick<PrismaUser, "id" | "email" | "name" | "phone">;
   assignmentStats: PrismaPartnerAssignmentStats | null;
+  creditBalance: Pick<PrismaPartnerCreditBalance, "balance" | "debt"> | null;
 };
 
 /**

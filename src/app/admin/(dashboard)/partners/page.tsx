@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { formatKrw } from "@/features/credits/ui/credit-balance-card";
 import {
   listAllPartners,
   listPartnerSignupInvitations,
@@ -27,6 +28,7 @@ const PARTNER_COLUMNS = [
   { key: "exposure", label: "노출", align: "right" as const },
   { key: "selected", label: "제안서", align: "right" as const },
   { key: "contacted", label: "연락", align: "right" as const },
+  { key: "credit", label: "크레딧", align: "right" as const },
   { key: "active", label: "상태", align: "center" as const },
 ];
 
@@ -170,6 +172,18 @@ export default async function AdminPartnersPage() {
                 <Td align="right">
                   <span className="text-sm text-black tabular-nums">
                     {a.assignmentStats?.contactedCount ?? 0}
+                  </span>
+                </Td>
+                <Td align="right">
+                  <span className="flex flex-col items-end gap-0.5">
+                    <span className="text-sm text-black tabular-nums">
+                      {formatKrw(a.creditBalance?.balance ?? 0)}원
+                    </span>
+                    {(a.creditBalance?.debt ?? 0) > 0 && (
+                      <span className="text-[11px] font-medium text-red-600 tabular-nums">
+                        부채 {formatKrw(a.creditBalance!.debt)}원
+                      </span>
+                    )}
                   </span>
                 </Td>
                 <Td align="center">
