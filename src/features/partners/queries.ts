@@ -42,10 +42,7 @@ export async function findAssignmentCandidates(
       active: true,
       creditBalance: { balance: { gte: requestPrice } },
     },
-    include: {
-      ...PARTNER_INCLUDE,
-      creditBalance: { select: { balance: true } },
-    },
+    include: PARTNER_INCLUDE,
     orderBy: { assignmentStats: { selectedCount: "asc" } },
   });
 
