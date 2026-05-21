@@ -45,9 +45,16 @@ export function RoiChart({
   onScenarioChange: (id: string, isMore: boolean) => void;
   activeId: string;
 }) {
-  // 인터랙티브 cursor — 기본은 가입 나이 (33세). 사용자가 그래프 위를 호버/
-  // 터치하면 x 위치를 나이로 환산. 그래프 위 풀이 phrase 가 함께 갱신.
-  const [cursorAge, setCursorAge] = useState<number>(33);
+  // 인터랙티브 cursor — 기본은 가입 나이 (= 가입자의 현재 만 나이). 사용자가 그래프
+  // 위를 호버/터치하면 x 위치를 나이로 환산. 그래프 위 풀이 phrase 가 함께 갱신.
+  // ROI 시리즈의 첫 점이 가입 시점이므로 거기서 derive. allValues 가 비어있는 경우
+  // 차트 자체가 return null 이라 fallback 값은 관찰되지 않음 — 0 placeholder.
+  const [cursorAge, setCursorAge] = useState<number>(
+    () =>
+      proposals
+        .flatMap((p) => Object.values(p.roi))
+        .find((series) => series.length > 0)?.[0]?.age ?? 0,
+  );
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   if (proposals.length === 0 || scenarios.length === 0) return null;

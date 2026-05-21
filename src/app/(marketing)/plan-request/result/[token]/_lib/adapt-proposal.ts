@@ -21,13 +21,10 @@ import type { CoverageItem, PlanProposalData, RoiPoint } from "./result-types";
  * CoveragePanel 이 활성 시나리오의 담보 breakdown 표시에 사용.
  * ============================================================ */
 
-/** mock fixture 와 동일한 가입자 나이 기준 — plan_request 에 birthdate 컬럼 도입 시 교체. */
-const DEFAULT_CUSTOMER_AGE = 33;
-
 export function adaptPlanProposal(
   card: PlanProposalCard,
   report: AnalysisReportV5 | null,
-  customerAge: number = DEFAULT_CUSTOMER_AGE,
+  customerAge: number,
 ): PlanProposalData {
   const { proposal, partner } = card;
   const analyzed = proposal.analyzedAt != null;
