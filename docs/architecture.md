@@ -417,10 +417,10 @@ partner 는 admin 처럼 사전 등록되지 않고 어드민이 발급한 **일
 - **Kakao Developers**: "카카오계정(이메일)" 동의항목 필수 (`?error=no_email` 방지). Kakao 자체는 전화번호를 제공하지 않으므로 phone scope 는 불필요 — phone 검증은 휴대폰 OTP 가 책임.
 - **알리고 SMS / 알림톡 / LMS**: env `ALIGO_KEY` / `ALIGO_USER_ID` / `ALIGO_SENDER` / `ALIGO_KAKAO_SENDER_KEY` / `ALIGO_TEST_MODE`. `server/aligo.ts` 가 세 export 제공:
   - `sendOtpSms` — 휴대폰 OTP SMS. 마케팅 요청서 본인인증 + 설계사 가입 본인인증 공용.
-  - `sendAlimtalk(receiver, { templateCode, subject, message, button?, failover? })` — 카카오 알림톡. 본인인증 이외 모든 사용자 알림(분석 완료 → 가입자, 신규 배정 → 설계사, 연락 요청 → 설계사)의 기본 발송 채널. 본문/버튼은 알리고 콘솔 검수본과 1바이트라도 다르면 거부 — [server/kakao-templates.ts](../src/server/kakao-templates.ts) 가 검수본의 단일 미러.
+  - `sendAlimtalk(receiver, templateCode, variables)` — 카카오 알림톡. 본인인증 이외 모든 사용자 알림(분석 완료 → 가입자, 신규 배정 → 설계사, 연락 요청 → 설계사)의 기본 발송 채널. 알리고 콘솔의 검수 템플릿을 `template/list` 로 런타임에 가져와 `#{변수}` 만 치환해 발송 — 코드가 본문을 미러링하지 않으므로 byte-mismatch 거부가 원천 차단됨. 도메인 데이터 → 변수맵 변환은 [server/kakao-templates.ts](../src/server/kakao-templates.ts) 의 typed 빌더.
   - `sendNotificationLms` — URL 포함 LMS. 알림톡 검수 미적용 시나리오(현재는 마감 안내 cron) 폴백.
 
-  dev 에선 `ALIGO_TEST_MODE=Y` → OTP 는 코드 "000000" 고정 + 발송 생략, 알림톡/LMS 는 함수 내부 console.log 만. 운영 (Vercel) 에선 egress IP 가 동적이라 알리고 whitelist 통과 불가 → `ALIGO_PROXY_URL` + `ALIGO_PROXY_SECRET` 으로 고정 IP 프록시 경유 ([infra/aligo-proxy/](../infra/aligo-proxy/) — Lightsail + Caddy + Node forward proxy). 프록시는 SMS/LMS (`/aligo/send/`) + 알림톡 (`/aligo/alimtalk/send/`) 두 경로 모두 라우팅.
+  dev 에선 `ALIGO_TEST_MODE=Y` → OTP 는 코드 "000000" 고정 + 발송 생략, 알림톡/LMS 는 함수 내부 console.log 만. 운영 (Vercel) 에선 egress IP 가 동적이라 알리고 whitelist 통과 불가 → `ALIGO_PROXY_URL` + `ALIGO_PROXY_SECRET` 으로 고정 IP 프록시 경유 ([infra/aligo-proxy/](../infra/aligo-proxy/) — Lightsail + Caddy + Node forward proxy). 프록시는 SMS/LMS (`/aligo/send/`) + 알림톡 발송 (`/aligo/alimtalk/send/`) + 검수 템플릿 조회 (`/aligo/template/list/`) 경로를 라우팅.
 - **Redis**: 백엔드 자동 선택 (`src/server/redis.ts`) — `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` 있으면 Upstash REST (prod / serverless), 그 외 `REDIS_URL` 로 ioredis (로컬 Docker). OTP 코드 (`otp:partner-signup:{invitationId}`, EX 180s) + IP 발송 시도 카운터 (`otp:rl:{ip}`, EX 3600s, 마케팅과 카운터 공유) 보관. 카운터는 `OTP_RATE_LIMIT_DISABLED=Y` env 로 우회 가능 (load test / 스테이징).
 
 **경로 은닉 (admin 만, defense in depth, optional)** — `ADMIN_KNOCK_PATH` env 가 설정되면 middleware 가:
