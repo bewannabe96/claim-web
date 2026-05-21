@@ -65,7 +65,7 @@ admin/
 └─ (dashboard)/                  # route group — 모든 인증 영역
    ├─ layout.tsx                 # requireAdminSession + top bar + nav + 로그아웃 form
    ├─ page.tsx                   # 대시보드 홈
-   ├─ requests/...               # 요청 모니터링 (상세 페이지에서 분석 실패도 인라인 노출)
+   ├─ requests/...               # 요청 모니터링 (상세 페이지에서 분석 실패/정체도 인라인 재시도)
    ├─ analysis-failures/page.tsx # 미해결 분석 실패 모니터링 + 재시도
    ├─ partners/...               # 설계사 풀 관리 (가입 초청 발급 + 등록된 partner 편집)
    │  ├─ page.tsx                # 가입 대기 (invitation) + 등록 완료 (partner) 2-섹션 리스트
