@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   listAllPartners,
   listPartnerSignupInvitations,
@@ -9,11 +9,14 @@ import {
 import { cn } from "@/lib/utils";
 import { nowMs } from "@/lib/wall-clock";
 
+import { formatDate } from "../_lib/format";
 import {
+  Badge,
   Card,
-  CardHeader,
   DataTable,
+  Empty,
   PageHeader,
+  Section,
   Td,
 } from "../_components/page-shell";
 
@@ -21,10 +24,10 @@ const PARTNER_COLUMNS = [
   { key: "name", label: "설계사" },
   { key: "bio", label: "소개" },
   { key: "experience", label: "경력", align: "right" as const },
-  { key: "exposure", label: "누적 노출", align: "right" as const },
-  { key: "selected", label: "제안서 요청", align: "right" as const },
-  { key: "contacted", label: "연락 요청", align: "right" as const },
-  { key: "active", label: "활성", align: "center" as const },
+  { key: "exposure", label: "노출", align: "right" as const },
+  { key: "selected", label: "제안서", align: "right" as const },
+  { key: "contacted", label: "연락", align: "right" as const },
+  { key: "active", label: "상태", align: "center" as const },
 ];
 
 const INVITATION_COLUMNS = [
@@ -52,27 +55,18 @@ export default async function AdminPartnersPage() {
         title="설계사 풀"
         description={`등록 ${partners.length}명 · 활성 ${active}명 · 가입 대기 ${invitations.length}건`}
         action={
-          <Link
-            href="/admin/partners/new"
-            className={cn(buttonVariants(), "h-10 rounded-full px-5 text-sm")}
+          <Button
+            render={<Link href="/admin/partners/new" />}
+            nativeButton={false}
+            className="h-10 rounded-full px-5 text-sm"
           >
-            신규 설계사 초청
-          </Link>
+            신규 초청
+          </Button>
         }
       />
 
-      <Card>
-        <CardHeader
-          title="가입 대기 (초청 발급됨)"
-          meta={
-            invitations.length === 0 ? "없음" : `${invitations.length}건`
-          }
-        />
-        {invitations.length === 0 ? (
-          <p className="py-6 text-sm text-[#afafaf] text-center">
-            발급된 가입 초청이 없어요.
-          </p>
-        ) : (
+      {invitations.length > 0 && (
+        <Section title="가입 대기" description="발급된 초청 토큰 — 가입 완료 시 풀로 이동">
           <DataTable columns={INVITATION_COLUMNS}>
             {invitations.map((inv) => {
               const expired = inv.expiresAt.getTime() < now;
@@ -90,7 +84,9 @@ export default async function AdminPartnersPage() {
                     </Link>
                   </Td>
                   <Td>
-                    <span className="text-sm text-[#4b4b4b]">{inv.phone}</span>
+                    <span className="text-sm text-[#4b4b4b] tabular-nums">
+                      {inv.phone}
+                    </span>
                   </Td>
                   <Td>
                     <span className="text-xs text-[#4b4b4b]">
@@ -100,15 +96,17 @@ export default async function AdminPartnersPage() {
                   <Td align="right">
                     <span
                       className={cn(
-                        "text-xs",
-                        expired ? "text-red-600 font-medium" : "text-[#4b4b4b]",
+                        "text-xs tabular-nums",
+                        expired
+                          ? "text-red-600 font-medium"
+                          : "text-[#4b4b4b]",
                       )}
                     >
                       {expired ? "만료됨" : formatDate(inv.expiresAt)}
                     </span>
                   </Td>
                   <Td align="right">
-                    <span className="text-xs text-[#4b4b4b]">
+                    <span className="text-xs text-[#4b4b4b] tabular-nums">
                       {formatDate(inv.createdAt)}
                     </span>
                   </Td>
@@ -116,79 +114,76 @@ export default async function AdminPartnersPage() {
               );
             })}
           </DataTable>
-        )}
-      </Card>
+        </Section>
+      )}
 
-      <DataTable columns={PARTNER_COLUMNS}>
-        {partners.map((a) => (
-          <tr key={a.id} className="hover:bg-[#fafafa] transition-colors">
-            <Td>
-              <Link
-                href={`/admin/partners/${a.id}`}
-                className="flex items-center gap-3 group"
+      <Section title="등록된 설계사">
+        {partners.length === 0 ? (
+          <Card>
+            <Empty>등록된 설계사가 없어요</Empty>
+          </Card>
+        ) : (
+          <DataTable columns={PARTNER_COLUMNS}>
+            {partners.map((a) => (
+              <tr
+                key={a.id}
+                className="hover:bg-[#fafafa] transition-colors"
               >
-                <span className="flex items-center justify-center w-9 h-9 rounded-full bg-black text-white text-sm font-bold shrink-0">
-                  {a.user.name.charAt(0)}
-                </span>
-                <span className="flex flex-col gap-0.5 min-w-0">
-                  <span className="text-sm font-medium text-black group-hover:underline truncate">
-                    {a.user.name}
+                <Td>
+                  <Link
+                    href={`/admin/partners/${a.id}`}
+                    className="flex items-center gap-3 group"
+                  >
+                    <span className="flex items-center justify-center w-9 h-9 rounded-full bg-black text-white text-sm font-bold shrink-0">
+                      {a.user.name.charAt(0)}
+                    </span>
+                    <span className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-sm font-medium text-black group-hover:underline truncate">
+                        {a.user.name}
+                      </span>
+                      <span className="text-xs text-[#afafaf] truncate">
+                        {a.user.phone ?? a.user.email}
+                      </span>
+                    </span>
+                  </Link>
+                </Td>
+                <Td>
+                  <span className="text-xs text-[#4b4b4b] line-clamp-1 max-w-[280px] block">
+                    {a.bio}
                   </span>
-                  <span className="text-xs text-[#4b4b4b] truncate">
-                    {a.user.phone ?? a.user.email}
+                </Td>
+                <Td align="right">
+                  <span className="text-sm text-black tabular-nums">
+                    {a.yearsOfExperience}년
                   </span>
-                </span>
-              </Link>
-            </Td>
-            <Td>
-              <span className="text-xs text-[#4b4b4b] line-clamp-1 max-w-[280px] block">
-                {a.bio}
-              </span>
-            </Td>
-            <Td align="right">
-              <span className="text-sm text-black">
-                {a.yearsOfExperience}년
-              </span>
-            </Td>
-            <Td align="right">
-              <span className="text-sm text-black">
-                {a.assignmentStats?.exposureCount ?? 0}회
-              </span>
-            </Td>
-            <Td align="right">
-              <span className="text-sm text-black">
-                {a.assignmentStats?.selectedCount ?? 0}회
-              </span>
-            </Td>
-            <Td align="right">
-              <span className="text-sm text-black">
-                {a.assignmentStats?.contactedCount ?? 0}회
-              </span>
-            </Td>
-            <Td align="center">
-              <span
-                className={cn(
-                  "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium",
-                  a.active
-                    ? "bg-black text-white"
-                    : "bg-[#efefef] text-[#4b4b4b]",
-                )}
-              >
-                {a.active ? "활성" : "비활성"}
-              </span>
-            </Td>
-          </tr>
-        ))}
-      </DataTable>
+                </Td>
+                <Td align="right">
+                  <span className="text-sm text-black tabular-nums">
+                    {a.assignmentStats?.exposureCount ?? 0}
+                  </span>
+                </Td>
+                <Td align="right">
+                  <span className="text-sm text-black tabular-nums">
+                    {a.assignmentStats?.selectedCount ?? 0}
+                  </span>
+                </Td>
+                <Td align="right">
+                  <span className="text-sm text-black tabular-nums">
+                    {a.assignmentStats?.contactedCount ?? 0}
+                  </span>
+                </Td>
+                <Td align="center">
+                  {a.active ? (
+                    <Badge tone="solid">활성</Badge>
+                  ) : (
+                    <Badge tone="neutral">비활성</Badge>
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </DataTable>
+        )}
+      </Section>
     </div>
   );
-}
-
-function formatDate(d: Date): string {
-  const yy = String(d.getFullYear()).slice(2);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${yy}.${mm}.${dd} ${hh}:${mi}`;
 }

@@ -7,24 +7,10 @@ import { Input } from "@/components/ui/input";
 import { saveAllPriceTiers } from "@/features/plan-request-pricing/actions";
 import type { PriceTier } from "@/features/plan-request-pricing/schema";
 
+import { Banner, Card } from "../_components/page-shell";
+
 /**
  * 가격 tier 일괄 편집 — 모든 row 한 form, 한 액션으로 atomic 저장.
- *
- * 데이터 모델 결정:
- *   - 비중첩 + 연속 구간이라는 제약은 본질적으로 boundary 모델. row i 의 max 와
- *     row i+1 의 min 이 같은 boundary 라는 사실을 UI 가 직접 표현하므로 사용자는
- *     사이 boundary 만 N-1 개 입력. 첫 row 의 min=0, 마지막 row 의 max=∞ 는
- *     자동.
- *   - 입력은 만원 단위. 원 환산은 server action 에서.
- *
- * UX 결정:
- *   - row 헤더의 "5~10만원" 라이브 라벨이 인접 boundary 와 가격을 동시에 식별
- *     해주므로, 입력 칸의 라벨/outline 은 모두 제거. placeholder + "만원" suffix
- *     로 식별.
- *   - 저장 시 클라이언트가 boundary 오름차순으로 정렬 → 사용자는 입력 순서를
- *     신경쓰지 않아도 됨.
- *   - 부모 page 에 key 가 걸려 있어 server action 성공 후 revalidate 로 새 prop
- *     이 흘러올 때 컴포넌트가 remount, useState 의 stale draft 가 자동 폐기.
  */
 
 const MAX_TIERS = 20;
@@ -77,25 +63,22 @@ export function PricingForm({ tiers }: { tiers: PriceTier[] }) {
     <form action={formAction} className="flex flex-col gap-5">
       <input type="hidden" name="payload" value={payloadJson} />
 
-      <p className="text-xs text-[#4b4b4b]">
-        만원 단위로 입력. 저장 시 전체 구간을 한 번에 갈아끼워요 — 진행 중 요청은
-        snapshot 으로 보존돼요.
-      </p>
-
-      <div className="flex flex-col">
-        {rows.map((row, i) => (
-          <TierRow
-            key={i}
-            index={i}
-            row={row}
-            isLast={i === rows.length - 1}
-            minManwon={i === 0 ? 0 : numericOr(rows[i - 1].budgetMaxManwon, 0)}
-            canDelete={rows.length > 1}
-            onChange={(patch) => updateRow(i, patch)}
-            onRemove={() => removeRow(i)}
-          />
-        ))}
-      </div>
+      <Card padding="none">
+        <div className="divide-y divide-[#efefef]">
+          {rows.map((row, i) => (
+            <TierRow
+              key={i}
+              index={i}
+              row={row}
+              isLast={i === rows.length - 1}
+              minManwon={i === 0 ? 0 : numericOr(rows[i - 1].budgetMaxManwon, 0)}
+              canDelete={rows.length > 1}
+              onChange={(patch) => updateRow(i, patch)}
+              onRemove={() => removeRow(i)}
+            />
+          ))}
+        </div>
+      </Card>
 
       <button
         type="button"
@@ -107,20 +90,16 @@ export function PricingForm({ tiers }: { tiers: PriceTier[] }) {
       </button>
 
       {errors?._form && errors._form.length > 0 && (
-        <ul className="flex flex-col gap-1 rounded-lg bg-red-50 p-3 text-xs text-red-600">
+        <ul className="flex flex-col gap-1 rounded-lg border border-red-100 bg-red-50 p-3 text-xs text-red-700">
           {errors._form.map((m, i) => (
             <li key={i}>{m}</li>
           ))}
         </ul>
       )}
 
-      {success && (
-        <p className="text-xs text-black">
-          저장되었습니다. 다음 신규 요청부터 적용돼요.
-        </p>
-      )}
+      {success && <Banner tone="success">저장되었습니다. 다음 신규 요청부터 적용돼요.</Banner>}
 
-      <div className="flex items-center justify-end gap-3 pt-2">
+      <div className="flex items-center justify-end gap-3">
         {isDirty && !pending && (
           <button
             type="button"
@@ -133,7 +112,7 @@ export function PricingForm({ tiers }: { tiers: PriceTier[] }) {
         <Button
           type="submit"
           disabled={pending || !isDirty}
-          className="h-11 rounded-full px-6 text-sm font-medium"
+          className="h-11 rounded-full px-8 text-sm font-medium"
         >
           {pending ? "저장 중..." : "전체 저장"}
         </Button>
@@ -168,13 +147,13 @@ function TierRow({
   const label = buildRowLabel(minManwon, maxManwonNum, isLast);
 
   return (
-    <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-3 border-b border-[#f4f4f4] py-3 last:border-b-0">
-      <span className="w-5 text-xs tabular-nums text-[#afafaf]">
-        {index + 1}
-      </span>
+    <div className="grid grid-cols-[24px_1fr_auto_auto_auto] items-center gap-3 px-5 py-3">
+      <span className="text-xs tabular-nums text-[#afafaf]">{index + 1}</span>
       <p
         className={
-          invalid ? "text-sm font-medium text-red-600" : "text-sm font-medium text-black"
+          invalid
+            ? "text-sm font-medium text-red-600"
+            : "text-sm font-medium text-black"
         }
       >
         {label}
@@ -235,7 +214,7 @@ function ManwonInput({
         placeholder={placeholder}
         className="h-10 pr-10 text-right tabular-nums"
       />
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#9c9c9c]">
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#afafaf]">
         만원
       </span>
     </div>

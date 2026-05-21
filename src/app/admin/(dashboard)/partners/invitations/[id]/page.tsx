@@ -11,8 +11,11 @@ import {
   BackLink,
   Card,
   CardHeader,
+  Field,
   PageHeader,
+  Section,
 } from "../../../_components/page-shell";
+import { formatDateTimeFull } from "../../../_lib/format";
 import { CopyLink } from "./_components/copy-link";
 import { InvitationActions } from "./_components/invitation-actions";
 
@@ -63,38 +66,40 @@ export default async function AdminPartnerSignupInvitationDetailPage({
           }
         />
         {consumed ? (
-          <p className="py-4 text-sm text-[#4b4b4b]">
+          <p className="py-2 text-sm text-[#4b4b4b]">
             이 초청은 가입 완료되어 더 이상 사용할 수 없어요.
-            설계사 정보는{" "}
             {invitation.consumedUserId && (
-              <Link
-                href={`/admin/partners/${invitation.consumedUserId}`}
-                className="font-medium text-black hover:underline"
-              >
-                상세 페이지
-              </Link>
+              <>
+                {" "}
+                설계사 정보는{" "}
+                <Link
+                  href={`/admin/partners/${invitation.consumedUserId}`}
+                  className="font-medium text-black hover:underline"
+                >
+                  상세 페이지
+                </Link>
+                에서 확인하세요.
+              </>
             )}
-            에서 확인하세요.
           </p>
         ) : (
           <div className="flex flex-col gap-3">
             <CopyLink url={signupUrl} />
-            <p className="text-xs text-[#4b4b4b]">
+            <p className="text-xs text-[#4b4b4b] leading-relaxed">
               {invitation.existingUserId
-                ? "어드민 본인 겸직 초청입니다. 같은 브라우저에서 본인이 직접 이 링크를 클릭하면 본인인증만으로 설계사 등록이 완료됩니다."
-                : "이 링크를 카카오톡으로 설계사에게 전달해주세요. 설계사가 링크 진입 후 카카오 로그인 + 본인인증을 완료하면 정식 가입됩니다."}
+                ? "어드민 본인 겸직 초청입니다. 같은 브라우저에서 본인이 직접 이 링크를 클릭하면 본인인증만으로 등록이 완료돼요."
+                : "이 링크를 카카오톡으로 설계사에게 전달해주세요. 설계사가 진입 후 카카오 로그인 + 본인인증을 완료하면 정식 가입됩니다."}
             </p>
-            <dl className="grid grid-cols-2 gap-4 mt-2 pt-4 border-t border-[#efefef]">
-              <Meta label="발급일" value={formatDateTime(invitation.createdAt)} />
-              <Meta label="만료일" value={formatDateTime(invitation.expiresAt)} />
+            <dl className="grid grid-cols-2 gap-4 pt-3 border-t border-[#efefef]">
+              <Field label="발급일">{formatDateTimeFull(invitation.createdAt)}</Field>
+              <Field label="만료일">{formatDateTimeFull(invitation.expiresAt)}</Field>
             </dl>
           </div>
         )}
       </Card>
 
       {!consumed && (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-base font-bold text-black">초청 정보 수정</h2>
+        <Section title="초청 정보 수정">
           <PartnerForm
             action={action}
             submitLabel="변경 저장"
@@ -109,28 +114,10 @@ export default async function AdminPartnerSignupInvitationDetailPage({
             }}
             lockedExistingUserId={invitation.existingUserId}
           />
-        </section>
+        </Section>
       )}
     </div>
   );
-}
-
-function Meta({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-xs text-[#4b4b4b]">{label}</dt>
-      <dd className="text-sm text-black">{value}</dd>
-    </div>
-  );
-}
-
-function formatDateTime(d: Date): string {
-  const yy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${yy}.${mm}.${dd} ${hh}:${mi}`;
 }
 
 function formatRemaining(expiresAt: Date, nowMs: number): string {

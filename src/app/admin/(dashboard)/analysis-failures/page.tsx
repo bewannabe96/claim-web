@@ -3,46 +3,39 @@ import Link from "next/link";
 import { listFailedAnalysisPlanProposals } from "@/features/plan-proposals/queries";
 import type { AnalysisError } from "@/features/plan-proposals/schema";
 
+import { formatDateTime } from "../_lib/format";
 import { AnalysisErrorPill } from "../_components/analysis-error-pill";
-import { Card, CardHeader, PageHeader } from "../_components/page-shell";
+import {
+  Card,
+  CardHeader,
+  Empty,
+  PageHeader,
+} from "../_components/page-shell";
 import { RetryAnalysisButton } from "../_components/retry-analysis-button";
 
 /**
  * /admin/analysis-failures
  *
  * 외부 분석 파이프라인이 `status=failed` 콜백을 보내고, 그 후 성공 콜백이 들어오지
- * 않은 proposal 목록 (`analyzedAt IS NULL AND analysisErrorAt IS NOT NULL`).
- * `group=product_id_match` 가 주 use-case (어드민이 카탈로그 매핑 추가 후 재시도)
- * 지만, `input_error` / `internal_error` 도 모니터링 목적으로 함께 노출.
- *
- * 운영 흐름:
- *   1. webhook 이 failed 페이로드 수신 → analysisError 마킹 → 이 페이지에 등장.
- *   2. 어드민이 group/type/message/detail 확인 → 외부 시스템 (카탈로그 등) 수정.
- *   3. "분석 재시도" 클릭 → SQS 재발행 → 분석 성공 시 row 사라짐.
- *
- * 분석 성공이 들어오면 자연스럽게 사라지므로 별도 dismiss 액션은 없음. 영구
- * 미해결 케이스는 plan_request 가 analyzing 으로 정체된다는 신호 — 추후 별도
- * status (analysis_failed) 도입 시 보강 예정.
+ * 않은 proposal 목록.
  */
 export default async function AdminAnalysisFailuresPage() {
   const rows = await listFailedAnalysisPlanProposals();
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="분석 실패"
         description={
           rows.length === 0
-            ? "현재 미해결 분석 실패 없음."
-            : `${rows.length}건의 미해결 분석 실패. 외부 시스템 수정 후 재시도해주세요.`
+            ? "현재 미해결 분석 실패 없음"
+            : `${rows.length}건의 미해결 분석 실패 — 외부 시스템 수정 후 재시도`
         }
       />
 
       {rows.length === 0 ? (
         <Card>
-          <p className="text-center text-sm text-[#afafaf] py-8">
-            🎉 모든 제안서 분석이 정상 완료되었어요
-          </p>
+          <Empty>모든 제안서 분석이 정상 완료되었어요</Empty>
         </Card>
       ) : (
         <div className="flex flex-col gap-4">
@@ -86,14 +79,14 @@ function FailureCard({
             {error && <AnalysisErrorPill group={error.group} />}
             <Link
               href={`/admin/requests/${planRequestId}`}
-              className="text-sm font-bold text-black hover:underline"
+              className="text-sm font-bold text-black hover:underline tabular-nums"
             >
               {planRequestId}
             </Link>
-            <span className="text-xs text-[#4b4b4b]">· {partnerName}</span>
+            <span className="text-xs text-[#afafaf]">· {partnerName}</span>
           </span>
         }
-        meta={errorAt ? formatDateTime(errorAt) : null}
+        meta={errorAt ? <span className="tabular-nums">{formatDateTime(errorAt)}</span> : null}
       />
 
       {error ? (
@@ -121,23 +114,14 @@ function FailureCard({
           )}
         </div>
       ) : (
-        <p className="text-sm text-[#c2410c]">
+        <p className="text-sm text-red-600">
           저장된 에러 페이로드가 손상되었어요 (parse 실패). 서버 로그를 확인해주세요.
         </p>
       )}
 
-      <div className="mt-4 pt-4 border-t border-[#efefef] flex justify-end">
+      <div className="mt-5 pt-4 border-t border-[#efefef] flex justify-end">
         <RetryAnalysisButton proposalId={proposalId} />
       </div>
     </Card>
   );
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${mm}.${dd} ${hh}:${mi}`;
 }

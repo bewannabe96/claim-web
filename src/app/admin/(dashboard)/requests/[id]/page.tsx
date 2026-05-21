@@ -18,11 +18,14 @@ import { RequestStatusBadge } from "@/features/plan-requests/ui/status-badge";
 import { cn } from "@/lib/utils";
 import { GENDER_LABEL } from "@/types";
 
+import { formatDateTime, formatPhone } from "../../_lib/format";
 import { AnalysisErrorPill } from "../../_components/analysis-error-pill";
 import {
   BackLink,
+  Badge,
   Card,
   CardHeader,
+  Field,
   PageHeader,
 } from "../../_components/page-shell";
 import { RetryAnalysisButton } from "../../_components/retry-analysis-button";
@@ -48,31 +51,30 @@ export default async function AdminRequestDetailPage({
     (d) => d.proposal?.analyzedAt != null,
   ).length;
 
+  const headerDescription = [
+    `생성 ${formatDateTime(request.createdAt)}`,
+    request.dispatchedAt && `송부 ${formatDateTime(request.dispatchedAt)}`,
+    request.deadlineAt && `마감 ${formatDateTime(request.deadlineAt)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <div>
         <BackLink href="/admin/requests">요청 목록</BackLink>
         <PageHeader
           title={
-            <span className="inline-flex items-center gap-3">
+            <span className="inline-flex items-center gap-3 tabular-nums">
               {id}
               <RequestStatusBadge status={request.status} />
             </span>
           }
-          description={`생성 ${formatDateTime(request.createdAt)}${
-            request.dispatchedAt
-              ? ` · 송부 ${formatDateTime(request.dispatchedAt)}`
-              : ""
-          }${
-            request.deadlineAt
-              ? ` · 마감 ${formatDateTime(request.deadlineAt)}`
-              : ""
-          }`}
+          description={headerDescription}
         />
       </div>
 
-      {/* 요청서 — Step1 (제안서 정보) + Step3 (본인 식별) */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-2 gap-4">
         <Card>
           <CardHeader title="기본 정보" />
           <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
@@ -88,15 +90,15 @@ export default async function AdminRequestDetailPage({
         </Card>
 
         <Card>
-          <CardHeader title="본인 인증 / 동의" />
+          <CardHeader title="본인 인증" />
           {request.step3 ? (
-            <dl className="grid grid-cols-1 gap-y-4">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
               <Field label="이름">{request.step3.name}</Field>
               <Field label="휴대폰">{formatPhone(request.step3.phone)}</Field>
-              <Field label="제3자 정보 제공 동의">
+              <Field label="제3자 정보 제공">
                 {request.step3.consentThirdParty === "on" ? "동의" : "—"}
               </Field>
-              <Field label="알림톡 수신 동의">
+              <Field label="알림톡 수신">
                 {request.step3.consentMessaging === "on" ? "동의" : "—"}
               </Field>
             </dl>
@@ -106,9 +108,8 @@ export default async function AdminRequestDetailPage({
         </Card>
       </div>
 
-      {/* 희망 담보 + 추가 요청사항 */}
       <Card>
-        <CardHeader title="희망 담보 / 추가 요청사항" />
+        <CardHeader title="희망 담보 · 추가 요청사항" />
         <div className="flex flex-col gap-5">
           <div>
             <p className="text-xs text-[#afafaf] mb-1.5">희망하시는 담보</p>
@@ -127,7 +128,6 @@ export default async function AdminRequestDetailPage({
         </div>
       </Card>
 
-      {/* 병력 */}
       <Card>
         <CardHeader
           title="병력"
@@ -148,21 +148,20 @@ export default async function AdminRequestDetailPage({
         )}
       </Card>
 
-      {/* 후보 / 선택 */}
       <Card>
         <CardHeader
-          title="후보 & 선택"
+          title="후보 · 선택"
           meta={
-            <>
+            <span className="tabular-nums">
               후보{" "}
               <span className="font-semibold text-black">
-                {request.candidatePartnerIds.length}명
+                {request.candidatePartnerIds.length}
               </span>{" "}
               · 선택{" "}
               <span className="font-semibold text-black">
-                {request.selectedPartnerIds.length}명
+                {request.selectedPartnerIds.length}
               </span>
-            </>
+            </span>
           }
         />
         {candidatePartners.length === 0 ? (
@@ -180,20 +179,19 @@ export default async function AdminRequestDetailPage({
         )}
       </Card>
 
-      {/* Assignment 별 제안서 현황 */}
       <Card>
         <CardHeader
           title="설계사별 제출 현황"
           meta={
-            <>
+            <span className="tabular-nums">
               제출{" "}
               <span className="font-semibold text-black">{submittedCount}</span>
-              <span className="text-[#4b4b4b]">/{details.length}</span>
-              <span className="mx-1.5 text-[#e2e2e2]">·</span>
+              <span className="text-[#afafaf]">/{details.length}</span>
+              <span className="mx-2 text-[#e2e2e2]">·</span>
               분석{" "}
               <span className="font-semibold text-black">{analyzedCount}</span>
-              <span className="text-[#4b4b4b]">/{submittedCount}</span>
-            </>
+              <span className="text-[#afafaf]">/{submittedCount}</span>
+            </span>
           }
         />
         {details.length === 0 ? (
@@ -209,19 +207,15 @@ export default async function AdminRequestDetailPage({
         )}
       </Card>
 
-      {/* 결과 토큰 */}
       {request.resultToken && (
         <Card>
           <CardHeader title="결과 페이지" />
-          <p className="text-sm text-[#4b4b4b]">
-            가입자가 알림톡으로 받는 결과 화면 (운영자도 동일 URL 로 검토 가능):
-          </p>
           <a
             href={`/plan-request/result/${request.resultToken}`}
             target="_blank"
             rel="noopener noreferrer"
             title="새 탭에서 열기 — 가입자 POV"
-            className="mt-2 block px-3 py-2 rounded-lg bg-[#fafafa] text-xs text-black break-all hover:bg-[#efefef] transition-colors"
+            className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs font-mono text-black break-all hover:bg-[#efefef] transition-colors"
           >
             /plan-request/result/{request.resultToken}
           </a>
@@ -231,13 +225,9 @@ export default async function AdminRequestDetailPage({
   );
 }
 
-/* ============================================================
- * 보조 컴포넌트
- * ============================================================ */
-
 function MedicalRow({ entry }: { entry: MedicalHistoryEntry }) {
   return (
-    <li className="rounded-lg border border-[#efefef] bg-white px-4 py-3 flex flex-col gap-1.5">
+    <li className="rounded-xl border border-[#efefef] bg-[#fafafa] px-4 py-3 flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-bold text-black">{entry.diagnosis}</span>
         <span className="text-xs text-[#4b4b4b] whitespace-nowrap">
@@ -274,7 +264,7 @@ function PartnerProfileCard({
   return (
     <li
       className={cn(
-        "flex items-start gap-3 px-3.5 py-3 rounded-xl border",
+        "flex items-start gap-3 px-4 py-3 rounded-xl border transition-colors",
         selected
           ? "border-black bg-black/[0.02]"
           : "border-[#efefef] bg-white",
@@ -293,19 +283,11 @@ function PartnerProfileCard({
           <span className="text-sm font-bold text-black truncate">
             {partner.name}
           </span>
-          <span className="text-[11px] text-[#4b4b4b]">
-            경력 {partner.yearsOfExperience}년
+          <span className="text-[11px] text-[#afafaf]">
+            {partner.yearsOfExperience}년
           </span>
-          {selected && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-black text-white">
-              선택
-            </span>
-          )}
-          {partner.isNew && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium border border-[#e2e2e2] bg-white text-[#4b4b4b]">
-              신규
-            </span>
-          )}
+          {selected && <Badge tone="solid">선택</Badge>}
+          {partner.isNew && <Badge tone="outline">신규</Badge>}
         </div>
         <p className="text-xs text-[#4b4b4b] leading-snug line-clamp-2">
           {partner.bio}
@@ -335,8 +317,8 @@ function AssignmentItem({
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-bold text-black">{partner.name}</span>
-          <span className="text-xs text-[#4b4b4b]">
-            경력 {partner.yearsOfExperience}년
+          <span className="text-[11px] text-[#afafaf]">
+            {partner.yearsOfExperience}년
           </span>
           <AssignmentStatusPill status={assignment.status} />
           {proposal && <AnalysisStatusPill proposal={proposal} />}
@@ -346,8 +328,6 @@ function AssignmentItem({
           <div className="flex flex-col gap-1.5 text-xs text-[#4b4b4b]">
             <Spec label="PDF" value={pdfBasename(proposal.pdfS3Key)} />
             <Spec label="한줄 요약" value={proposal.note} />
-            {/* 분석 실패 상태 — analyzedAt 이 없고 analysisError 가 있을 때만 노출.
-                성공이 들어오면 자연스럽게 사라짐. */}
             {!proposal.analyzedAt && proposal.analysisError && (
               <AnalysisFailureBlock
                 proposalId={proposal.id}
@@ -371,13 +351,13 @@ function AssignmentItem({
           target="_blank"
           rel="noopener noreferrer"
           title="새 탭에서 열기 — 설계사 POV"
-          className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs text-black break-all hover:bg-[#efefef] transition-colors"
+          className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs font-mono text-black break-all hover:bg-[#efefef] transition-colors"
         >
           /partner/plan-request-assignments/{assignment.token}
         </a>
       </div>
 
-      <div className="shrink-0 text-right text-xs text-[#4b4b4b] whitespace-nowrap flex flex-col gap-0.5">
+      <div className="shrink-0 text-right text-xs text-[#4b4b4b] whitespace-nowrap flex flex-col gap-0.5 tabular-nums">
         {assignment.submittedAt ? (
           <span>제출 {formatDateTime(assignment.submittedAt)}</span>
         ) : (
@@ -395,23 +375,16 @@ function AssignmentItem({
 
 /**
  * proposal 의 분석 상태 pill (우선순위: 성공 > 실패 > 진행 중).
- *   - analyzedAt 있음           → "분석 완료" (검정)
- *   - analysisError 있음         → group 별 색상의 실패 pill
- *   - 둘 다 없음                 → "분석 중" (회색 + pulse)
  */
 function AnalysisStatusPill({ proposal }: { proposal: PlanProposal }) {
   if (proposal.analyzedAt) {
-    return (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-black text-white">
-        분석 완료
-      </span>
-    );
+    return <Badge tone="solid">분석 완료</Badge>;
   }
   if (proposal.analysisError) {
     return <AnalysisErrorPill group={proposal.analysisError.group} />;
   }
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border border-[#e2e2e2] bg-white text-[#4b4b4b]">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border border-[#e2e2e2] bg-white text-[#4b4b4b] whitespace-nowrap">
       <span
         className="w-1 h-1 rounded-full bg-[#4b4b4b] animate-pulse"
         aria-hidden
@@ -421,10 +394,6 @@ function AnalysisStatusPill({ proposal }: { proposal: PlanProposal }) {
   );
 }
 
-/**
- * 실패 상세 + 재시도 버튼. type/message 와 (있으면) detail JSON 토글 + 재시도 액션.
- * 어드민 "분석 실패" 페이지의 카드와 같은 정보를 행 내부에 인라인으로 노출.
- */
 function AnalysisFailureBlock({
   proposalId,
   error,
@@ -435,7 +404,7 @@ function AnalysisFailureBlock({
   erroredAt: string | undefined;
 }) {
   return (
-    <div className="mt-1 rounded-lg border border-[#fcd34d] bg-[#fffbeb] px-3 py-2.5 flex flex-col gap-2">
+    <div className="mt-1 rounded-xl border border-[#fcd34d] bg-[#fffbeb] px-3 py-2.5 flex flex-col gap-2">
       <div className="flex flex-col gap-1 text-xs text-black">
         <div>
           <span className="text-[#92400e] font-mono">{error.type}</span>
@@ -465,48 +434,9 @@ function AnalysisFailureBlock({
 }
 
 function AssignmentStatusPill({ status }: { status: AssignmentStatus }) {
-  const map: Record<AssignmentStatus, { label: string; className: string }> = {
-    pending: {
-      label: "대기",
-      className: "bg-[#efefef] text-[#4b4b4b]",
-    },
-    submitted: {
-      label: "제출",
-      className: "bg-black text-white",
-    },
-    expired: {
-      label: "미제출",
-      className: "border border-[#e2e2e2] bg-white text-[#4b4b4b]",
-    },
-  };
-  const { label, className } = map[status];
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium",
-        className,
-      )}
-    >
-      {label}
-    </span>
-  );
-}
-
-function Field({
-  label,
-  children,
-  wide,
-}: {
-  label: string;
-  children: React.ReactNode;
-  wide?: boolean;
-}) {
-  return (
-    <div className={cn("flex flex-col gap-0.5", wide && "col-span-2")}>
-      <dt className="text-xs text-[#afafaf]">{label}</dt>
-      <dd className="text-sm text-black">{children}</dd>
-    </div>
-  );
+  if (status === "submitted") return <Badge tone="solid">제출</Badge>;
+  if (status === "expired") return <Badge tone="outline">미제출</Badge>;
+  return <Badge tone="neutral">대기</Badge>;
 }
 
 function Spec({ label, value }: { label: string; value: string }) {
@@ -522,19 +452,4 @@ function Spec({ label, value }: { label: string; value: string }) {
 function pdfBasename(s3Key: string): string {
   const slash = s3Key.lastIndexOf("/");
   return slash >= 0 ? s3Key.slice(slash + 1) : s3Key;
-}
-
-function formatPhone(p: string): string {
-  if (p.length === 11) return `${p.slice(0, 3)}-${p.slice(3, 7)}-${p.slice(7)}`;
-  if (p.length === 10) return `${p.slice(0, 3)}-${p.slice(3, 6)}-${p.slice(6)}`;
-  return p;
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${mm}.${dd} ${hh}:${mi}`;
 }

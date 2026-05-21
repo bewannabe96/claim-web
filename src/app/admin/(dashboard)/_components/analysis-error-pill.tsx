@@ -13,12 +13,12 @@ export function AnalysisErrorPill({ group }: { group: AnalysisErrorGroup }) {
     group === "product_id_match"
       ? "bg-[#fef3c7] text-[#92400e] border border-[#fcd34d]"
       : group === "input_error"
-        ? "bg-[#fee2e2] text-[#991b1b] border border-[#fca5a5]"
-        : "bg-[#efefef] text-[#4b4b4b] border border-[#d4d4d4]";
+        ? "bg-red-50 text-red-700 border border-red-100"
+        : "bg-[#efefef] text-[#4b4b4b] border border-[#e2e2e2]";
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap",
+        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap",
         className,
       )}
     >

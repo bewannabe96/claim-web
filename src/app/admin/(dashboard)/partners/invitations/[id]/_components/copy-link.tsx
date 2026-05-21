@@ -19,7 +19,6 @@ export function CopyLink({ url }: { url: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // 브라우저가 clipboard API 거부 — fallback: select all
       const input = document.getElementById(
         "invitation-url-input",
       ) as HTMLInputElement | null;
@@ -41,7 +40,7 @@ export function CopyLink({ url }: { url: string }) {
         onClick={onCopy}
         className={cn(
           "h-11 rounded-full px-5 text-sm font-medium shrink-0",
-          copied && "bg-[#4b4b4b]",
+          copied && "bg-[#4b4b4b] hover:bg-[#4b4b4b]",
         )}
       >
         {copied ? "복사됨" : "링크 복사"}
