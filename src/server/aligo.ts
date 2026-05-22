@@ -373,6 +373,39 @@ function substituteAlimtalkVariables(
 }
 
 /**
+ * 비프로덕션 환경 마커 — 운영 환경이 아닐 때 알림톡 변수값 앞에 붙는 접두사.
+ * 검수 템플릿 본문은 못 바꾸므로, 치환되는 변수값에 prefix 를 박아 수신자가 운영
+ * 환경 메시지가 아님을 한눈에 인지하게 한다.
+ */
+const NON_PRODUCTION_VARIABLE_PREFIX = "(운영환경x)";
+
+/**
+ * 운영 환경 여부 — `ENV_STAGE` 가 `production` / `prod` (대소문자 무시) 일 때만 true.
+ * env-banner.tsx 와 동일한 prod allowlist (fail-safe) 정책 — ENV_STAGE 누락/오타
+ * 시에도 비운영으로 간주되어 마커가 붙는다.
+ */
+function isProductionStage(): boolean {
+  const stage = process.env.ENV_STAGE?.trim().toLowerCase();
+  return stage === "production" || stage === "prod";
+}
+
+/**
+ * 비운영 환경이면 변수맵의 모든 값 앞에 마커를 붙인 새 맵을 반환, 운영 환경이면
+ * 원본을 그대로 반환. 메시지 본문/강조 타이틀에 노출되는 변수에만 사용 — 버튼
+ * 변수(토큰 등)는 URL 경로에 들어가므로 마커를 붙이면 링크가 깨진다.
+ */
+function markNonProductionVariables(
+  variables: Record<string, string>,
+): Record<string, string> {
+  if (isProductionStage()) return variables;
+  const marked: Record<string, string> = {};
+  for (const [key, value] of Object.entries(variables)) {
+    marked[key] = `${NON_PRODUCTION_VARIABLE_PREFIX}${value}`;
+  }
+  return marked;
+}
+
+/**
  * 알림톡 발송 — 검수 템플릿 코드 + 변수맵.
  *
  *   1. `template/list` 로 검수본을 가져온다 (TTL 캐시).
@@ -382,6 +415,10 @@ function substituteAlimtalkVariables(
  *
  * `variables` 키는 검수본의 `#{...}` placeholder 이름과 정확히 일치해야 함.
  * 도메인 데이터 → 변수맵 변환은 kakao-templates.ts 의 typed 빌더 사용.
+ *
+ * 비운영 환경(`ENV_STAGE` 가 production/prod 아님)에서는 본문/강조 타이틀에
+ * 치환되는 모든 변수값 앞에 `(운영환경x)` 마커를 붙여 발송 — 수신자가 운영 메시지가
+ * 아님을 인지하게 함. 버튼 변수는 URL 경로라 마커 제외 (링크 깨짐 방지).
  *
  * test mode 일 때는 알리고 호출 자체를 skip + console.log 로 dry-run — dev 에서
  * 자격 없이도 동작. 실패 throw — 호출자가 fire-and-forget 으로 .catch(log) 처리.
@@ -409,9 +446,13 @@ export async function sendAlimtalk(
 
   const template = await fetchAlimtalkTemplate(templateCode);
 
-  const message = substituteAlimtalkVariables(template.content, variables);
+  // 본문/강조 타이틀은 비운영 환경에서 마커를 박은 변수값으로 치환. 버튼은 URL
+  // 경로에 변수가 들어가므로 마커 없는 원본 variables 를 그대로 사용한다.
+  const displayVariables = markNonProductionVariables(variables);
+
+  const message = substituteAlimtalkVariables(template.content, displayVariables);
   const emphasizeTitle = template.emphasizeTitle
-    ? substituteAlimtalkVariables(template.emphasizeTitle, variables)
+    ? substituteAlimtalkVariables(template.emphasizeTitle, displayVariables)
     : null;
   const buttons = template.buttons.map((btn) => {
     const substituted: Record<string, string> = {};
