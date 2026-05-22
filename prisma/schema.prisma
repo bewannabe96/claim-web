@@ -76,15 +76,19 @@ model PlanRequest {
   price         Int?
 
   // 시점
-  createdAt     DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
-  dispatchedAt  DateTime? @db.Timestamptz(6) @map("dispatched_at")
-  deadlineAt    DateTime? @db.Timestamptz(6) @map("deadline_at")
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  dispatchedAt    DateTime? @db.Timestamptz(6) @map("dispatched_at")
+  deadlineAt      DateTime? @db.Timestamptz(6) @map("deadline_at")
+  /// 가입자가 결과 페이지를 처음 연 시각. NULL = 아직 열람 안 함.
+  /// 결과 페이지의 client 컴포넌트 (ResultViewedMarker) 가 마운트 시 markResultViewed
+  /// 액션을 호출 — 멱등 (WHERE result_viewed_at IS NULL) 이라 최초 열람만 기록.
+  resultViewedAt  DateTime? @db.Timestamptz(6) @map("result_viewed_at")
   /// 정산 완료 시각. NULL = 미정산 (보관 기간 만료 cron 대기).
   /// 정산 정책: 보관 기간 만료 시점에 contactedAt 있는 proposal 의 파트너 N명에게
   /// price/N (1000원 단위 반올림) 차감. cron 이 spendCredit 모두 성공 후에만 마킹
   /// → 부분 실패는 다음 tick 에서 멱등키로 재시도 (spendCredit alreadyApplied 흡수).
-  settledAt     DateTime? @db.Timestamptz(6) @map("settled_at")
-  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+  settledAt       DateTime? @db.Timestamptz(6) @map("settled_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   medicalHistory PlanRequestMedicalHistory[]
   candidates     PlanRequestAssignmentCandidate[]

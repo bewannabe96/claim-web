@@ -138,6 +138,7 @@ function mapPlanRequest(row: PlanRequestRow): PlanRequest {
     createdAt: row.createdAt.toISOString(),
     dispatchedAt: row.dispatchedAt?.toISOString() ?? undefined,
     deadlineAt: row.deadlineAt?.toISOString() ?? undefined,
+    resultViewedAt: row.resultViewedAt?.toISOString() ?? undefined,
     rematchCount: row.rematchCount,
     resultToken: row.resultToken ?? undefined,
   };
