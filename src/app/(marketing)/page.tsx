@@ -1,16 +1,20 @@
-import { BrandMark } from "@/components/brand-mark";
-
-import { LandingCtaButton } from "./_components/landing-cta-button";
+import { HeroExperience } from "./_components/hero-experience";
 
 /**
  * 마케팅 랜딩 — 가입자(고객) 진입 페이지.
  *
- * 내레이션 구조 (claim-marketing-page 기준):
- *   Hero → 01 Problem → 02 How it works → 03 Solution → Closing CTA
+ * 구조: Hero(스크롤 반응형 제품 화면) → How it works
  *
- * 480px 모바일 컨테이너 안에서 세로로 흐르는 long-scroll 랜딩. 색은 흑백/그레이만
- * 사용 (DESIGN.md 모노크롬 시스템). 섹션 간 시각 리듬은 배경 토글
- * (white ↔ #f7f7f7) 과 섹션 라벨 ("01 — Problem") 로만 만든다.
+ * 요청서 작성 CTA 는 Hero 데모의 zone 3 에 임팩트 있게 한 번만 둔다 (별도
+ * Closing CTA 섹션은 중복이라 제거).
+ *
+ * 진입 즉시 인터랙티브 비교 화면을 보여준다. 헤드라인
+ * "설계사가 제안하고 · AI가 비교하고 · 당신은 선택합니다" 는 단 한 곳(Hero)에만
+ * 쓰고, 스크롤하면 상단에 고정돼 데모의 현재 zone 에 맞춰 구절이 하이라이트된다 —
+ * 각 구역에 같은 문구를 반복하지 않고 헤드라인이 곧 진행 가이드.
+ *
+ * 480px 모바일 컨테이너 안 세로 long-scroll. 색은 흑백/그레이만
+ * (DESIGN.md 모노크롬 시스템). 섹션은 스크롤에 맞춰 등장(.reveal).
  */
 export default function Home() {
   // Server Component 에서 env 읽어 client CTA 에 prop drilling — 프로젝트 규약상
@@ -31,160 +35,67 @@ export default function Home() {
 
   return (
     <main className="flex flex-1 flex-col bg-white">
-      <Hero googleAdsConversionTarget={googleAdsConversionTarget} />
-      <ProblemSection />
+      <HeroExperience googleAdsConversionTarget={googleAdsConversionTarget} />
       <HowItWorksSection />
-      <SolutionSection />
-      <ClosingSection googleAdsConversionTarget={googleAdsConversionTarget} />
       <Footer />
     </main>
   );
 }
 
 /* ------------------------------------------------------------------
- * Hero
- * ------------------------------------------------------------------ */
-
-function Hero({
-  googleAdsConversionTarget,
-}: {
-  googleAdsConversionTarget?: string;
-}) {
-  return (
-    <section className="px-6 pt-10 pb-14">
-      <BrandMark />
-
-      <h1 className="mt-8 text-[2rem] font-bold leading-[1.22] tracking-tight text-black">
-        설계사가 제안하고,
-        <br />
-        AI가 비교하고,
-        <br />
-        당신은 선택합니다.
-      </h1>
-
-      <p className="mt-4 text-sm leading-relaxed text-[#4b4b4b]">
-        요청서 한 번 남기면, 별도 연락 없이
-        <br />
-        가입설계 제안서가 도착해요.
-        <br />
-        어떤 상황에 얼마 받을 수 있는지,
-        <br />
-        AI가 정리해드립니다.
-      </p>
-
-      <div className="mt-10">
-        <LandingCtaButton
-          className="h-14 w-full rounded-full text-base font-medium"
-          googleAdsConversionTarget={googleAdsConversionTarget}
-        >
-          요청서 작성하고 제안 받기
-        </LandingCtaButton>
-        <p className="mt-3 text-center text-xs text-[#8a8a8a]">
-          1분이면 충분해요 · 상담 전화 없음
-        </p>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------
- * 01 — Problem
- * ------------------------------------------------------------------ */
-
-function ProblemSection() {
-  return (
-    <section className="border-t border-[#ececec] bg-[#f7f7f7] px-6 pt-14 pb-14">
-      <SectionLabel index="01" label="Problem" />
-      <SectionHeadline>
-        보험 가입할 때,
-        <br />
-        다들 이러시지 않나요?
-      </SectionHeadline>
-      <p className="mt-4 text-sm leading-relaxed text-[#4b4b4b]">
-        보험은 평생 한 번이 아닌, 평생 함께해야 하는 결정.
-        <br />그 과정이 왜 이렇게 피곤해야 할까요.
-      </p>
-
-      <div className="mt-10 flex flex-col gap-4">
-        <ProblemCard
-          index="01"
-          title="보험 가입하려 했더니, 영업 전화만"
-          body="번호 한 번 남겼을 뿐인데, 모르는 번호로 며칠째 전화가 와요."
-        />
-        <ProblemCard
-          index="02"
-          title="설계안 받아봐도, 좋은 건지 모르겠어요"
-          body="외계어 같은 보험 용어들, 한 줄 한 줄 읽어도 이해가 안 돼요."
-        />
-        <ProblemCard
-          index="03"
-          title="어떤 상황에 얼마 받는지 모르겠어요"
-          body="가입하면 진짜 도움 되는 건지, 얼마나 보장받는지 헷갈려요."
-        />
-      </div>
-    </section>
-  );
-}
-
-function ProblemCard({
-  index,
-  title,
-  body,
-}: {
-  index: string;
-  title: string;
-  body: string;
-}) {
-  return (
-    <article className="rounded-2xl border border-[#e2e2e2] bg-white p-5">
-      <span className="font-mono text-[0.7rem] tracking-[0.12em] text-[#8a8a8a]">
-        PROBLEM {index}
-      </span>
-      <h3 className="mt-2 text-[1.0625rem] font-semibold leading-snug text-black">
-        {title}
-      </h3>
-      <p className="mt-2 text-sm leading-relaxed text-[#4b4b4b]">{body}</p>
-    </article>
-  );
-}
-
-/* ------------------------------------------------------------------
- * 02 — How it works
+ * How it works
  * ------------------------------------------------------------------ */
 
 function HowItWorksSection() {
   return (
-    <section className="border-t border-[#ececec] bg-white px-6 pt-14 pb-14">
-      <SectionLabel index="02" label="How it works" />
-      <SectionHeadline>
+    <section className="border-t border-[#ececec] bg-[#f7f7f7] px-6 pt-14 pb-24">
+      <h2 className="reveal text-[1.75rem] font-bold leading-[1.25] tracking-tight text-black">
         요청 한 번이면,
         <br />
         선택만 남습니다
-      </SectionHeadline>
-      <p className="mt-4 text-sm leading-relaxed text-[#4b4b4b]">
-        가입자는 설계사를 찾지 않습니다.
+      </h2>
+      <p className="reveal mt-4 text-sm leading-relaxed text-[#4b4b4b]">
+        설계사를 직접 찾지 않아도 돼요.
         <br />
         설계사가 먼저 제안하고, AI가 비교합니다.
       </p>
 
-      <ol className="mt-10 flex flex-col">
+      <ol className="reveal mt-10 flex flex-col">
         <StepRow
           index="01"
           eyebrow="Request"
           title="요청서를 남기세요"
-          body="어떤 보험이 필요한지 1분 안에 입력하면 끝. 가입자가 직접 설계사를 찾을 필요 없습니다."
+          body={
+            <>
+              어떤 보험이 필요한지 1분 안에 입력하면 끝.
+              <br />
+              직접 설계사를 찾을 필요 없습니다.
+            </>
+          }
         />
         <StepRow
           index="02"
           eyebrow="Receive"
           title="설계사가 제안서를 보냅니다"
-          body="별도 연락 없이 가입설계 제안서만 도착해요. 여러 설계사의 안을 한 번에 받아봅니다."
+          body={
+            <>
+              별도 연락 없이 가입설계 제안서만 도착해요.
+              <br />
+              여러 설계사의 안을 한 번에 받아봅니다.
+            </>
+          }
         />
         <StepRow
           index="03"
           eyebrow="Select"
           title="AI 비교 결과로 선택하세요"
-          body="보장 내역과 예상 수령액을 AI가 정리해 보여드립니다. 마음에 드는 제안을 선택하면 끝."
+          body={
+            <>
+              위에서 만져본 그 화면으로 받아봅니다.
+              <br />
+              마음에 드는 제안을 선택하면 끝.
+            </>
+          }
           isLast
         />
       </ol>
@@ -202,7 +113,7 @@ function StepRow({
   index: string;
   eyebrow: string;
   title: string;
-  body: string;
+  body: React.ReactNode;
   isLast?: boolean;
 }) {
   return (
@@ -225,111 +136,6 @@ function StepRow({
         <p className="mt-2 text-sm leading-relaxed text-[#4b4b4b]">{body}</p>
       </div>
     </li>
-  );
-}
-
-/* ------------------------------------------------------------------
- * 03 — Solution
- * ------------------------------------------------------------------ */
-
-function SolutionSection() {
-  return (
-    <section className="border-t border-[#ececec] bg-[#f7f7f7] px-6 pt-14 pb-14">
-      <SectionLabel index="03" label="Solution" />
-      <SectionHeadline>
-        세 가지 불편을,
-        <br />
-        AI 한 번에 해결합니다
-      </SectionHeadline>
-      <p className="mt-4 text-sm leading-relaxed text-[#4b4b4b]">
-        앞서 짚은 세 가지 불편을 1:1로 풀어드립니다.
-      </p>
-
-      <div className="mt-10 flex flex-col gap-4">
-        <SolutionCard
-          index="01"
-          mapsTo="01"
-          title="별도 연락 없이, 제안서만 도착"
-          body="요청서를 남기면 설계사들이 가입설계 제안서를 플랫폼으로 직접 보내드려요. 실제 계약할 설계사와만 대화하세요."
-        />
-        <SolutionCard
-          index="02"
-          mapsTo="02"
-          title="복잡한 약관, AI가 쉽게 정리"
-          body="어려운 보험 용어와 약관을 AI가 핵심만 추출해 평문으로 설명합니다. 한 줄 한 줄 해석하지 않아도 됩니다."
-        />
-        <SolutionCard
-          index="03"
-          mapsTo="03"
-          title="어떤 상황에 얼마 받는지 한눈에"
-          body="여러 제안서의 보장 내역과 예상 수령액을 AI가 비교 분석합니다. 가장 유리한 제안이 무엇인지 명확하게."
-        />
-      </div>
-    </section>
-  );
-}
-
-function SolutionCard({
-  index,
-  mapsTo,
-  title,
-  body,
-}: {
-  index: string;
-  mapsTo: string;
-  title: string;
-  body: string;
-}) {
-  return (
-    <article className="rounded-2xl border border-[#e2e2e2] bg-white p-5">
-      <div className="flex items-center gap-2 font-mono text-[0.7rem] tracking-[0.12em] text-[#8a8a8a]">
-        <span>SOLUTION {index}</span>
-        <span aria-hidden className="text-[#c2c2c2]">↳</span>
-        <span>PROBLEM {mapsTo}</span>
-      </div>
-      <h3 className="mt-2 text-[1.0625rem] font-semibold leading-snug text-black">
-        {title}
-      </h3>
-      <p className="mt-2 text-sm leading-relaxed text-[#4b4b4b]">{body}</p>
-    </article>
-  );
-}
-
-/* ------------------------------------------------------------------
- * Closing CTA
- * ------------------------------------------------------------------ */
-
-function ClosingSection({
-  googleAdsConversionTarget,
-}: {
-  googleAdsConversionTarget?: string;
-}) {
-  return (
-    <section className="border-t border-[#ececec] bg-black px-6 pt-16 pb-16 text-white">
-      <h2 className="text-[1.75rem] font-bold leading-[1.25] tracking-tight">
-        지금 요청서를 남기고
-        <br />
-        제안서를 받아보세요
-      </h2>
-      <p className="mt-4 text-sm leading-relaxed text-[#bdbdbd]">
-        설계사를 직접 찾지 않아도, 설계사가 먼저 제안합니다.
-        <br />
-        AI 비교로 가장 유리한 안을 고르세요.
-      </p>
-
-      <div className="mt-10">
-        <LandingCtaButton
-          variant="secondary"
-          className="h-14 w-full rounded-full bg-white text-base font-medium text-black hover:bg-[#e2e2e2]"
-          googleAdsConversionTarget={googleAdsConversionTarget}
-        >
-          요청서 작성하고 제안 받기
-        </LandingCtaButton>
-        <p className="mt-3 text-center text-xs text-[#8a8a8a]">
-          1분이면 충분해요 · 상담 전화 없음
-        </p>
-      </div>
-    </section>
   );
 }
 
@@ -400,27 +206,5 @@ function FooterMetaRow({
       <dt className="w-[5.5rem] shrink-0 text-[#6a6a6a]">{label}</dt>
       <dd className="flex-1 break-keep text-[#a8a8a8]">{value}</dd>
     </div>
-  );
-}
-
-/* ------------------------------------------------------------------
- * 섹션 공통 chrome
- * ------------------------------------------------------------------ */
-
-function SectionLabel({ index, label }: { index: string; label: string }) {
-  return (
-    <p className="font-mono text-[0.75rem] tracking-[0.14em] text-[#8a8a8a] uppercase">
-      <span className="text-black">{index}</span>
-      <span className="mx-2 text-[#c2c2c2]">—</span>
-      <span>{label}</span>
-    </p>
-  );
-}
-
-function SectionHeadline({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="mt-4 text-[1.75rem] font-bold leading-[1.25] tracking-tight text-black">
-      {children}
-    </h2>
   );
 }

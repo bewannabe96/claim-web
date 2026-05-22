@@ -9,8 +9,30 @@ proposals/
 ├─ actions.ts           # 'use server' — presigned PUT 발급, 제출 (HEAD + SHA-256 + TX)
 ├─ analysis-schema.ts   # claim.plan_proposal_analysis_report (v5) zod schema
 ├─ category-labels.ts   # 분석 리포트 category id → 한글 라벨 + KNOWN_CATEGORIES
-└─ select-scenarios.ts  # ROI 시계열 계산 + chip 시나리오 선정 (intersection/union)
+├─ select-scenarios.ts  # ROI 시계열 계산 + chip 시나리오 선정 (intersection/union)
+└─ ui/                  # 차트/카드 공유 컴포넌트 (아래 참조)
 ```
+
+## ui/ — 차트·카드 공유 컴포넌트
+
+```
+ui/
+├─ chart-types.ts          # PlanProposalData / RoiPoint / ScenarioMeta 등 공유 데이터 shape
+├─ format-krw.ts           # 원 → "5,000만원" 표기 유틸
+├─ roi-chart.tsx           # 회수 배율 라인 차트 (시나리오 토글 + 커서)
+├─ surrender-loss-chart.tsx# 해지 시 월평균 부담 곡선
+├─ coverage-panel.tsx      # 시나리오 보장 상세 (총액 + 담보 breakdown)
+├─ partner-note-bubble.tsx # 설계사 한줄평 말풍선
+├─ proposal-metrics-card.tsx# 보험사 / 월 납입료 / 계약 구조 카드
+└─ proposal-tab-chip.tsx   # 제안서 전환 탭 칩 (아바타 + 이름)
+```
+
+**라우트 공유 + 의존성 방향**: 결과 페이지(`plan-request/result/[token]`)와 랜딩
+데모(`(marketing)/_components/proposal-comparison-demo`)가 **둘 다** 이 컴포넌트를
+소비한다. 결과 페이지는 `adapt-proposal.ts` 가 실 데이터를 `chart-types` shape 으로
+변환해 채우고, 랜딩은 `_lib/demo-proposals.ts` 가 mock 으로 채운다. 그래서 이
+`ui/` 모듈은 **어느 라우트에도 의존하면 안 된다** — import 는 `@/lib`,
+`@/features/*`, 그리고 `ui/` 내부 형제만. 방향: `랜딩 → ui ← 결과 페이지`.
 
 ## 도메인 핵심
 

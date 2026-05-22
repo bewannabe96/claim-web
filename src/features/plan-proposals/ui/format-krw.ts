@@ -1,6 +1,6 @@
 /**
  * 원 → "5,000만원" / "1억 2,000만원" / "1억원" 형태로 표시.
- * 결과 페이지 전반의 한국 원화 표기 유틸 — adapter / CoveragePanel 공유.
+ * plan-proposals 차트 UI 의 한국 원화 표기 유틸 — adapter / CoveragePanel 공유.
  *
  * 정책:
  *   - 0 → "0원"

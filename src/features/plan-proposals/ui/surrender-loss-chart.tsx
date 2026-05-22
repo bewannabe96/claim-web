@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-import { type PlanProposalData } from "../../_lib/result-types";
+import { type PlanProposalData } from "./chart-types";
 
 /**
  * 해지 시 월평균 부담 곡선 — "그 시점까지 월 얼마꼴로 부담한 셈인가".

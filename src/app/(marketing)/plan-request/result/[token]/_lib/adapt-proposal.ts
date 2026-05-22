@@ -1,9 +1,12 @@
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import type { PlanProposalCard } from "@/features/plan-proposals/queries";
 import { computeRoiSeries } from "@/features/plan-proposals/select-scenarios";
-
-import { formatKRW } from "./format-krw";
-import type { CoverageItem, PlanProposalData, RoiPoint } from "./result-types";
+import type {
+  CoverageItem,
+  PlanProposalData,
+  RoiPoint,
+} from "@/features/plan-proposals/ui/chart-types";
+import { formatKRW } from "@/features/plan-proposals/ui/format-krw";
 
 /* ============================================================
  * 실 데이터 (PlanProposal + Partner + 분석 리포트) → 결과 페이지 mock shape.

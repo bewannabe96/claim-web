@@ -6,10 +6,13 @@ import { PartnerAvatar } from "@/features/partners/ui/partner-avatar";
 import { requestPlanProposalContact } from "@/features/plan-proposals/actions";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import type { ContactChannel } from "@/features/plan-proposals/schema";
+import { type PlanProposalData } from "@/features/plan-proposals/ui/chart-types";
+import { PartnerNoteBubble } from "@/features/plan-proposals/ui/partner-note-bubble";
+import { ProposalMetricsCard } from "@/features/plan-proposals/ui/proposal-metrics-card";
+import { ProposalTabChip } from "@/features/plan-proposals/ui/proposal-tab-chip";
+import { SurrenderLossChart } from "@/features/plan-proposals/ui/surrender-loss-chart";
 import { cn } from "@/lib/utils";
 
-import { type PlanProposalData } from "../_lib/result-types";
-import { SurrenderLossChart } from "./charts/surrender-loss-chart";
 import { ContactChannelSheet } from "./contact-channel-sheet";
 import { ScenarioPickerRoiChart } from "./scenario-picker-roi-chart";
 
@@ -96,44 +99,15 @@ export function ResultView({
       {/* Sticky chip 탭 — 아바타 + 이름. 분석 안 된 proposal 은 우측에 pulse dot. */}
       <nav className="sticky top-0 z-10 bg-white border-b border-[#efefef] mt-6">
         <ul className="px-6 py-3 flex items-center gap-2 overflow-x-auto">
-          {proposals.map((p, i) => {
-            const selected = activeIdx === i;
-            return (
-              <li key={p.id} className="shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setActiveIdx(i)}
-                  className={cn(
-                    "pl-1 pr-4 py-1 rounded-full text-sm font-medium transition-colors whitespace-nowrap inline-flex items-center gap-2",
-                    selected
-                      ? "bg-black text-white"
-                      : "bg-[#efefef] text-black hover:bg-[#e2e2e2]",
-                  )}
-                >
-                  <PartnerAvatar
-                    name={p.partner.name}
-                    avatarUrl={p.partner.avatarUrl}
-                    className="w-7 h-7 text-xs font-bold"
-                    fallbackClassName={
-                      selected
-                        ? "bg-white text-black"
-                        : "bg-black text-white"
-                    }
-                  />
-                  {p.partner.name}
-                  {!p.analyzed && (
-                    <span
-                      className={cn(
-                        "w-1.5 h-1.5 rounded-full animate-pulse",
-                        selected ? "bg-white" : "bg-[#4b4b4b]",
-                      )}
-                      aria-label="분석 중"
-                    />
-                  )}
-                </button>
-              </li>
-            );
-          })}
+          {proposals.map((p, i) => (
+            <li key={p.id} className="shrink-0">
+              <ProposalTabChip
+                proposal={p}
+                selected={activeIdx === i}
+                onSelect={() => setActiveIdx(i)}
+              />
+            </li>
+          ))}
         </ul>
       </nav>
 
@@ -196,29 +170,14 @@ function PlanProposalBody({
        * pb-32 가 마지막 컨텐츠가 fixed 버튼에 가려지지 않게 spacer 역할.
        */}
 
-      {/*
-        * 설계사 한줄평 — 메신저 패턴 (아바타 + 이름 + 말풍선). 좌상단 꼬리 (rounded-tl-sm)
-        * + 아바타 정렬로 "이 설계사가 보낸 메시지" 라는 톤을 살림. 본문 끝의 attribution
-        * 카드 와 중복 같지만, 여긴 message-from-partner 톤이고 끝은 프로필/신뢰지표 톤.
-        */}
-      <div className="mt-6 flex items-start gap-2">
-        <PartnerAvatar
-          name={proposal.partner.name}
-          avatarUrl={proposal.partner.avatarUrl}
-          className="w-8 h-8 text-[11px] font-bold"
-          fallbackClassName="bg-black text-white"
-        />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-[#4b4b4b] mb-1">
-            {proposal.partner.name} 설계사
-          </p>
-          <div className="bg-[#f0f0f0] rounded-2xl rounded-tl-sm px-4 py-3">
-            <p className="text-sm text-black leading-relaxed">
-              {proposal.note}
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* 설계사 한줄평 — message-from-partner 톤. 본문 끝 attribution 카드는
+        * 프로필/신뢰지표 톤으로 역할이 다름. */}
+      <PartnerNoteBubble
+        className="mt-6"
+        partnerName={proposal.partner.name}
+        avatarUrl={proposal.partner.avatarUrl}
+        note={proposal.note}
+      />
 
       {/* 분석 안 된 proposal — 데이터 섹션 placeholder 로 대체.
        *   note + partner attribution 은 여전히 노출 (가용한 정보).
@@ -251,76 +210,7 @@ function PlanProposalBody({
       )}
 
       {/* 핵심 수치 — 보험사 / 매월 납입료 / 계약 구조. 분석 안 된 카드는 hide. */}
-      {proposal.analyzed && (
-      <section className="rounded-xl bg-[#f8f8f8] p-5 flex flex-col gap-5">
-        <div>
-          <p className="text-xs text-[#4b4b4b]">{proposal.insurer}</p>
-          <p className="mt-3 text-xs text-[#4b4b4b]">매달 내는 보험료</p>
-          <p className="mt-0.5 text-[2.25rem] font-bold tracking-tight text-black leading-none">
-            {formatCurrency(proposal.monthlyPremium)}
-            <span className="ml-1 text-base font-medium text-[#4b4b4b]">
-              원
-            </span>
-          </p>
-        </div>
-        {/*
-         * 계약 구조 — label/value pair 대신 친근한 sentence 리스트로.
-         * 일반인이 보험 용어 (해지환급금 / 갱신형 담보 등) 를 모를 수 있어 키워드
-         * 만 굵게 두고 의미를 풀어 설명.
-         */}
-        <ul className="flex flex-col gap-3 text-sm text-[#4b4b4b] leading-snug">
-          <li>
-            <span className="font-semibold text-black">
-              {proposal.paymentYears}년 동안
-            </span>{" "}
-            매달 보험료를 내야 해요
-          </li>
-          <li>
-            <span className="font-semibold text-black">
-              {proposal.maturityAge}세까지
-            </span>{" "}
-            보장받을 수 있어요
-          </li>
-          <li>
-            {proposal.hasRefundDuringPayment ? (
-              <>
-                납입기간 중 해지해도{" "}
-                <span className="font-semibold text-black">
-                  낸 돈의 일부
-                </span>
-                를 돌려받을 수 있어요
-              </>
-            ) : (
-              <>
-                납입기간 중 해지하면{" "}
-                <span className="font-semibold text-black">
-                  낸 돈을 돌려받지 못해요
-                </span>
-              </>
-            )}
-          </li>
-          <li>
-            {proposal.hasRenewableRider ? (
-              <>
-                보험료가{" "}
-                <span className="font-semibold text-black">
-                  {proposal.renewalIntervalYears
-                    ? `${proposal.renewalIntervalYears}년마다`
-                    : "주기적으로"}
-                </span>{" "}
-                조금씩 인상돼요
-              </>
-            ) : (
-              <>
-                보험료가{" "}
-                <span className="font-semibold text-black">끝까지</span>{" "}
-                그대로예요
-              </>
-            )}
-          </li>
-        </ul>
-      </section>
-      )}
+      {proposal.analyzed && <ProposalMetricsCard proposal={proposal} />}
 
       {/* ROI 그래프 — [recent₁, recent₂, recent₃, 🔍]. 검색 chip click 시 모달.
        *  reports 가 비어 있거나 현재 proposal 이 분석 안 된 경우 hide. */}
@@ -399,12 +289,4 @@ function PlanProposalBody({
     </div>
     </>
   );
-}
-
-/* ============================================================
- * formatters
- * ============================================================ */
-
-function formatCurrency(n: number): string {
-  return n.toLocaleString("ko-KR");
 }
