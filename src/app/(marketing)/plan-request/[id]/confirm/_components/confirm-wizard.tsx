@@ -301,6 +301,10 @@ export function ConfirmWizard({
           </Field>
         )}
 
+        {/* 보험사 문자 안내 — 설계사가 제안서를 작성하는 과정에서 보험사가 본인에게
+            직접 문자를 보낼 수 있음을 미리 인지시켜, 받았을 때 당황하지 않도록 함. */}
+        <InsurerMessageNotice />
+
         {/* 동의 항목 */}
         <div className="flex flex-col gap-3 pt-2">
           <ConsentRow
@@ -411,6 +415,37 @@ function RequestSummary({ step1 }: { step1: Step1Input }) {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * 보험사 문자 안내 — 설계사가 제안서를 만들려면 보험사 전산에 고객 등록이 필요하고,
+ * 그 과정에서 보험사가 가입자 휴대폰으로 '가입설계동의 및 고객등록 요청' 문자를 보낸다.
+ * 가입자 입장에선 신청하지 않은 곳에서 온 문자처럼 보일 수 있어, 미리 알려 안심시킨다.
+ */
+function InsurerMessageNotice() {
+  return (
+    <div className="rounded-xl bg-[#f8f8f8] p-4 flex gap-3">
+      <span
+        className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-black text-white text-[11px] font-bold leading-none"
+        aria-hidden
+      >
+        i
+      </span>
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-medium text-black">
+          보험사에서 문자가 올 수 있어요
+        </p>
+        <p className="text-xs text-[#4b4b4b] leading-relaxed">
+          설계사가 제안서를 준비하는 과정에서, 보험사가 가입자 본인에게{" "}
+          <span className="font-medium text-black">
+            ‘가입설계동의 및 고객등록 요청’
+          </span>{" "}
+          문자를 보낼 수 있어요. 정확한 제안서를 받기 위한 정상적인 절차이니, 문자가
+          오더라도 놀라지 마시고 안내에 따라 진행해 주세요.
+        </p>
+      </div>
+    </div>
   );
 }
 
