@@ -11,11 +11,7 @@ import { newId, newToken } from "@/lib/id";
 import { isAligoTestMode, sendAlimtalk, sendOtpSms } from "@/server/aligo";
 import { prisma } from "@/server/db/prisma";
 import { getClientIp } from "@/server/get-client-ip";
-import {
-  KAKAO_TEMPLATE_NEW_ASSIGNMENT,
-  buildNewAssignmentAlimtalk,
-} from "@/server/kakao-templates";
-import { getPublicBaseUrl } from "@/server/origin";
+import { buildNewAssignmentAlimtalk } from "@/server/kakao-templates";
 import { getRedis } from "@/server/redis";
 import { getSettings } from "@/server/settings";
 
@@ -556,8 +552,6 @@ async function notifyPartnersOfNewAssignment(args: {
     partnerPhone: string | null;
   }>;
 }): Promise<void> {
-  const origin = await getPublicBaseUrl();
-
   const budget = formatBudgetRange(args.monthlyBudgetMin, args.monthlyBudgetMax);
   const coverageParsed = CoverageRequestSchema.safeParse(args.coverage);
   const requestText = coverageParsed.success
@@ -574,19 +568,15 @@ async function notifyPartnersOfNewAssignment(args: {
         return;
       }
       const partnerName = a.partnerName ?? "파트너";
-      const payload = buildNewAssignmentAlimtalk({
+      const { templateCode, variables } = buildNewAssignmentAlimtalk({
         partnerName,
         customerName: args.customerName,
         budget,
         requestText,
         token: a.token,
-        origin,
       });
       try {
-        await sendAlimtalk(a.partnerPhone, {
-          templateCode: KAKAO_TEMPLATE_NEW_ASSIGNMENT,
-          ...payload,
-        });
+        await sendAlimtalk(a.partnerPhone, templateCode, variables);
       } catch (err) {
         console.error(
           "[finalizeRequest] partner notification alimtalk failed",

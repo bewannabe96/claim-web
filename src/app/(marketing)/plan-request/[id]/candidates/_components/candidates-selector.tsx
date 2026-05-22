@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
+import { PartnerAvatar } from "@/features/partners/ui/partner-avatar";
 import { submitStep2 } from "@/features/plan-requests/actions";
 import type { PartnerCard } from "@/features/partners/schema";
 import { cn } from "@/lib/utils";
@@ -116,8 +117,6 @@ function CandidateCard({
   disabled: boolean;
   onToggle: () => void;
 }) {
-  const initial = card.name.charAt(0);
-
   // 하단 강조 pill — 신규 등록 설계사면 별도 라벨, 아니면 경력 강조
   const highlightLabel = card.isNew
     ? "새로운 추천 설계사"
@@ -164,11 +163,14 @@ function CandidateCard({
         )}
       </span>
 
-      {/* 헤더: 이니셜 아바타 + 이름/경력 */}
+      {/* 헤더: 프로필 아바타 + 이름/경력 */}
       <div className="flex items-center gap-3 pr-8">
-        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-black text-white text-lg font-bold shrink-0">
-          {initial}
-        </div>
+        <PartnerAvatar
+          name={card.name}
+          avatarUrl={card.avatarUrl}
+          className="w-12 h-12 text-lg font-bold"
+          fallbackClassName="bg-black text-white"
+        />
         <div className="flex flex-col min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="text-base font-bold text-black">{card.name}</span>

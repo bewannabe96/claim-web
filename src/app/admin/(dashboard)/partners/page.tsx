@@ -7,6 +7,8 @@ import {
   listAllPartners,
   listPartnerSignupInvitations,
 } from "@/features/partners/queries";
+import { PartnerAvatar } from "@/features/partners/ui/partner-avatar";
+import { contentPublicUrl } from "@/server/content-storage";
 import { cn } from "@/lib/utils";
 import { nowMs } from "@/lib/wall-clock";
 
@@ -136,9 +138,14 @@ export default async function AdminPartnersPage() {
                     href={`/admin/partners/${a.id}`}
                     className="flex items-center gap-3 group"
                   >
-                    <span className="flex items-center justify-center w-9 h-9 rounded-full bg-black text-white text-sm font-bold shrink-0">
-                      {a.user.name.charAt(0)}
-                    </span>
+                    <PartnerAvatar
+                      name={a.user.name}
+                      avatarUrl={
+                        a.avatarKey ? contentPublicUrl(a.avatarKey) : null
+                      }
+                      className="w-9 h-9 text-sm font-bold"
+                      fallbackClassName="bg-black text-white"
+                    />
                     <span className="flex flex-col gap-0.5 min-w-0">
                       <span className="text-sm font-medium text-black group-hover:underline truncate">
                         {a.user.name}

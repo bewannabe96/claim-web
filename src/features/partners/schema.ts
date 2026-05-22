@@ -61,6 +61,8 @@ export type PartnerInput = z.infer<typeof PartnerInputSchema>;
  * 노출되어선 안 되는 운영 필드(email/phone/active/카운터/license)를 제외.
  *
  * `isNew` 는 derived — assignmentStats.exposureCount === 0 인 신규 등록 설계사.
+ * `avatarUrl` 은 server-only `contentPublicUrl(avatarKey)` 를 통해 미리 resolve —
+ * 사진 미등록 partner 는 null (이니셜 fallback). S3 key 자체는 client 노출 안 함.
  */
 export type PartnerCard = {
   id: string;
@@ -69,6 +71,7 @@ export type PartnerCard = {
   yearsOfExperience: number;
   trustMetric: string;
   isNew: boolean;
+  avatarUrl: string | null;
 };
 
 /** PartnerSignupInvitation Prisma 모델의 도메인 alias — 어드민 페이지 / 가입 페이지 공용. */

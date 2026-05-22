@@ -1,5 +1,6 @@
 import "server-only";
 
+import { contentPublicUrl } from "@/server/content-storage";
 import { prisma } from "@/server/db/prisma";
 
 import type {
@@ -163,5 +164,6 @@ function toCard(p: Partner): PartnerCard {
     yearsOfExperience: p.yearsOfExperience,
     trustMetric: p.trustMetric,
     isNew: (p.assignmentStats?.exposureCount ?? 0) === 0,
+    avatarUrl: p.avatarKey ? contentPublicUrl(p.avatarKey) : null,
   };
 }

@@ -1,13 +1,13 @@
 # infra/aligo-proxy
 
-알리고 SMS API IP whitelist 통과용 고정 IP 프록시. Lightsail 인스턴스 1대 + 고정 IP +
-Caddy(TLS auto) + 작은 Node forward proxy.
+알리고 SMS / LMS / 알림톡 API IP whitelist 통과용 고정 IP 프록시. Lightsail 인스턴스
+1대 + 고정 IP + Caddy(TLS auto) + 작은 Node forward proxy.
 
 ## 아키텍처
 
 ```
 Vercel (Server Action / src/server/aligo.ts)
-    │  POST https://<proxy-host>/aligo/send/
+    │  POST https://<proxy-host>/aligo/{send,alimtalk/send,template/list}/
     │  Authorization: Bearer <PROXY_SHARED_SECRET>
     │  Content-Type: application/x-www-form-urlencoded
     │  body: key=...&user_id=...&sender=...&receiver=...&msg=...
@@ -15,13 +15,20 @@ Vercel (Server Action / src/server/aligo.ts)
 Lightsail (Seoul, 고정 IP — 알리고 콘솔에 등록)
     │  Caddy :443 (Let's Encrypt 자동) → Node :8080
     │  ① Bearer secret 검증
-    │  ② /aligo/* → https://apis.aligo.in/* 로 그대로 forward
+    │  ② path 기반 upstream 라우팅
     ▼
-https://apis.aligo.in/send/
+SMS/LMS     : /aligo/send/          → https://apis.aligo.in/send/
+알림톡 발송 : /aligo/alimtalk/send/ → https://kakaoapi.aligo.in/akv10/alimtalk/send/
+템플릿 조회 : /aligo/template/list/ → https://kakaoapi.aligo.in/akv10/template/list/
 ```
 
+알리고는 SMS/LMS (`apis.aligo.in`) 와 카카오 — 알림톡 발송 + 검수 템플릿 조회 —
+(`kakaoapi.aligo.in` + `/akv10` prefix) 의 호스트/경로가 다르므로, 프록시가
+`/aligo/{alimtalk,template}/*` 를 별도 호스트로 분기해 매핑한다. 클라이언트는 양쪽
+모두 동일한 `/aligo/...` prefix 로 호출.
+
 프록시는 **인증 + 경로 매핑만** 책임. 요청/응답 바디 무수정 패스 →
-`ALIGO_KEY`/`USER_ID`/`SENDER` 는 Vercel env 그대로 유지, 코드 변경 최소.
+`ALIGO_KEY`/`USER_ID`/`SENDER`/`KAKAO_SENDER_KEY` 는 Vercel env 그대로 유지, 코드 변경 최소.
 
 ## 비용 (Seoul 기준)
 
@@ -29,7 +36,7 @@ https://apis.aligo.in/send/
 |---|---|
 | `micro_3_0` 인스턴스 (1GB / 2vCPU / 40GB / 2TB transfer) | ~$10 |
 | 고정 IP (인스턴스 attach 중엔 무료) | $0 |
-| 데이터 전송 (OTP 트래픽은 무시 가능) | $0 |
+| 데이터 전송 (OTP SMS + 알림톡 트래픽은 무시 가능) | $0 |
 | **합계** | **~$10** |
 
 스냅샷 백업은 별도 (~$0.05/GB·월). Lightsail 콘솔에서 켜기.
@@ -147,7 +154,8 @@ ssh $SSH_OPTS $HOST 'sudo journalctl -u caddy -f'
 ### 모니터링 (필수)
 
 `<proxy-url>/healthz` → 200 `ok`. UptimeRobot / Better Stack / Pingdom 등에서
-1분 간격 + Slack/이메일 알림. 프록시 죽으면 OTP 발송이 전부 막힘 (회원가입 / 본인인증 차단).
+1분 간격 + Slack/이메일 알림. 프록시 죽으면 SMS OTP + 알림톡 발송이 모두 막힘
+(본인인증 차단 + 파트너/가입자 사용자 알림 — 신규 배정 / 연락 요청 / 분석 완료 — 전부 미전송).
 
 ### 백업
 

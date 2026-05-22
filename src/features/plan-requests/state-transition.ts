@@ -4,11 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { sendAlimtalk } from "@/server/aligo";
 import { prisma } from "@/server/db/prisma";
-import {
-  KAKAO_TEMPLATE_ANALYSIS_COMPLETED,
-  buildAnalysisCompletedAlimtalk,
-} from "@/server/kakao-templates";
-import { getPublicBaseUrl } from "@/server/origin";
+import { buildAnalysisCompletedAlimtalk } from "@/server/kakao-templates";
 
 /**
  * plan_request 의 모든 plan_request_assignment 가 종결됐을 때 다음 상태로 전이.
@@ -93,18 +89,13 @@ async function notifyAnalysisCompleted(planRequestId: string): Promise<void> {
     return;
   }
 
-  const origin = await getPublicBaseUrl();
   const customerName = request.name ?? "고객";
-  const payload = buildAnalysisCompletedAlimtalk({
+  const { templateCode, variables } = buildAnalysisCompletedAlimtalk({
     customerName,
     token: request.resultToken,
-    origin,
   });
   try {
-    await sendAlimtalk(request.phone, {
-      templateCode: KAKAO_TEMPLATE_ANALYSIS_COMPLETED,
-      ...payload,
-    });
+    await sendAlimtalk(request.phone, templateCode, variables);
   } catch (err) {
     console.error(
       "[state-transition] completed notification alimtalk failed",
