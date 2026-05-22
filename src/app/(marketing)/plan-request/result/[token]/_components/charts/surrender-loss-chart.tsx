@@ -21,8 +21,13 @@ export function SurrenderLossChart({
   activeId: string;
 }) {
   // 가입 나이 = surrenderLoss 첫 점의 age (adapter: customerAge + elapsed_year 0).
-  // surrenderLoss 전부 비어있는 경우는 아래 두 가드로 차트 자체가 return null — fallback 값은 미관찰.
-  const entryAge = proposals[0]?.surrenderLoss[0]?.age ?? 0;
+  // 모든 제안서가 동일 가입자라 가입 나이는 같음 — 단, proposals[0] 이 아직 분석
+  // 전(빈 카드)이면 surrenderLoss 가 [] 라 entryAge 가 0 으로 잘못 잡힌다. 그러면
+  // x축이 1세부터 시작하고, 아래 monthly 가 loss/(경과개월) 대신 loss/(나이×12) 로
+  // 계산돼 앞 구간이 0에서 솟아오르는 곡선이 된다. 데이터가 있는 첫 제안서에서 derive.
+  const entryAge =
+    proposals.find((p) => p.surrenderLoss.length > 0)?.surrenderLoss[0]?.age ??
+    0;
   const [cursorAge, setCursorAge] = useState<number>(() => entryAge + 1);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -53,7 +58,10 @@ export function SurrenderLossChart({
   const yTicks: number[] = [];
   for (let v = yMin; v <= yMax; v += STEP) yTicks.push(v);
 
-  const ages = series[0].points.map((p) => p.age);
+  // x축 도메인 — points 가 채워진 첫 시리즈 기준 (series[0] 은 미분석 제안서면 빈 배열).
+  const ages = (series.find((s) => s.points.length > 0)?.points ?? []).map(
+    (p) => p.age,
+  );
   const minAge = ages[0] ?? entryAge + 1;
   const maxAge = ages[ages.length - 1] ?? 100;
 

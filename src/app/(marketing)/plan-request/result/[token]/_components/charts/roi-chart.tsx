@@ -75,7 +75,14 @@ export function RoiChart({
   const yMaxRaw = Math.max(...allValues, 1);
   const yMaxLog = Math.log10(yMaxRaw + 1);
 
-  const ages = (proposals[0].roi[scenario.id] ?? []).map((p) => p.age);
+  // x축 도메인 — 현 시나리오 시리즈가 채워진 첫 제안서 기준. 모든 제안서가 동일
+  // 가입자라 가입~만기 구간은 같음. proposals[0] 을 그대로 쓰면, 그 제안서가 아직
+  // 분석 전(빈 카드)일 때 ages 가 [] → minAge 가 0 으로 떨어져 x축이 "0세" 부터
+  // 시작하는 버그. 데이터가 있는 첫 시리즈에서 derive.
+  const ages = (
+    proposals.map((p) => p.roi[scenario.id] ?? []).find((s) => s.length > 0) ??
+    []
+  ).map((p) => p.age);
   const minAge = ages[0] ?? 0;
   const maxAge = ages[ages.length - 1] ?? 100;
 
