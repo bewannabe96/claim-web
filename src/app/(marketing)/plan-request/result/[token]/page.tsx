@@ -17,6 +17,7 @@ import { getSettings } from "@/server/settings";
 import { ExpiredState } from "./_components/expired-state";
 import { RematchingState } from "./_components/rematching-state";
 import { ResultView } from "./_components/result-view";
+import { ResultViewedMarker } from "./_components/result-viewed-marker";
 import { adaptPlanProposal } from "./_lib/adapt-proposal";
 
 const MS_PER_DAY = 86_400_000;
@@ -69,6 +70,7 @@ export default async function ResultPage({
   if (isExpired) {
     return (
       <main className="flex flex-col flex-1 bg-white">
+        <ResultViewedMarker token={token} />
         <div className="px-6 pt-10">
           <BrandMark />
         </div>
@@ -116,6 +118,7 @@ export default async function ResultPage({
 
   return (
     <main className="flex flex-col flex-1 bg-white">
+      <ResultViewedMarker token={token} />
       <div className="px-6 pt-10">
         <BrandMark />
         <header className="mt-6 flex flex-col gap-2">

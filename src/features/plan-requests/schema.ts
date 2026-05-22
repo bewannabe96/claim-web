@@ -354,6 +354,8 @@ export type PlanRequest = {
   createdAt: string;
   dispatchedAt?: string;
   deadlineAt?: string;
+  /** 가입자가 결과 페이지를 처음 연 시각 (ISO). 미열람이면 undefined. */
+  resultViewedAt?: string;
   rematchCount: number;
   resultToken?: string;          // 결과 열람용 일회용 토큰
 };
