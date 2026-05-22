@@ -17,6 +17,7 @@ import { getSettings } from "@/server/settings";
 import { ExpiredState } from "./_components/expired-state";
 import { RematchingState } from "./_components/rematching-state";
 import { ResultView } from "./_components/result-view";
+import { ResultViewedMarker } from "./_components/result-viewed-marker";
 import { adaptPlanProposal } from "./_lib/adapt-proposal";
 
 const MS_PER_DAY = 86_400_000;
@@ -67,9 +68,15 @@ export default async function ResultPage({
       settings.resultRetentionDays * MS_PER_DAY;
 
   // ExpiredState 는 StatusScreen 기반 — 자체 <main> landmark + BrandMark 를 렌더.
-  // page 의 <main> 으로 감싸면 <main> 중첩 (HTML 위반) 이므로 그대로 반환.
+  // page 의 <main> 으로 감싸면 <main> 중첩 (HTML 위반) — fragment 로만 감싸
+  // 열람 마킹 (ResultViewedMarker) 만 동봉한다.
   if (isExpired) {
-    return <ExpiredState />;
+    return (
+      <>
+        <ResultViewedMarker token={token} />
+        <ExpiredState />
+      </>
+    );
   }
 
   // 실 데이터 — submitted proposal + 작성 설계사 카드.
@@ -106,9 +113,14 @@ export default async function ResultPage({
   );
 
   // RematchingState 도 StatusScreen 기반 — 자체 <main> landmark 를 렌더하므로
-  // page 의 <main> 밖에서 단독 반환 (중첩 <main> 회피).
+  // page 의 <main> 밖, fragment 로만 감싸 반환 (중첩 <main> 회피).
   if (proposals.length === 0) {
-    return <RematchingState />;
+    return (
+      <>
+        <ResultViewedMarker token={token} />
+        <RematchingState />
+      </>
+    );
   }
 
   // 분석 진행 현황 — 분석 안 된 proposal 이 있으면 progress 배지, 모두 완료면 "결과 준비됨".
@@ -118,6 +130,7 @@ export default async function ResultPage({
 
   return (
     <main className="flex flex-col flex-1 bg-white">
+      <ResultViewedMarker token={token} />
       <div className="px-6 pt-10">
         <BrandMark />
         <header className="mt-6 flex flex-col gap-2">

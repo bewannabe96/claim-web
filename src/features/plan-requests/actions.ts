@@ -649,3 +649,26 @@ export async function sendRequestResultNotification(
   const outcome = await sendAnalysisCompletedNotification(planRequestId);
   return outcome.ok ? { ok: true } : { ok: false, error: outcome.reason };
 }
+
+/* ============================================================
+ * 결과 페이지 열람 마킹
+ * ============================================================
+ *
+ * 가입자가 결과 페이지를 처음 연 시각을 plan_request.resultViewedAt 에 기록.
+ * 인증은 resultToken — 결과 페이지 자체가 토큰 기반이라 액션도 동일 (세션 없음).
+ * 결과 페이지의 client 컴포넌트 (ResultViewedMarker) 가 마운트 시 1회 호출.
+ *
+ * 마킹을 Server Component 렌더가 아닌 client useEffect 에서 발화하는 이유: 카카오
+ * 링크 프리뷰 크롤러·봇은 JS 를 실행하지 않으므로 실제 가입자 열람만 기록 (false
+ * positive 차단).
+ *
+ * 멱등: WHERE resultViewedAt IS NULL — 새로고침 / 재진입은 0 row no-op 이라 최초
+ * 열람 시각만 보존. 잘못된·만료된 토큰은 매칭 0 row 라 조용히 무시 (에러 없음).
+ * ============================================================ */
+export async function markResultViewed(resultToken: string): Promise<void> {
+  if (!resultToken) return;
+  await prisma.planRequest.updateMany({
+    where: { resultToken, resultViewedAt: null },
+    data: { resultViewedAt: new Date() },
+  });
+}
