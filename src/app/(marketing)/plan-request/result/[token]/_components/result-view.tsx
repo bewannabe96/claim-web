@@ -284,7 +284,7 @@ function PlanProposalBody({
           <li>
             {proposal.hasRefundDuringPayment ? (
               <>
-                중간에 그만둬도{" "}
+                납입기간 중 해지해도{" "}
                 <span className="font-semibold text-black">
                   낸 돈의 일부
                 </span>
@@ -292,11 +292,10 @@ function PlanProposalBody({
               </>
             ) : (
               <>
-                중간에 그만두면{" "}
+                납입기간 중 해지하면{" "}
                 <span className="font-semibold text-black">
-                  낸 돈을 전부 포기
+                  낸 돈을 돌려받지 못해요
                 </span>
-                해야 해요
               </>
             )}
           </li>
