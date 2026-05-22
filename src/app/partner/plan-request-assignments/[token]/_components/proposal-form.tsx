@@ -293,7 +293,7 @@ function CustomerContext({ request }: { request: PlanRequest }) {
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <Meta
           label="생년월일"
-          value={birthDate ? formatBirthDate(birthDate) : "—"}
+          value={birthDate ? formatIsoDate(birthDate) : "—"}
         />
         <Meta label="월 예상 보험료" value={budgetLabel} />
       </dl>
@@ -386,7 +386,7 @@ function MedicalHistorySection({
                 </span>
                 <span className="text-[11px] text-[#4b4b4b] whitespace-nowrap">
                   {TREATMENT_PERIOD_LABEL[e.treatmentPeriod]} ·{" "}
-                  {e.treatmentStartDate}
+                  {formatIsoDate(e.treatmentStartDate)}
                 </span>
               </div>
               <p className="text-xs text-[#4b4b4b]">
@@ -525,8 +525,8 @@ function formatBudget(n: number): string {
   return `${n.toLocaleString("ko-KR")}원`;
 }
 
-/** 1990-01-01 → 1990.01.01 */
-function formatBirthDate(d: string): string {
+/** YYYY-MM-DD ISO 날짜 → YYYY.MM.DD (생년월일·치료 시작일 등 날짜 전용 필드 공용) */
+function formatIsoDate(d: string): string {
   return d.replaceAll("-", ".");
 }
 

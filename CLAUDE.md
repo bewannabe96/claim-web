@@ -27,6 +27,7 @@
 - **Client Component `useState` 는 Router Cache 가 보존** — soft nav 후 같은 라우트에 재진입하면 떠날 때 state 그대로 복원됨. fresh state 원하면 navigate 직전 명시적 reset (예: [step1-wizard.tsx](src/app/(marketing)/plan-request/new/_components/step1-wizard.tsx)).
 - **`schema.prisma` 변경 후 dev 서버 재시작 필수** — `pnpm db:push` 가 DB + generated client 는 갱신하지만, 실행 중인 next-dev 가 메모리에 OLD client 를 들고 있어 `PrismaClientValidationError: Unknown argument` 발생. Turbopack HMR 가 `node_modules` 의 generated 모듈은 watch 안 함.
 - **PortOne webhook 은 콘솔에서 "결제모듈 V2" 등록 필수** — `@portone/server-sdk` 의 verify 가 2024-04-25 페이로드 전용. V1 또는 다른 버전은 `Unrecognized` 로 분류되어 silent ignored (잔액 누락). 자세한 건 [docs/credits.md §4](docs/credits.md), [features/credits/CLAUDE.md](src/features/credits/CLAUDE.md).
+- **화면 datetime 은 반드시 [src/lib/datetime.ts](src/lib/datetime.ts) 경유** — 서버 런타임이 UTC (Vercel) 라 `Date.getHours()` 등 로컬 게터나 `timeZone` 없는 `Intl.DateTimeFormat` 은 UTC 시각을 노출 (KST dev 머신에선 버그 안 보임). 가입자/설계사 화면 → `formatDateTime`, 어드민 단순 포맷 → `getKstParts`.
 
 ## 디렉토리 책임
 

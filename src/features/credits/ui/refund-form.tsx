@@ -5,6 +5,7 @@ import { useActionState, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDateTime } from "@/lib/datetime";
 
 import { refundTopup } from "../actions";
 import type { RefundableTopup } from "../queries";
@@ -16,13 +17,6 @@ type FormAction = (
 ) => Promise<RefundMutationState>;
 
 const KRW = new Intl.NumberFormat("ko-KR");
-const DATE = new Intl.DateTimeFormat("ko-KR", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 /**
  * 결제건 환불 폼.
@@ -86,7 +80,7 @@ export function RefundForm({
         >
           {refundableTopups.map((t) => (
             <option key={t.paymentId} value={t.paymentId}>
-              {DATE.format(t.topupAt)} · 충전 {KRW.format(t.originalAmount)}원
+              {formatDateTime(t.topupAt)} · 충전 {KRW.format(t.originalAmount)}원
               {t.refundedAmount > 0
                 ? ` · 환불 잔여 ${KRW.format(t.refundableAmount)}원`
                 : ""}
