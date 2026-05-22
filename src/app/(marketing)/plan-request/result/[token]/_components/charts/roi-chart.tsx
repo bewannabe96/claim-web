@@ -75,16 +75,21 @@ export function RoiChart({
   const yMaxRaw = Math.max(...allValues, 1);
   const yMaxLog = Math.log10(yMaxRaw + 1);
 
-  // x축 도메인 — 현 시나리오 시리즈가 채워진 첫 제안서 기준. 모든 제안서가 동일
-  // 가입자라 가입~만기 구간은 같음. proposals[0] 을 그대로 쓰면, 그 제안서가 아직
-  // 분석 전(빈 카드)일 때 ages 가 [] → minAge 가 0 으로 떨어져 x축이 "0세" 부터
-  // 시작하는 버그. 데이터가 있는 첫 시리즈에서 derive.
+  // ages — 발병률 area path 전용. incidenceRates 와 index 로 짝지어지므로 단일
+  // 대표 시리즈(현 시나리오가 채워진 첫 제안서) 기준. proposals[0] 가 아직 분석
+  // 전(빈 카드)이면 [] 라, 비지 않은 첫 시리즈에서 derive.
   const ages = (
     proposals.map((p) => p.roi[scenario.id] ?? []).find((s) => s.length > 0) ??
     []
   ).map((p) => p.age);
-  const minAge = ages[0] ?? 0;
-  const maxAge = ages[ages.length - 1] ?? 100;
+  // x축 도메인 — 제안서마다 만기(maturity_age)가 달라 ROI 곡선 길이가 제각각이다.
+  // 한 제안서만 보고 도메인을 잡으면 더 긴 제안서의 곡선이 x축을 넘어 그려진다.
+  // 그려지는 모든 시나리오 시리즈의 합집합으로 잡아 전부 담는다.
+  const domainAges = proposals
+    .flatMap((p) => p.roi[scenario.id] ?? [])
+    .map((pt) => pt.age);
+  const minAge = domainAges.length > 0 ? Math.min(...domainAges) : 0;
+  const maxAge = domainAges.length > 0 ? Math.max(...domainAges) : 100;
 
   // svg 좌표계
   // 좌 padding: ROI(x배) 라벨 / 우 padding: 누적 발병률(%) 라벨
@@ -152,9 +157,18 @@ export function RoiChart({
 
   const active = proposals.find((p) => p.id === activeId) ?? proposals[0];
   const inactive = proposals.filter((p) => p.id !== active.id);
+  const activeRoi = active.roi[scenario.id] ?? [];
 
-  // cursor 의 도메인 보정 — minAge/maxAge 안으로 클램프
-  const clampedCursorAge = Math.max(minAge, Math.min(maxAge, cursorAge));
+  // cursor 는 강조(검정 굵은) 제안서 곡선의 실제 범위로 제한한다. 제안서마다
+  // 만기가 달라 활성 곡선이 x축 전체보다 짧게 끝날 수 있는데, 그 빈 공간으로
+  // 커서가 넘어가면 점이 곡선에서 떨어져 허공에 뜬다.
+  const activeMinAge = activeRoi.length > 0 ? activeRoi[0].age : minAge;
+  const activeMaxAge =
+    activeRoi.length > 0 ? activeRoi[activeRoi.length - 1].age : maxAge;
+  const clampedCursorAge = Math.max(
+    activeMinAge,
+    Math.min(activeMaxAge, cursorAge),
+  );
 
   function updateCursorFromPointer(clientX: number) {
     const svg = svgRef.current;
@@ -163,14 +177,14 @@ export function RoiChart({
     if (rect.width === 0) return;
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const xView = ratio * W;
-    if (xView <= padding.left) return setCursorAge(minAge);
-    if (xView >= W - padding.right) return setCursorAge(maxAge);
+    // 포인터 x → 나이(x축 전체 도메인 기준) → 강조 곡선 범위로 클램프.
     const ageRaw =
       minAge + ((xView - padding.left) / plotW) * (maxAge - minAge);
-    setCursorAge(Math.round(ageRaw));
+    setCursorAge(
+      Math.max(activeMinAge, Math.min(activeMaxAge, Math.round(ageRaw))),
+    );
   }
 
-  const activeRoi = active.roi[scenario.id] ?? [];
   const cursorPoint =
     activeRoi.find((p) => p.age === clampedCursorAge) ??
     activeRoi[activeRoi.length - 1];
