@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
 import { getRecentLedger, listCreditLedger } from "../queries";
@@ -85,7 +86,7 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
         <div className="flex items-center gap-2">
           <TypeBadge type={entry.type} />
           <span className="text-xs text-[#4b4b4b]">
-            {formatKoreanDateTime(entry.createdAt)}
+            {formatDateTime(entry.createdAt)}
           </span>
         </div>
         {entry.reason && (
@@ -138,16 +139,4 @@ function TypeBadge({ type }: { type: CreditType }) {
       {CREDIT_TYPE_LABELS[type]}
     </span>
   );
-}
-
-const DATE_FMT = new Intl.DateTimeFormat("ko-KR", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-function formatKoreanDateTime(d: Date): string {
-  return DATE_FMT.format(d);
 }
