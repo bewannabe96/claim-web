@@ -5,6 +5,7 @@ import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { emitAdminNotification } from "@/features/notifications/emit";
 import { findAssignmentCandidates } from "@/features/partners/queries";
 import { getPriceForBudget } from "@/features/plan-request-pricing/queries";
 import { newId, newToken } from "@/lib/id";
@@ -516,6 +517,17 @@ export async function finalizeRequest(
     monthlyBudgetMax: req.monthlyBudgetMax,
     coverage: req.coverage,
     assignments: assignmentsToCreate,
+  });
+
+  // 어드민 대시보드 알림 — 새 요청서 송부 완료. emit 은 throw 하지 않으므로
+  // (실패해도 송부 트랜잭션 성공을 뒤집지 않음 — features/notifications/emit.ts)
+  // 그냥 await 한다.
+  await emitAdminNotification({
+    type: "plan_request.dispatched",
+    title: "새 요청서가 접수됐어요",
+    body: `${parsed.data.name} 님의 보험 상담 요청이 설계사에게 송부됐어요.`,
+    linkPath: `/admin/requests/${requestId}`,
+    entityId: requestId,
   });
 
   // TODO: 알림 발송 (1-1) — 가입자에게 디스패치 확인 알림. dispatched 페이지가 "최대
