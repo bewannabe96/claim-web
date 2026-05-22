@@ -30,7 +30,7 @@ import { getSupabaseServerClient } from "@/server/supabase";
  *
  *   2. **login** (signup 미존재): 기존 가입자 로그인.
  *      - code → session 교환
- *      - email 로 User 화이트리스트 조회 (partner extension active 확인)
+ *      - email 로 User 화이트리스트 조회 (partner extension 존재 확인 — active 무관)
  *      - authId 비어 있으면 claim (드물게 운영자가 수동 user 만들었을 때만)
  *      - 성공: ?next 또는 /partner, 실패: /partner/login?error=…&next=…
  *
@@ -177,10 +177,12 @@ async function handleLogin(
     select: {
       id: true,
       authId: true,
-      partner: { select: { active: true } },
+      partner: { select: { id: true } },
     },
   });
-  if (!user || !user.partner?.active) {
+  // partner extension 존재 여부만 검사 — `active` 는 매칭 풀 노출 토글이라
+  // 로그인 자격과 무관 (비활성 설계사도 로그인 가능).
+  if (!user || !user.partner) {
     await supabase.auth.signOut();
     return NextResponse.redirect(loginErrorUrl(origin, "not_registered", next));
   }

@@ -15,7 +15,7 @@ import {
   PageHeader,
   Section,
 } from "../../../_components/page-shell";
-import { formatDateTimeFull } from "../../../_lib/format";
+import { formatDateTime } from "../../../_lib/format";
 import { CopyLink } from "./_components/copy-link";
 import { InvitationActions } from "./_components/invitation-actions";
 
@@ -40,7 +40,7 @@ export default async function AdminPartnerSignupInvitationDetailPage({
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <BackLink href="/admin/partners">설계사 풀</BackLink>
+        <BackLink href="/admin/partners">파트너 풀</BackLink>
         <PageHeader
           title={`${invitation.name} — 가입 초청`}
           description={`${invitation.phone} · ${invitation.licenseNumber}`}
@@ -71,7 +71,7 @@ export default async function AdminPartnerSignupInvitationDetailPage({
             {invitation.consumedUserId && (
               <>
                 {" "}
-                설계사 정보는{" "}
+                파트너 정보는{" "}
                 <Link
                   href={`/admin/partners/${invitation.consumedUserId}`}
                   className="font-medium text-black hover:underline"
@@ -88,11 +88,11 @@ export default async function AdminPartnerSignupInvitationDetailPage({
             <p className="text-xs text-[#4b4b4b] leading-relaxed">
               {invitation.existingUserId
                 ? "어드민 본인 겸직 초청입니다. 같은 브라우저에서 본인이 직접 이 링크를 클릭하면 본인인증만으로 등록이 완료돼요."
-                : "이 링크를 카카오톡으로 설계사에게 전달해주세요. 설계사가 진입 후 카카오 로그인 + 본인인증을 완료하면 정식 가입됩니다."}
+                : "이 링크를 카카오톡으로 파트너에게 전달해주세요. 파트너가 진입 후 카카오 로그인 + 본인인증을 완료하면 정식 가입됩니다."}
             </p>
             <dl className="grid grid-cols-2 gap-4 pt-3 border-t border-[#efefef]">
-              <Field label="발급일">{formatDateTimeFull(invitation.createdAt)}</Field>
-              <Field label="만료일">{formatDateTimeFull(invitation.expiresAt)}</Field>
+              <Field label="발급일">{formatDateTime(invitation.createdAt)}</Field>
+              <Field label="만료일">{formatDateTime(invitation.expiresAt)}</Field>
             </dl>
           </div>
         )}

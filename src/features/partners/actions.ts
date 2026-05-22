@@ -102,19 +102,19 @@ async function checkInvitationConflicts(
 
   if (userByPhone) {
     if (userByPhone.partner) {
-      return "이미 가입된 설계사입니다.";
+      return "이미 가입된 파트너입니다.";
     }
     const isActiveAdmin = userByPhone.admin?.active === true;
     if (isActiveAdmin && existingUserId === userByPhone.id) {
       // 겸직 모드 — phone 충돌 통과. 자격번호 / pending 검사는 계속 진행.
     } else if (isActiveAdmin) {
-      return "이미 가입된 어드민 휴대폰 번호입니다. 어드민 본인 설계사 등록을 선택해주세요.";
+      return "이미 가입된 어드민 휴대폰 번호입니다. 어드민 본인 파트너 등록을 선택해주세요.";
     } else {
       return "이미 가입된 휴대폰 번호입니다.";
     }
   } else if (existingUserId) {
     // existingUserId 가 set 됐는데 phone 매칭 user 없음 = inconsistent.
-    return "어드민 본인 설계사 등록 정보가 일치하지 않습니다.";
+    return "어드민 본인 파트너 등록 정보가 일치하지 않습니다.";
   }
 
   if (partnerByLicense) return "이미 등록된 자격번호입니다.";
@@ -169,7 +169,7 @@ async function validateExistingUserAdminLink(
 ): Promise<string | null> {
   const session = await requireAdminSession();
   if (session.user.id !== existingUserId) {
-    return "어드민 본인 설계사 등록은 본인 계정으로만 가능합니다.";
+    return "어드민 본인 파트너 등록은 본인 계정으로만 가능합니다.";
   }
   const user = await prisma.user.findUnique({
     where: { id: existingUserId },
@@ -183,7 +183,7 @@ async function validateExistingUserAdminLink(
     return "어드민 본인 정보를 확인할 수 없습니다.";
   }
   if (user.partner) {
-    return "이미 설계사로 등록된 어드민입니다.";
+    return "이미 파트너로 등록된 어드민입니다.";
   }
   if (user.phone !== phone) {
     return "어드민 등록 휴대폰 번호와 일치하지 않습니다.";
@@ -453,7 +453,7 @@ export async function updatePartner(
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError) {
       if (err.code === "P2025") {
-        return { ok: false, errors: { _form: ["설계사를 찾을 수 없습니다."] } };
+        return { ok: false, errors: { _form: ["파트너를 찾을 수 없습니다."] } };
       }
       if (err.code === "P2002") {
         return {
@@ -505,7 +505,7 @@ export async function presignAvatarUploadForPartner(
     select: { id: true },
   });
   if (!partner) {
-    return { ok: false, error: "설계사를 찾을 수 없습니다." };
+    return { ok: false, error: "파트너를 찾을 수 없습니다." };
   }
 
   const { url, s3Key, cacheControl } = await presignPartnerAvatarUpload(
@@ -553,7 +553,7 @@ export async function setPartnerAvatar(
     select: { avatarKey: true },
   });
   if (!existing) {
-    return { ok: false, error: "설계사를 찾을 수 없습니다." };
+    return { ok: false, error: "파트너를 찾을 수 없습니다." };
   }
 
   await prisma.partner.update({
@@ -584,7 +584,7 @@ export async function removePartnerAvatar(
     select: { avatarKey: true },
   });
   if (!existing) {
-    return { ok: false, error: "설계사를 찾을 수 없습니다." };
+    return { ok: false, error: "파트너를 찾을 수 없습니다." };
   }
   if (!existing.avatarKey) {
     return { ok: true };

@@ -58,7 +58,7 @@
 #### `User`
 - **정의**: 모든 인증 사용자 공통. Supabase `auth.users` 와 매핑 (`authId`). 도메인 nanoid PK.
 - **DB**: `user`
-- **역할 구분**: `Partner` / `Admin` extension row 의 존재 (+ active) 가 권한 결정.
+- **역할 구분**: `Partner` / `Admin` extension row 의 존재가 권한 결정 (admin 은 추가로 `active=true` 필요, partner 는 존재만으로 충분 — `partner.active` 는 매칭 풀 노출 토글).
 
 #### `Partner` (설계사)
 - **정의**: User 와 1:1 (PK 공유). 매칭 대상 풀.
@@ -173,6 +173,19 @@
 - `PlanProposalAnalysisReport` — 그 제안서의 분석
 
 `Plan` prefix 가 없는 도메인 (`Partner`, `Admin`, `User`, `AppSettings`, 크레딧) 은 설계 요청 라이프사이클과 직교적인 엔티티.
+
+### 2.5 "설계사" vs "파트너" — UI 표기 분기
+
+`Partner` 엔티티의 한국어 표기는 **화면 영역에 따라 갈린다**:
+
+| 영역 | 표기 | 이유 |
+|---|---|---|
+| 어드민 (`/admin/*`) UI | **"파트너"** | 운영자 관점 — 매칭 풀의 공급자를 가리키는 중립어 |
+| 가입자 (`/plan-request/*`) UI | "설계사" | 가입자에게는 "설계사" 가 자연스러운 도메인 용어 (예: "매칭된 설계사 후보") |
+| 알림톡 / LMS 본문 | "설계사" | user-facing 채널 — 가입자 어휘 따름 |
+| 코드 / 주석 / 내부 문서 | "설계사" | §1.2 의 `Partner (설계사)` 캐노니컬 gloss 유지 |
+
+**어드민 UI "파트너" 범위**: 어드민 화면에 렌더되는 라벨 / 제목 / 헬퍼 텍스트 + `features/partners/actions.ts` 의 admin 폼 에러 메시지 (이 파일의 모든 액션은 `requireAdminSession()` 가드 — 전부 어드민 전용). 코드 식별자 (`partner`, `Partner`, 라우트 `/admin/partners`) 는 그대로.
 
 ---
 

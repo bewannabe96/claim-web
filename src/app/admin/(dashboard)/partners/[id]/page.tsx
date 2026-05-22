@@ -36,7 +36,7 @@ export default async function AdminPartnerDetailPage({
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <BackLink href="/admin/partners">설계사 풀</BackLink>
+        <BackLink href="/admin/partners">파트너 풀</BackLink>
         <header className="flex items-start gap-5">
           <AvatarUpload partnerId={partner.id} currentUrl={avatarUrl} />
           <div className="flex flex-col gap-1.5 min-w-0 mt-1">
@@ -89,7 +89,7 @@ export default async function AdminPartnerDetailPage({
         </Card>
       </Section>
 
-      <Section title="설계사 정보">
+      <Section title="파트너 정보">
         <PartnerForm
           action={action}
           submitLabel="변경 저장"

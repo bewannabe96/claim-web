@@ -8,9 +8,9 @@ import {
   intersectionTopCategories,
   unionCategoryScenarios,
 } from "@/features/plan-proposals/select-scenarios";
+import type { PlanProposalData } from "@/features/plan-proposals/ui/chart-types";
+import { RoiChart, type RoiChartChip } from "@/features/plan-proposals/ui/roi-chart";
 
-import type { PlanProposalData } from "../_lib/result-types";
-import { RoiChart, type RoiChartChip } from "./charts/roi-chart";
 import { ScenarioModal } from "./scenario-modal";
 
 /** 검색 (더보기) chip 의 special id — RoiChart 의 isMore flag 와 함께 사용. */

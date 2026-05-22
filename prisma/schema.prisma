@@ -76,15 +76,19 @@ model PlanRequest {
   price         Int?
 
   // 시점
-  createdAt     DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
-  dispatchedAt  DateTime? @db.Timestamptz(6) @map("dispatched_at")
-  deadlineAt    DateTime? @db.Timestamptz(6) @map("deadline_at")
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  dispatchedAt    DateTime? @db.Timestamptz(6) @map("dispatched_at")
+  deadlineAt      DateTime? @db.Timestamptz(6) @map("deadline_at")
+  /// 가입자가 결과 페이지를 처음 연 시각. NULL = 아직 열람 안 함.
+  /// 결과 페이지의 client 컴포넌트 (ResultViewedMarker) 가 마운트 시 markResultViewed
+  /// 액션을 호출 — 멱등 (WHERE result_viewed_at IS NULL) 이라 최초 열람만 기록.
+  resultViewedAt  DateTime? @db.Timestamptz(6) @map("result_viewed_at")
   /// 정산 완료 시각. NULL = 미정산 (보관 기간 만료 cron 대기).
   /// 정산 정책: 보관 기간 만료 시점에 contactedAt 있는 proposal 의 파트너 N명에게
   /// price/N (1000원 단위 반올림) 차감. cron 이 spendCredit 모두 성공 후에만 마킹
   /// → 부분 실패는 다음 tick 에서 멱등키로 재시도 (spendCredit alreadyApplied 흡수).
-  settledAt     DateTime? @db.Timestamptz(6) @map("settled_at")
-  updatedAt     DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+  settledAt       DateTime? @db.Timestamptz(6) @map("settled_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   medicalHistory PlanRequestMedicalHistory[]
   candidates     PlanRequestAssignmentCandidate[]
@@ -190,7 +194,7 @@ model PlanRequestAssignmentCandidate {
 //      User row 를 찾아 authId 채움 (claim). 이후 로그인은 authId 로 직접 lookup.
 //
 // 역할(role)은 별도 필드로 두지 않음 — 한 사용자가 여러 역할을 가질 수 있도록
-// Partner / Admin extension row 의 존재(+active) 자체가 권한 판단 기준. DAL 이 단일 진실.
+// Partner / Admin extension row 의 존재 자체가 권한 판단 기준 (admin 은 +active). DAL 이 단일 진실.
 
 model User {
   id        String   @id                                  // nanoid(16) — 도메인 식별자
@@ -215,7 +219,7 @@ model User {
 // partner — 설계사 추가 정보 (User 와 1:1, PK 공유)
 // ============================================================
 // 가입자 노출:  user.name, bio, yearsOfExperience, trustMetric
-// 운영:        user.email (로그인), user.phone (알림톡), active
+// 운영:        user.email (로그인), user.phone (알림톡), active (매칭 풀 노출 토글)
 // 배정 카운터: partner_assignment_stats 가 1:1 로 보유 (본체 hot row 와 분리).
 //
 // id 는 User.id 와 동일 — 1:1 extension. plan_request_assignment /
@@ -232,6 +236,8 @@ model Partner {
   /// 프로필 사진 S3 key — `partners/avatar/{partnerId}/{nanoid}.{ext}` 형태. nullable (미업로드).
   /// 공개 GET 허용 prefix 라 URL 은 `<bucket>.s3.<region>.amazonaws.com/<key>` 로 직접 노출.
   avatarKey          String?  @map("avatar_key")
+  /// 매칭 풀(후보 산출) 노출 토글. false 면 findAssignmentCandidates 후보에서
+  /// 제외 — 로그인/대시보드 접근에는 영향 없음 (로그인 자격 = partner row 존재).
   active             Boolean  @default(true)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")

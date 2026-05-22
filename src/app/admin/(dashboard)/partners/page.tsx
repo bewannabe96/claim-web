@@ -12,7 +12,7 @@ import { contentPublicUrl } from "@/server/content-storage";
 import { cn } from "@/lib/utils";
 import { nowMs } from "@/lib/wall-clock";
 
-import { formatDate } from "../_lib/format";
+import { formatDateTime } from "../_lib/format";
 import {
   Badge,
   Card,
@@ -24,7 +24,7 @@ import {
 } from "../_components/page-shell";
 
 const PARTNER_COLUMNS = [
-  { key: "name", label: "설계사" },
+  { key: "name", label: "파트너" },
   { key: "bio", label: "소개" },
   { key: "experience", label: "경력", align: "right" as const },
   { key: "exposure", label: "노출", align: "right" as const },
@@ -56,7 +56,7 @@ export default async function AdminPartnersPage() {
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title="설계사 풀"
+        title="파트너 풀"
         description={`등록 ${partners.length}명 · 활성 ${active}명 · 가입 대기 ${invitations.length}건`}
         action={
           <Button
@@ -106,12 +106,12 @@ export default async function AdminPartnersPage() {
                           : "text-[#4b4b4b]",
                       )}
                     >
-                      {expired ? "만료됨" : formatDate(inv.expiresAt)}
+                      {expired ? "만료됨" : formatDateTime(inv.expiresAt)}
                     </span>
                   </Td>
                   <Td align="right">
                     <span className="text-xs text-[#4b4b4b] tabular-nums">
-                      {formatDate(inv.createdAt)}
+                      {formatDateTime(inv.createdAt)}
                     </span>
                   </Td>
                 </tr>
@@ -121,10 +121,10 @@ export default async function AdminPartnersPage() {
         </Section>
       )}
 
-      <Section title="등록된 설계사">
+      <Section title="등록된 파트너">
         {partners.length === 0 ? (
           <Card>
-            <Empty>등록된 설계사가 없어요</Empty>
+            <Empty>등록된 파트너가 없어요</Empty>
           </Card>
         ) : (
           <DataTable columns={PARTNER_COLUMNS}>

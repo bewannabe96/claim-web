@@ -11,6 +11,7 @@ import type { Gender } from "@/types";
 
 import {
   ACTIVE_STATUSES,
+  PRE_SUBMISSION_STATUSES,
   type CoverageRequest,
   type PlanRequest,
   type PlanRequestStatus,
@@ -70,13 +71,28 @@ export async function hasActiveRequestForPhone(
   return count > 0;
 }
 
-/** 어드민 — 모니터링. 최신 등록 순. */
-export async function listAllRequests(): Promise<PlanRequest[]> {
+/**
+ * 어드민 — 모니터링. 최신 등록 순.
+ * 기본은 제출까지 간 요청만 — `includePreSubmission` 으로 작성·인증 중 임시 요청까지 포함.
+ */
+export async function listAllRequests(
+  opts: { includePreSubmission?: boolean } = {},
+): Promise<PlanRequest[]> {
   const rows = await prisma.planRequest.findMany({
+    where: opts.includePreSubmission
+      ? undefined
+      : { status: { notIn: [...PRE_SUBMISSION_STATUSES] } },
     orderBy: { createdAt: "desc" },
     include: PLAN_REQUEST_INCLUDE,
   });
   return rows.map(mapPlanRequest);
+}
+
+/** 어드민 모니터링 — 제출 전(작성·선택·인증 중) 임시 요청 수. 기본 뷰 숨김 안내용. */
+export async function countPreSubmissionRequests(): Promise<number> {
+  return prisma.planRequest.count({
+    where: { status: { in: [...PRE_SUBMISSION_STATUSES] } },
+  });
 }
 
 /**
@@ -122,6 +138,7 @@ function mapPlanRequest(row: PlanRequestRow): PlanRequest {
     createdAt: row.createdAt.toISOString(),
     dispatchedAt: row.dispatchedAt?.toISOString() ?? undefined,
     deadlineAt: row.deadlineAt?.toISOString() ?? undefined,
+    resultViewedAt: row.resultViewedAt?.toISOString() ?? undefined,
     rematchCount: row.rematchCount,
     resultToken: row.resultToken ?? undefined,
   };
