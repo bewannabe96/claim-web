@@ -12,7 +12,7 @@ import { contentPublicUrl } from "@/server/content-storage";
 import { cn } from "@/lib/utils";
 import { nowMs } from "@/lib/wall-clock";
 
-import { formatDate } from "../_lib/format";
+import { formatDateTime } from "../_lib/format";
 import {
   Badge,
   Card,
@@ -106,12 +106,12 @@ export default async function AdminPartnersPage() {
                           : "text-[#4b4b4b]",
                       )}
                     >
-                      {expired ? "만료됨" : formatDate(inv.expiresAt)}
+                      {expired ? "만료됨" : formatDateTime(inv.expiresAt)}
                     </span>
                   </Td>
                   <Td align="right">
                     <span className="text-xs text-[#4b4b4b] tabular-nums">
-                      {formatDate(inv.createdAt)}
+                      {formatDateTime(inv.createdAt)}
                     </span>
                   </Td>
                 </tr>

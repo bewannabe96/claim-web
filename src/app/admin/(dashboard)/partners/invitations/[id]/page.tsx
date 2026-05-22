@@ -15,7 +15,7 @@ import {
   PageHeader,
   Section,
 } from "../../../_components/page-shell";
-import { formatDateTimeFull } from "../../../_lib/format";
+import { formatDateTime } from "../../../_lib/format";
 import { CopyLink } from "./_components/copy-link";
 import { InvitationActions } from "./_components/invitation-actions";
 
@@ -91,8 +91,8 @@ export default async function AdminPartnerSignupInvitationDetailPage({
                 : "이 링크를 카카오톡으로 파트너에게 전달해주세요. 파트너가 진입 후 카카오 로그인 + 본인인증을 완료하면 정식 가입됩니다."}
             </p>
             <dl className="grid grid-cols-2 gap-4 pt-3 border-t border-[#efefef]">
-              <Field label="발급일">{formatDateTimeFull(invitation.createdAt)}</Field>
-              <Field label="만료일">{formatDateTimeFull(invitation.expiresAt)}</Field>
+              <Field label="발급일">{formatDateTime(invitation.createdAt)}</Field>
+              <Field label="만료일">{formatDateTime(invitation.expiresAt)}</Field>
             </dl>
           </div>
         )}
