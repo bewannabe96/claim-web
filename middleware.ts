@@ -2,6 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { isAuthError } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isProductionEnv } from "@/lib/env-stage";
+
 /**
  * /admin/* + /partner/* middleware.
  *
@@ -41,7 +43,15 @@ import { NextResponse, type NextRequest } from "next/server";
  * 4. **크롤러 차단 (admin 만)** — X-Robots-Tag 헤더로 search engine indexing 금지.
  *    `/admin/login` 까지 포함 모든 admin 응답 + knock 응답 + 404 응답 모두 적용.
  *    metadata.robots (src/app/admin/layout.tsx) 와 이중 방어. Partner 영역은
- *    가입자/마케팅과 동등 노출 정책이므로 X-Robots-Tag 적용 안 함.
+ *    가입자/마케팅과 동등 노출 정책이므로 (프로덕션에선) X-Robots-Tag 적용 안 함.
+ *
+ * 전 환경 횡단 동작 (admin/partner 무관):
+ *
+ * - **비프로덕션 크롤링 차단** — `ENV_STAGE` 가 production/prod 가 아니면
+ *   middleware 가 매칭하는 *모든* 응답에 `X-Robots-Tag` 색인 차단 헤더를 부착.
+ *   src/app/robots.ts 의 `Disallow: /` (크롤 자체 차단) 와 이중 방어로,
+ *   dev/staging/preview 가 검색 결과에 노출되는 사고를 막는다. 프로덕션
+ *   판정은 `isProductionEnv()` (src/lib/env-stage.ts) 단일 진실 공급원.
  *
  * Partner 영역의 carve-out:
  *
@@ -62,6 +72,10 @@ const KNOCK_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30일
 const ROBOTS_HEADER =
   "noindex, nofollow, noarchive, nosnippet, noimageindex";
 
+// 모듈 로드 시 1회 평가. middleware (edge) 에서 process.env.ENV_STAGE 는
+// 빌드타임 인라인되므로 KNOCK_PATH 와 동일하게 상수로 캐싱.
+const IS_PRODUCTION = isProductionEnv();
+
 function withRobots<T extends NextResponse>(res: T): T {
   res.headers.set("X-Robots-Tag", ROBOTS_HEADER);
   return res;
@@ -79,6 +93,19 @@ function isPartnerPublicPath(pathname: string): boolean {
 }
 
 export async function middleware(req: NextRequest) {
+  const res = await handle(req);
+
+  // 비프로덕션 — middleware 가 매칭하는 모든 응답에 색인 차단 헤더 부착.
+  // robots.txt 의 크롤 차단과 이중 방어. (프로덕션 admin 응답은 handle 내부
+  // withRobots 가 이미 부착 — 여기선 비프로덕션 전역만 책임.)
+  if (!IS_PRODUCTION) {
+    res.headers.set("X-Robots-Tag", ROBOTS_HEADER);
+  }
+
+  return res;
+}
+
+async function handle(req: NextRequest): Promise<NextResponse> {
   const pathname = req.nextUrl.pathname;
 
   const isAdminPath = pathname === "/admin" || pathname.startsWith("/admin/");
