@@ -7,22 +7,10 @@
 
 import { getKstParts } from "@/lib/datetime";
 
-/** MM.DD HH:MM — 목록/대시보드용 짧은 표시. */
+/** YYYY-MM-DD HH:mm — 어드민 화면 datetime 표준. */
 export function formatDateTime(input: string | Date): string {
-  const { month, day, hour, minute } = getKstParts(input);
-  return `${month}.${day} ${hour}:${minute}`;
-}
-
-/** YY.MM.DD HH:MM — 연도 포함 표시. */
-export function formatDate(input: string | Date): string {
   const { year, month, day, hour, minute } = getKstParts(input);
-  return `${year.slice(2)}.${month}.${day} ${hour}:${minute}`;
-}
-
-/** YYYY.MM.DD HH:MM — 만료일 등 정식 날짜 표시. */
-export function formatDateTimeFull(input: string | Date): string {
-  const { year, month, day, hour, minute } = getKstParts(input);
-  return `${year}.${month}.${day} ${hour}:${minute}`;
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 export function formatPhone(p: string): string {
