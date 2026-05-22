@@ -28,7 +28,7 @@ export default function PartnerLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mx-auto w-full max-w-[480px] flex-1 flex flex-col bg-white border-x border-[#e2e2e2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+    <div className="mx-auto w-full max-w-[480px] flex-1 flex flex-col bg-white min-[480px]:border-x min-[480px]:border-[#e2e2e2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
       <header className="border-b border-[#efefef] bg-white sticky top-0 z-10">
         <div className="px-6 h-14 flex items-center gap-2">
           <Link href="/" className="inline-flex items-baseline gap-2">
