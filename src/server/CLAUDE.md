@@ -169,7 +169,7 @@
   - `succeeded` → 트랜잭션 안에서:
     1. `plan_proposal.analyzedAt = now()` (WHERE id + assignment.requestId(=plan_request_id) 매치 + analyzedAt IS NULL → 첫 콜백만 기록, 페이로드 위조 차단, race-free).
     2. `updated.count===1` 이면 `plan_proposal_analysis_report` INSERT (proposalId 1:1, schemaVersion=result.schema_version, report=result 본문, durationMs).
-    트랜잭션 후, plan_request 의 **모든 plan_request_assignment** 가 submitted + 그 plan_proposal 이 analyzed 인 경우에만 `plan_request.status='analyzing' → 'completed'`. pending/expired assignment 가 하나라도 있으면 전이 안 함 (assignment 총수 vs fully-analyzed 수 비교).
+    트랜잭션 후 `closePlanRequest(plan_request_id)` 호출 — 마감 판정 단일 진입점 ([features/plan-requests/state-transition.ts](../features/plan-requests/state-transition.ts)). 제출된 제안서가 전부 analyzed 면 (조기 마감) `plan_request.status='analyzing' → 'completed'`. 아직 분석 대기 중인 제안서가 있으면 no-op — 마감시간이 지나면 cron (`assignment-deadline-expiry`) 의 **시간 마감**이 분석 미완 여부와 무관하게 강제 종결한다.
 - **저장 책임**: 이 웹훅이 분석 리포트 + 분석 실패 마킹의 단일 writer. read 는 [features/plan-proposals/queries.ts](../features/plan-proposals/queries.ts) 의 `getAnalysisReport(proposalId)` / `listFailedAnalysisPlanProposals()`.
 - **재시도 안전**: 정상 처리든 no-op 이든 200 반환. updateMany WHERE 절 + transaction 으로 첫 콜백만 INSERT 보장 (race-free). 발신측 중복 이벤트도 멱등. failed → succeeded 전환도 안전 (succeeded 가 analyzedAt 채우면 이후 failed 는 WHERE 조건으로 no-op).
 

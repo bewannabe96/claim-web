@@ -117,125 +117,30 @@ CRON_SECRET=<openssl rand -hex 32>
 
 #### 배경
 
-- `PlanRequest.deadlineAt` 은 `dispatchedAt + AppSettings.submissionDeadlineHours` 로 set ([src/features/plan-requests/actions.ts:331-349](../src/features/plan-requests/actions.ts)).
-- `PlanRequestAssignment.status` 는 `pending → submitted` 또는 `pending → expired` 둘 중 하나로만 종결됨.
-- 현재 `expired` 로 마킹하는 코드 경로는 **존재하지 않음**. 마감 후에도 영구 `pending` 으로 남음.
-- 분석 완료 웹훅 ([src/app/api/webhooks/eightytwo-judge-analysis/route.ts](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts)) → `finalizeRequestStatus()` 의 `plan_request.status='analyzing' → 'completed'` 전이는 **모든 assignment 가 종결** 됐을 때만 발생 → 1명이라도 `pending` 으로 남으면 영원히 `analyzing` 에 갇힘.
+- `PlanRequest.deadlineAt` 은 finalize 트랜잭션에서 `now + AppSettings.submissionDeadlineHours` 로 set ([src/features/plan-requests/actions.ts](../src/features/plan-requests/actions.ts)) — `dispatched` 와 함께 항상 채워짐.
+- `PlanRequestAssignment.status` 는 `pending → submitted` 또는 `pending → expired` 둘 중 하나로 종결.
+- **마감 (closing)** = plan_request 가 결과 상태 (`completed` / `rematching`) 로 전이되는 사건. 두 경로 중 **먼저 오는 것**:
+  1. **조기 마감** — 마감시간 전에 모든 파트너 제출 + 그 제안서가 전부 분석 완료.
+  2. **시간 마감** — `deadlineAt` 도달. 분석 완료 여부와 무관 (미분석/분석실패 제안서가 섞여 있어도 마감) → 분석 실패·정체가 요청을 `analyzing` 에 영구히 가두지 못함.
 
 #### 무엇을 한다
 
-1. `PlanRequestAssignment WHERE status='pending' AND request.deadlineAt <= NOW()` 조회 (request 와 join).
-2. 해당 행을 `status='expired'` 로 일괄 업데이트.
-3. 영향받은 각 `requestId` 에 대해 **상태 전이 함수** 호출:
-   - 모든 assignment 가 종결됐고 (`pending=0`)
-   - 종결 중 submitted 가 1개 이상이면 `dispatched → analyzing` (이미 그렇지만 멱등).
-   - 모든 submitted assignment 의 plan_proposal 이 analyzed 면 `analyzing → completed` (웹훅과 동일 로직).
-   - submitted 가 0개 (전부 expired) 면 `→ rematching` 또는 `→ failed` (작업 #4 트리거).
-4. `/admin/requests` revalidatePath.
+1. `PlanRequest WHERE deadlineAt <= NOW() AND status IN ('dispatched','analyzing')` 조회 — **pending assignment 유무와 무관**. 모든 파트너가 제출했어도 분석이 미완이면 시간 마감 대상.
+2. 각 요청에 `closePlanRequest()` 호출 — 남은 `pending` → `expired` + 설계사 LMS, status 전이, 가입자 알림톡, `/admin/requests` revalidate 를 모두 그 안에서 수행.
 
-#### 사전 작업: 상태 전이 로직 추출
+#### 구현
 
-웹훅의 [route.ts](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts) 의 전이 코드를 **공용 함수로 추출** (구현됨):
+마감 판정·전이·알림을 **`closePlanRequest(requestId)`** 단일 함수로 통합 — [src/features/plan-requests/state-transition.ts](../src/features/plan-requests/state-transition.ts).
 
-```ts
-// src/features/plan-requests/state-transition.ts (신규)
-import "server-only";
-import { prisma } from "@/server/db/prisma";
+- `deadlineAt` 과 assignment 분석 상태를 함께 읽어 마감 (조기/시간) 여부를 판정.
+- 시간 마감 시 남은 `pending` → `expired` 전이 + 해당 설계사 마감 안내 LMS.
+- `submitted >= 1` → `analyzing → completed` + 가입자 결과 알림톡 / `submitted === 0` → `rematching`.
+- expire 와 status 전이를 **한 트랜잭션**에 묶어, 전이를 이긴 호출 (updateMany count===1) 만 알림 발송 → 웹훅 × cron 동시 호출에도 멱등.
 
-/**
- * plan_request 의 모든 plan_request_assignment 가 종결됐을 때 다음 상태로 전이.
- * 멱등 — WHERE 조건으로 잘못된 시점 호출은 no-op.
- *
- * 호출처:
- *  - 웹훅 (plan_proposal 분석 완료 콜백) — 마지막 analyzed 가 들어왔을 때
- *  - cron (assignment-deadline-expiry) — pending 을 expired 로 바꾼 직후
- */
-export async function finalizeRequestStatus(requestId: string): Promise<void> {
-  const [total, pending, submitted, analyzed] = await Promise.all([
-    prisma.planRequestAssignment.count({ where: { requestId } }),
-    prisma.planRequestAssignment.count({ where: { requestId, status: "pending" } }),
-    prisma.planRequestAssignment.count({ where: { requestId, status: "submitted" } }),
-    prisma.planRequestAssignment.count({
-      where: {
-        requestId,
-        status: "submitted",
-        proposal: { analyzedAt: { not: null } },
-      },
-    }),
-  ]);
+호출처:
 
-  // 아직 미종결 assignment 있으면 대기
-  if (pending > 0) return;
-
-  // 전부 expired (0건 제출) → rematching 트리거 (작업 #4 가 픽업)
-  if (submitted === 0) {
-    await prisma.planRequest.updateMany({
-      where: { id: requestId, status: { in: ["dispatched", "analyzing"] } },
-      data: { status: "rematching" },
-    });
-    return;
-  }
-
-  // 모든 submitted 가 analyzed → completed
-  if (total > 0 && submitted === analyzed) {
-    await prisma.planRequest.updateMany({
-      where: { id: requestId, status: "analyzing" },
-      data: { status: "completed" },
-    });
-  }
-}
-```
-
-웹훅의 라인 201-220 는 이 함수 호출로 교체.
-
-#### 구현 골격
-
-```ts
-// src/app/api/cron/assignment-deadline-expiry/route.ts
-import "server-only";
-import { revalidatePath } from "next/cache";
-import { prisma } from "@/server/db/prisma";
-import { finalizeRequestStatus } from "@/features/plan-requests/state-transition";
-
-export const dynamic = "force-dynamic";
-
-export async function GET(req: Request) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  // 마감 지난 pending assignment 의 requestId 수집
-  const now = new Date();
-  const stale = await prisma.planRequestAssignment.findMany({
-    where: {
-      status: "pending",
-      request: { deadlineAt: { lte: now } },
-    },
-    select: { id: true, requestId: true },
-  });
-
-  if (stale.length === 0) {
-    return Response.json({ ok: true, expired: 0, transitioned: 0 });
-  }
-
-  await prisma.planRequestAssignment.updateMany({
-    where: { id: { in: stale.map((s) => s.id) } },
-    data: { status: "expired" },
-  });
-
-  // 영향받은 request 별로 상태 전이 (중복 제거)
-  const requestIds = [...new Set(stale.map((s) => s.requestId))];
-  await Promise.all(requestIds.map(finalizeRequestStatus));
-
-  revalidatePath("/admin/requests");
-
-  return Response.json({
-    ok: true,
-    expired: stale.length,
-    transitioned: requestIds.length,
-  });
-}
-```
+- **cron** ([assignment-deadline-expiry/route.ts](../src/app/api/cron/assignment-deadline-expiry/route.ts)) — `deadlineAt` 지난 `dispatched`/`analyzing` 요청을 조회해 각각 `closePlanRequest` 호출. **pending assignment 유무와 무관** — 전원 제출했지만 분석 미완인 요청도 시간 마감.
+- **웹훅** ([eightytwo-judge-analysis/route.ts](../src/app/api/webhooks/eightytwo-judge-analysis/route.ts)) — 분석 콜백 처리 후 `closePlanRequest` 호출 (조기 마감 감지).
 
 #### 체크리스트
 
@@ -247,8 +152,8 @@ export async function GET(req: Request) {
 
 #### 알림 발송 (현황)
 
-- 분석 완료 (`analyzing → completed`) 시 가입자 결과 페이지 링크 알림톡 (UI_0741) — **구현 완료**. 책임 위치는 `state-transition.ts:notifyAnalysisCompleted` 로 이동 (cron / 웹훅 양쪽 진입 통합).
-- `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4) — **구현 완료** (cron route 의 `notifyPartnersOfExpiry`). 알림톡 템플릿 미발급 시나리오라 LMS 폴백 유지.
+- 분석 완료 시 가입자 결과 페이지 링크 알림톡 (UI_0741) — **자동 발송 임시 비활성화**. 현재는 어드민이 요청 상세 (`/admin/requests/[id]`) 의 "완료 알림톡 발송" 버튼 → `sendRequestResultNotification` 으로 수동 발송. 자동 발송 (`closePlanRequest` → `sendAnalysisCompletedNotification`) 은 호출부 주석 처리 — 추후 복구.
+- `pending → expired` 전이 시 설계사 마감 안내 LMS (시점 2-4) — **구현 완료** (`closePlanRequest` 내부 `notifyPartnersOfExpiry`). 알림톡 템플릿 미발급 시나리오라 LMS 폴백 유지.
 - `dispatched → rematching` 전이 시 가입자 재매칭 알림 (시점 1-4) — **미구현**. 실제 새 후보 산출 + 재송부 로직 (작업 #4) 미구현이라 "다시 요청드릴게요" 알림만 먼저 보내면 misleading. 작업 #4 와 함께 추가. `plan-requests/schema.ts` 의 status enum 옆 TODO 주석으로 마킹.
 
 ---
