@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
-import { buttonVariants } from "@/components/ui/button";
-import { acknowledgeTopup } from "@/features/credits/actions";
-import { cn } from "@/lib/utils";
+import { ResultShell } from "./_components/result-shell";
+import { TopupAck } from "./_components/topup-ack";
 
 export const metadata: Metadata = {
   title: "결제 결과",
@@ -18,10 +16,10 @@ export const metadata: Metadata = {
  *   - 실패: `?paymentId=...&code=...&message=...&pgCode=...&pgMessage=...`
  *
  * 처리:
- *   - code 있음 → 실패 안내 + 재시도 링크.
- *   - code 없음 → server 측에서 acknowledgeTopup 직접 호출 → 잔액 갱신 + 성공 안내.
- *     ack 가 실패해도 webhook 가 redundant safety net 이라 잔액은 결국 들어옴 — 사용자에겐
- *     "잠시 후 잔액 확인" 폴백 메시지.
+ *   - code 있음 → 실패 안내 + 재시도 링크 (순수 render).
+ *   - code 없음 → <TopupAck> (클라이언트) 가 마운트 후 acknowledgeTopup 호출 → 잔액 갱신.
+ *     ack 가 revalidatePath 를 호출하므로 server render 안에서 await 할 수 없음 (Next 16:
+ *     mutation 은 render 밖에서만). 그래서 클라이언트 컴포넌트로 위임.
  *
  * 인증: (dashboard) layout 의 requirePartnerSession 이 보장. acknowledgeTopup 내부에서
  *       partnerId 교차 검증 한 번 더.
@@ -67,72 +65,5 @@ export default async function TopupResultPage({
     );
   }
 
-  const ack = await acknowledgeTopup({ paymentId });
-
-  if (ack.ok) {
-    return (
-      <ResultShell
-        tone="success"
-        title={ack.alreadyApplied ? "이미 처리된 결제예요" : "충전이 완료됐어요"}
-        body="잔액에 즉시 반영됐어요."
-        cta="크레딧 페이지로"
-        href="/partner/credits"
-      />
-    );
-  }
-
-  // ack 실패 — webhook safety net 에 위임.
-  return (
-    <ResultShell
-      tone="pending"
-      title="결제 확인 중이에요"
-      body={`잔액 페이지에서 곧 반영을 확인해주세요. (사유: ${ack.error})`}
-      cta="크레딧 페이지로"
-      href="/partner/credits"
-    />
-  );
-}
-
-function ResultShell({
-  tone,
-  title,
-  body,
-  cta,
-  href,
-}: {
-  tone: "success" | "error" | "pending";
-  title: string;
-  body: string;
-  cta: string;
-  href: "/partner/credits" | "/partner/credits/topup";
-}) {
-  const accent =
-    tone === "success"
-      ? "text-emerald-600"
-      : tone === "error"
-        ? "text-red-600"
-        : "text-amber-600";
-
-  return (
-    <main className="flex flex-col flex-1 gap-8 px-6 pt-16 pb-8 bg-white">
-      <div className="flex flex-col gap-2 text-center">
-        <p className={cn("text-xs font-medium uppercase tracking-wide", accent)}>
-          {tone === "success" ? "완료" : tone === "error" ? "실패" : "확인 중"}
-        </p>
-        <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">
-          {title}
-        </h1>
-        <p className="text-sm text-[#4b4b4b]">{body}</p>
-      </div>
-      <Link
-        href={href}
-        className={cn(
-          buttonVariants(),
-          "h-12 rounded-full text-sm font-medium",
-        )}
-      >
-        {cta}
-      </Link>
-    </main>
-  );
+  return <TopupAck paymentId={paymentId} />;
 }
