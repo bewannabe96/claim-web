@@ -16,9 +16,10 @@ type LandingCtaButtonProps = {
   className?: string;
   children: React.ReactNode;
   /**
-   * Google Ads conversion `send_to` 대상 (예: `AW-18152072488` 또는
-   * `AW-18152072488/AbCdEfG`). undefined 면 gtag 발화 스킵 — dev/staging 등
-   * 광고 픽셀이 비활성인 환경에서 무해하게 동작.
+   * Google Ads conversion `send_to` 대상 — `AW-XXXXXXXXXX/<label>` 형식
+   * (계정 ID + conversion action label). label 이 있어야 Google Ads 가
+   * conversion 으로 매핑한다. undefined 면 gtag 발화 스킵 — dev/staging 등
+   * 광고 픽셀이 비활성인 환경에서 무해하게 동작. 합성은 page.tsx 책임.
    */
   googleAdsConversionTarget?: string;
 };

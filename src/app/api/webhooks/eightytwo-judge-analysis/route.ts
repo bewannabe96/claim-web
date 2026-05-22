@@ -9,7 +9,7 @@ import {
   CURRENT_REPORT_VERSION,
 } from "@/features/plan-proposals/analysis-schema";
 import { AnalysisErrorSchema } from "@/features/plan-proposals/schema";
-import { finalizeRequestStatus } from "@/features/plan-requests/state-transition";
+import { closePlanRequest } from "@/features/plan-requests/state-transition";
 import { prisma } from "@/server/db/prisma";
 
 /**
@@ -42,10 +42,10 @@ import { prisma } from "@/server/db/prisma";
  *       1. proposal.analyzedAt = now() (첫 콜백만, WHERE id + assignment.requestId
  *          매치 + analyzedAt IS NULL — plan_request_id cross-check 로 페이로드 위조 차단)
  *       2. updated.count===1 이면 plan_proposal_analysis_report INSERT (proposalId 1:1)
- *     그 후 `finalizeRequestStatus(plan_request_id)` 호출 — plan_request 의 모든
- *     plan_request_assignment 가 submitted + 그 proposal 이 analyzed 인 경우에만
- *     `analyzing → completed` + 가입자 알림톡 (UI_0741). 전이 책임은 cron (deadline 만료) 과
- *     공유하므로 `features/plan-requests/state-transition.ts` 단일 진입점에 통합.
+ *     그 후 `closePlanRequest(plan_request_id)` 호출 — 모든 제출 제안서가 분석 완료된
+ *     경우 (조기 마감) `analyzing → completed`. 마감 판정/전이/알림 책임은 cron (시간
+ *     마감) 과 공유하므로 `features/plan-requests/state-transition.ts` 의 `closePlanRequest`
+ *     단일 진입점에 통합.
  *
  * 발신측 재시도 안전: 첫 콜백이 transition 직전에 끊겨도 retry 가 pending 을
  * 재평가해서 전이 마무리.
@@ -102,8 +102,21 @@ export async function POST(req: Request) {
   }
   const parsed = PayloadSchema.safeParse(json);
   if (!parsed.success) {
+    // 외부 파이프라인 (eightytwo_judge) 디버깅용 — 어떤 필드가 왜 틀렸는지
+    // dotted path 로 반환. flatten() 은 nested (metadata.*, result.*) 를
+    // 1-depth 로 뭉개 어느 하위 필드인지 안 보이므로 issues 를 직접 매핑.
+    // refine() 위반은 path 가 비어 "(root)" 로 표기. HMAC 검증을 이미 통과한
+    // 호출자만 도달하므로 detail 노출 안전.
+    const fieldErrors = parsed.error.issues.map((issue) => ({
+      field: issue.path.join(".") || "(root)",
+      code: issue.code,
+      message: issue.message,
+    }));
+    console.warn("[webhook/analysis] payload validation failed", {
+      fieldErrors,
+    });
     return Response.json(
-      { error: parsed.error.flatten() },
+      { error: "invalid payload", fieldErrors },
       { status: 400 },
     );
   }
@@ -196,11 +209,11 @@ export async function POST(req: Request) {
     }
   });
 
-  // 멱등 전이 — plan_request 의 **모든** plan_request_assignment 가 submitted + proposal 이
-  // analyzed 인 경우에만 completed. cron (assignment-deadline-expiry) 가 pending →
-  // expired 후 호출하는 경로와 공유. submitted=0 (전부 expired) 인 경우 rematching 으로
-  // 분기되지만, 분석 완료 콜백은 submitted >= 1 보장하므로 사실상 completed 분기만 진입.
-  await finalizeRequestStatus(plan_request_id);
+  // 마감 판정 — 모든 제출 제안서가 분석 완료면 (조기 마감) `analyzing → completed`.
+  // 아직 분석 대기 중인 제안서가 있고 마감시간 전이면 no-op (cron 의 시간 마감이
+  // 이어받음). 분석 완료 콜백은 submitted >= 1 을 보장하므로 rematching 분기로는
+  // 진입하지 않는다. 멱등 — 단일 트랜잭션 전이 latch.
+  await closePlanRequest(plan_request_id);
 
   return Response.json({ ok: true });
 }

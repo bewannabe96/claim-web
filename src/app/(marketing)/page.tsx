@@ -14,9 +14,20 @@ import { LandingCtaButton } from "./_components/landing-cta-button";
  */
 export default function Home() {
   // Server Component 에서 env 읽어 client CTA 에 prop drilling — 프로젝트 규약상
-  // NEXT_PUBLIC_ prefix 금지 (.env.example 참조). dev 에선 미설정이므로 undefined
-  // → gtag 발화 스킵 + (marketing) layout 의 <Script> 도 렌더 안 됨.
-  const googleAdsConversionTarget = process.env.GOOGLE_ADS_ID;
+  // NEXT_PUBLIC_ prefix 금지 (.env.example 참조).
+  //
+  // gtag 의 두 호출은 send_to 형식이 다르다:
+  //   - 베이스 스크립트의 gtag('config', …) 는 계정 ID `AW-XXXXXXXXXX` 만 (layout.tsx).
+  //   - conversion 이벤트의 send_to 는 `AW-XXXXXXXXXX/<label>` — conversion action
+  //     마다 발급되는 label 을 붙여야 Google Ads 에 conversion 으로 매핑된다.
+  // 그래서 계정 ID 와 label 을 별도 env 로 받아 여기서 합성한다. 둘 중 하나라도
+  // 미설정이면 undefined → CTA 가 gtag 발화를 스킵 (dev/staging 에서 무해).
+  const googleAdsId = process.env.GOOGLE_ADS_ID;
+  const googleAdsConversionLabel = process.env.GOOGLE_ADS_CONVERSION_LABEL;
+  const googleAdsConversionTarget =
+    googleAdsId && googleAdsConversionLabel
+      ? `${googleAdsId}/${googleAdsConversionLabel}`
+      : undefined;
 
   return (
     <main className="flex flex-1 flex-col bg-white">

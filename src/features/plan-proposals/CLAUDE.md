@@ -35,7 +35,7 @@ proposals/
   - `queries.ts:mapPlanProposal` — 모든 PlanProposal read 가 자동으로 `parseAnalysisError` (zod safeParse) 통과시켜 도메인 타입 노출. parse 실패 row 는 undefined + 로그.
   - `queries.ts:listFailedAnalysisPlanProposals()` — `analyzedAt IS NULL AND analysisErrorAt IS NOT NULL`. 어드민 `/admin/analysis-failures` 페이지 단일 사용처.
 - 재시도: `actions.ts:retryPlanProposalAnalysis(proposalId)` — 어드민 전용 (`requireAdminSession`). 두 컬럼 null 초기화 (race-safe `WHERE analyzedAt IS NULL`) → `publishAnalysisJob` 재발행. webhook 이 첫 콜백처럼 멱등 처리.
-- 운영 흐름: 외부 시스템 (예: 상품 카탈로그) 수정 → 어드민이 `/admin/analysis-failures` 에서 "분석 재시도" → 성공 시 row 자연스럽게 사라짐. 영구 미해결 케이스는 plan_request 가 `analyzing` 으로 정체된다는 신호.
+- 운영 흐름: 외부 시스템 (예: 상품 카탈로그) 수정 → 어드민이 `/admin/analysis-failures` 에서 "분석 재시도" → 성공 시 row 자연스럽게 사라짐. 분석 실패가 미해결인 동안 plan_request 는 `analyzing` 에 머무르지만, 마감시간이 지나면 cron 의 시간 마감이 미분석 제안서를 포함한 채 `completed` 로 강제 종결 — 즉 재시도는 마감 전에 처리해야 결과에 반영된다.
 - 정체 (실패 콜백조차 없음) 재시도: `/admin/requests/[id]` 상세의 assignment 인라인 박스 (`AnalysisPendingBlock`) — `analyzedAt IS NULL AND analysisErrorAt IS NULL` 케이스용. 같은 `retryPlanProposalAnalysis` 액션 재사용 (가드는 `analyzedAt` 만이라 안전). 시간 임계값 없이 사람이 모니터링.
 
 ### 시나리오 선정 (`select-scenarios.ts`)

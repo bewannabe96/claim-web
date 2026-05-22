@@ -5,6 +5,7 @@ import { requireAdminSession } from "@/server/dal";
 
 import { signOutAdmin } from "./_actions/logout";
 import { AdminNav } from "./_components/admin-nav";
+import { NotificationBell } from "./_components/notification-bell";
 
 /**
  * 어드민 (dashboard) 레이아웃 — 운영자 PC 환경.
@@ -33,14 +34,17 @@ export default async function AdminDashboardLayout({
             </span>
           </Link>
           <AdminNav />
-          <form action={signOutAdmin}>
-            <button
-              type="submit"
-              className="text-xs text-[#4b4b4b] hover:text-black transition-colors"
-            >
-              로그아웃
-            </button>
-          </form>
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+            <form action={signOutAdmin}>
+              <button
+                type="submit"
+                className="text-xs text-[#4b4b4b] hover:text-black transition-colors"
+              >
+                로그아웃
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 

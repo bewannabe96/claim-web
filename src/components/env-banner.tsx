@@ -1,9 +1,11 @@
+import { getEnvStage, isProductionEnv } from "@/lib/env-stage";
+
 /**
  * 비프로덕션 환경 식별 배너 — dev / staging / preview 헷갈림 방지.
  *
- * 정책: prod allowlist 방식 (fail-safe). env `ENV_STAGE` 가 `production` / `prod`
- * (대소문자 무시) 일 때만 미표시. 미설정 / 빈 값 / 그 외 모든 값은 배너 표시 —
- * prod 배포에서 ENV_STAGE 박는 걸 까먹어도 자동으로 visible 한 사고 방지 신호.
+ * 프로덕션 여부 판정은 prod allowlist (fail-safe) — 정책과 구현은
+ * [env-stage.ts](src/lib/env-stage.ts) 의 `isProductionEnv()` 가 단일 진실
+ * 공급원. 비프로덕션일 때만 배너 표시.
  *
  * stage 값이 있으면 pill 로 라벨링, 없으면 부연 문구만 노출.
  *
@@ -11,11 +13,9 @@
  * z-10~30) 위에 z-50 으로 올라옴.
  */
 export function EnvBanner() {
-  const stage = process.env.ENV_STAGE?.trim();
-  if (stage) {
-    const normalized = stage.toLowerCase();
-    if (normalized === "production" || normalized === "prod") return null;
-  }
+  if (isProductionEnv()) return null;
+
+  const stage = getEnvStage();
 
   return (
     <div

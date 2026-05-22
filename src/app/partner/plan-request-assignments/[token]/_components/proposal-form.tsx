@@ -259,6 +259,7 @@ function CustomerContext({ request }: { request: PlanRequest }) {
   const budgetLabel = `${formatBudget(step1.monthlyBudgetMin)}~${formatBudget(step1.monthlyBudgetMax)}`;
   // 설계사가 보는 시점은 dispatched 이후라 step3 + gender 가 항상 존재. 방어적 fallback.
   const customerName = step3?.name ?? "이름 미상";
+  const birthDate = step3?.birthDate;
   const phone = step3?.phone;
 
   return (
@@ -289,7 +290,11 @@ function CustomerContext({ request }: { request: PlanRequest }) {
 
       <div className="h-px bg-[#efefef]" />
 
-      <dl className="grid grid-cols-1 gap-y-3 text-sm">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+        <Meta
+          label="생년월일"
+          value={birthDate ? formatIsoDate(birthDate) : "—"}
+        />
         <Meta label="월 예상 보험료" value={budgetLabel} />
       </dl>
 
@@ -381,7 +386,7 @@ function MedicalHistorySection({
                 </span>
                 <span className="text-[11px] text-[#4b4b4b] whitespace-nowrap">
                   {TREATMENT_PERIOD_LABEL[e.treatmentPeriod]} ·{" "}
-                  {e.treatmentStartDate}
+                  {formatIsoDate(e.treatmentStartDate)}
                 </span>
               </div>
               <p className="text-xs text-[#4b4b4b]">
@@ -518,6 +523,11 @@ function formatBudget(n: number): string {
     return Number.isInteger(man) ? `${man}만원` : `${man.toFixed(1)}만원`;
   }
   return `${n.toLocaleString("ko-KR")}원`;
+}
+
+/** YYYY-MM-DD ISO 날짜 → YYYY.MM.DD (생년월일·치료 시작일 등 날짜 전용 필드 공용) */
+function formatIsoDate(d: string): string {
+  return d.replaceAll("-", ".");
 }
 
 /** 01012345678 → 010-1234-5678 (11자리) / 0123456789 → 012-345-6789 (10자리) */
