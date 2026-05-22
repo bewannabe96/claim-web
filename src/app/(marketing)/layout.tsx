@@ -60,7 +60,7 @@ gtag('config', ${JSON.stringify(googleAdsId)});`}
           </Script>
         </>
       )}
-      <div className="mx-auto w-full max-w-[480px] flex-1 flex flex-col bg-white border-x border-[#e2e2e2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+      <div className="mx-auto w-full max-w-[480px] flex-1 flex flex-col bg-white min-[480px]:border-x min-[480px]:border-[#e2e2e2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
         {children}
       </div>
     </>
