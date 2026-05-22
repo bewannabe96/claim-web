@@ -30,6 +30,7 @@ import {
   PageHeader,
 } from "../../_components/page-shell";
 import { RetryAnalysisButton } from "../../_components/retry-analysis-button";
+import { SendResultNotificationButton } from "../../_components/send-result-notification-button";
 
 export default async function AdminRequestDetailPage({
   params,
@@ -211,15 +212,25 @@ export default async function AdminRequestDetailPage({
       {request.resultToken && (
         <Card>
           <CardHeader title="결과 페이지" />
-          <a
-            href={`/plan-request/result/${request.resultToken}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="새 탭에서 열기 — 가입자 POV"
-            className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs font-mono text-black break-all hover:bg-[#efefef] transition-colors"
-          >
-            /plan-request/result/{request.resultToken}
-          </a>
+          <div className="flex flex-col gap-3">
+            <a
+              href={`/plan-request/result/${request.resultToken}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="새 탭에서 열기 — 가입자 POV"
+              className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs font-mono text-black break-all hover:bg-[#efefef] transition-colors"
+            >
+              /plan-request/result/{request.resultToken}
+            </a>
+            {request.status === "completed" && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-[#efefef] px-3 py-2.5">
+                <p className="text-xs text-[#4b4b4b]">
+                  가입자에게 분석 완료 알림톡(결과 페이지 링크)을 발송해요.
+                </p>
+                <SendResultNotificationButton planRequestId={id} />
+              </div>
+            )}
+          </div>
         </Card>
       )}
     </div>

@@ -1,26 +1,22 @@
-import { revalidatePath } from "next/cache";
-
-import { finalizeRequestStatus } from "@/features/plan-requests/state-transition";
-import { sendNotificationLms } from "@/server/aligo";
-import { getServiceName } from "@/server/branding";
+import { closePlanRequest } from "@/features/plan-requests/state-transition";
 import { prisma } from "@/server/db/prisma";
 
 /**
- * 제출 마감 자동 처리 — 마감 지난 `pending` plan_request_assignment 를 `expired` 로
- * 일괄 전이 + 해당 설계사에게 마감 안내 LMS + 영향받은 plan_request 상태 전이.
+ * 제출 마감 자동 처리 — 마감시간이 지난 plan_request 를 일괄 마감 (시간 마감).
  *
  * Vercel Cron 진입점. Bearer 토큰은 Vercel 이 자동 주입 (env `CRON_SECRET` 자동 연결).
  * schedule 은 vercel.json 에 5분 주기 (cron `*\/5 * * * *`).
  *
  * 동작:
- *   1. `deadlineAt <= now()` 인 pending assignment 를 partner + request join 으로 조회.
- *   2. status='expired' 로 updateMany (WHERE status='pending' 로 race-safe).
- *   3. 각 설계사에게 마감 안내 LMS (Promise.allSettled — 한 건 실패가 다른 건 막지 않게).
- *   4. 영향받은 requestId 별로 `finalizeRequestStatus` 호출 — 전부 expired 면 rematching,
- *      submitted 가 모두 analyzed 면 completed, 그 외엔 no-op. 가입자 알림톡 (UI_0741) 발송 포함.
+ *   1. `deadlineAt <= now()` 이면서 아직 결과 상태로 안 간 (`dispatched`/`analyzing`)
+ *      plan_request 를 조회. **pending assignment 유무와 무관** — 모든 파트너가 제출을
+ *      마쳤지만 분석이 미완인 요청도 포함해야 시간 마감이 강제된다.
+ *   2. 각 요청에 `closePlanRequest` 호출 — 남은 pending 을 expired 로 전이 + 설계사
+ *      마감 안내 LMS + `analyzing → completed` (또는 submitted=0 시 rematching).
+ *      전이/알림 책임은 전부 `closePlanRequest` 안에 통합.
  *
- * 멱등성: 두 번 호출돼도 같은 결과. updateMany WHERE 가 이미 expired 인 행은 건드리지 않음.
- * finalizeRequestStatus 의 updateMany 도 `WHERE status: { in: [...] }` 로 멱등.
+ * 멱등성: 두 번 호출돼도 같은 결과. `closePlanRequest` 가 status 가드 + 전이 latch 로
+ * 멱등. 분석 완료 콜백 (웹훅) 과 호출처를 공유하지만 단일 트랜잭션 전이로 race-safe.
  */
 
 export async function GET(req: Request) {
@@ -29,98 +25,41 @@ export async function GET(req: Request) {
   }
 
   const now = new Date();
-  const stale = await prisma.planRequestAssignment.findMany({
+  // 마감시간이 지났는데 아직 결과 상태 (completed/rematching/failed) 로 전이 안 된 요청.
+  // 한 tick 당 상한 — 밀린 경우 다음 tick (5분 후) 이 이어 처리. 오래된 것부터.
+  const due = await prisma.planRequest.findMany({
     where: {
-      status: "pending",
-      request: { deadlineAt: { lte: now } },
+      deadlineAt: { lte: now },
+      status: { in: ["dispatched", "analyzing"] },
     },
-    select: {
-      id: true,
-      requestId: true,
-      partnerId: true,
-      partner: {
-        select: {
-          user: { select: { name: true, phone: true } },
-        },
-      },
-      request: {
-        select: { name: true },
-      },
-    },
+    select: { id: true },
+    take: 200,
+    orderBy: { deadlineAt: "asc" },
   });
 
-  if (stale.length === 0) {
-    return Response.json({ ok: true, expired: 0, transitioned: 0 });
+  if (due.length === 0) {
+    return Response.json({ ok: true, due: 0, closed: 0, failed: 0 });
   }
 
-  // race-safe: 동시에 partner 가 제출해 'submitted' 가 됐으면 그 행은 건드리지 않음.
-  const updated = await prisma.planRequestAssignment.updateMany({
-    where: { id: { in: stale.map((s) => s.id) }, status: "pending" },
-    data: { status: "expired" },
-  });
+  // 순차 처리 — 한 요청 처리 중 throw 가 다음 요청을 막지 않게. closePlanRequest 는
+  // 알림 발송 실패를 내부에서 swallow 하지만 DB 오류 등은 throw 될 수 있음.
+  let closed = 0;
+  let failed = 0;
+  for (const r of due) {
+    try {
+      await closePlanRequest(r.id);
+      closed++;
+    } catch (err) {
+      failed++;
+      console.error(
+        "[cron/assignment-deadline-expiry] closePlanRequest threw",
+        {
+          requestId: r.id,
+          error: err instanceof Error ? err.message : err,
+        },
+      );
+    }
+  }
 
-  // 설계사 마감 안내 LMS — 본 cron 이 expire 시킨 모든 assignment 대상.
-  // Promise.allSettled 로 한 설계사 발송 실패가 다른 발송을 막지 않게.
-  await notifyPartnersOfExpiry(stale);
-
-  // 영향받은 request 별로 상태 전이 (중복 제거).
-  const requestIds = [...new Set(stale.map((s) => s.requestId))];
-  await Promise.all(requestIds.map(finalizeRequestStatus));
-
-  revalidatePath("/admin/requests");
-
-  return Response.json({
-    ok: true,
-    expired: updated.count,
-    candidates: stale.length,
-    transitioned: requestIds.length,
-  });
-}
-
-/**
- * 마감 안내 LMS — 각 설계사 휴대폰으로 발송. partnerPhone 누락 / 알리고 호출 실패는
- * log 만 (defensive). 본문엔 가입자 이름만 포함 (제출 페이지 URL 은 이미 만료라
- * 의미 없음).
- */
-async function notifyPartnersOfExpiry(
-  stale: ReadonlyArray<{
-    id: string;
-    partnerId: string;
-    partner: { user: { name: string | null; phone: string | null } };
-    request: { name: string | null };
-  }>,
-): Promise<void> {
-  const serviceName = getServiceName();
-
-  await Promise.allSettled(
-    stale.map(async (s) => {
-      const partnerPhone = s.partner.user.phone;
-      if (!partnerPhone) {
-        console.warn(
-          "[cron/assignment-deadline-expiry] partner notification skipped — missing phone",
-          { assignmentId: s.id, partnerId: s.partnerId },
-        );
-        return;
-      }
-      const partnerName = s.partner.user.name ?? "파트너";
-      const customerName = s.request.name ?? "고객";
-      const msg = [
-        `[${serviceName}] ${partnerName} 파트너님,`,
-        `${customerName}님의 요청서 제출 마감 시간이 지났어요.`,
-        `더 이상 제안서를 제출할 수 없습니다.`,
-      ].join("\n");
-      try {
-        await sendNotificationLms(partnerPhone, msg);
-      } catch (err) {
-        console.error(
-          "[cron/assignment-deadline-expiry] partner notification LMS failed",
-          {
-            assignmentId: s.id,
-            partnerId: s.partnerId,
-            error: err instanceof Error ? err.message : err,
-          },
-        );
-      }
-    }),
-  );
+  return Response.json({ ok: true, due: due.length, closed, failed });
 }
