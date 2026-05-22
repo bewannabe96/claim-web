@@ -323,6 +323,17 @@ export const ACTIVE_STATUSES: readonly PlanRequestStatus[] = [
 ];
 
 /**
+ * 제출(설계사 송부) 이전 단계 — 가입자가 작성·후보 선택·본인 인증 중인 임시 요청.
+ * `confirming` 까지가 미제출, finalize 성공 시 `dispatched` 로 넘어가며 "제출"로 간주.
+ * 어드민 모니터링 기본 뷰에서 숨김 — 실제 제출까지 간 요청만 노출.
+ */
+export const PRE_SUBMISSION_STATUSES: readonly PlanRequestStatus[] = [
+  "draft",
+  "selecting",
+  "confirming",
+];
+
+/**
  * 저장된 step3 — Step3Input 의 입력 폼 필드 중 RRN 두 개는 derive 후 폐기되므로
  * 저장 형태에서는 빠짐. 대신 birthDate (ISO date) 가 채워짐.
  */
