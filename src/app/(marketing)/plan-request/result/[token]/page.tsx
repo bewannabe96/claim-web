@@ -67,15 +67,15 @@ export default async function ResultPage({
     nowMs() - new Date(req.dispatchedAt).getTime() >
       settings.resultRetentionDays * MS_PER_DAY;
 
+  // ExpiredState 는 StatusScreen 기반 — 자체 <main> landmark + BrandMark 를 렌더.
+  // page 의 <main> 으로 감싸면 <main> 중첩 (HTML 위반) — fragment 로만 감싸
+  // 열람 마킹 (ResultViewedMarker) 만 동봉한다.
   if (isExpired) {
     return (
-      <main className="flex flex-col flex-1 bg-white">
+      <>
         <ResultViewedMarker token={token} />
-        <div className="px-6 pt-10">
-          <BrandMark />
-        </div>
         <ExpiredState />
-      </main>
+      </>
     );
   }
 
@@ -112,9 +112,21 @@ export default async function ResultPage({
     adaptPlanProposal(card, reportsById[card.proposal.id] ?? null, customerAge),
   );
 
+  // RematchingState 도 StatusScreen 기반 — 자체 <main> landmark 를 렌더하므로
+  // page 의 <main> 밖, fragment 로만 감싸 반환 (중첩 <main> 회피).
+  if (proposals.length === 0) {
+    return (
+      <>
+        <ResultViewedMarker token={token} />
+        <RematchingState />
+      </>
+    );
+  }
+
   // 분석 진행 현황 — 분석 안 된 proposal 이 있으면 progress 배지, 모두 완료면 "결과 준비됨".
+  // 이 지점부터 proposals.length > 0 보장 (위 early return).
   const analyzedCount = proposals.filter((p) => p.analyzed).length;
-  const allAnalyzed = proposals.length > 0 && analyzedCount === proposals.length;
+  const allAnalyzed = analyzedCount === proposals.length;
 
   return (
     <main className="flex flex-col flex-1 bg-white">
@@ -127,37 +139,30 @@ export default async function ResultPage({
             <span className="text-black">{proposals.length}건</span>
             이 도착했어요
           </h1>
-          {req.selectedPartnerIds.length > proposals.length &&
-            proposals.length > 0 && (
-              <p className="text-sm text-[#4b4b4b]">
-                선택하신 {req.selectedPartnerIds.length}명 중{" "}
-                <span className="font-semibold text-black">
-                  {proposals.length}명
-                </span>
-                이 제안서를 보내주셨어요
-              </p>
-            )}
-          {proposals.length > 0 && (
-            <AnalysisStatusBadge
-              analyzed={analyzedCount}
-              total={proposals.length}
-              allDone={allAnalyzed}
-            />
+          {req.selectedPartnerIds.length > proposals.length && (
+            <p className="text-sm text-[#4b4b4b]">
+              선택하신 {req.selectedPartnerIds.length}명 중{" "}
+              <span className="font-semibold text-black">
+                {proposals.length}명
+              </span>
+              이 제안서를 보내주셨어요
+            </p>
           )}
+          <AnalysisStatusBadge
+            analyzed={analyzedCount}
+            total={proposals.length}
+            allDone={allAnalyzed}
+          />
         </header>
       </div>
 
-      {proposals.length === 0 ? (
-        <RematchingState />
-      ) : (
-        <ResultView
-          resultToken={token}
-          proposals={proposals}
-          reportsById={reportsById}
-          scenarioPriority={settings.scenarioPriority}
-          resultRetentionDays={settings.resultRetentionDays}
-        />
-      )}
+      <ResultView
+        resultToken={token}
+        proposals={proposals}
+        reportsById={reportsById}
+        scenarioPriority={settings.scenarioPriority}
+        resultRetentionDays={settings.resultRetentionDays}
+      />
     </main>
   );
 }
