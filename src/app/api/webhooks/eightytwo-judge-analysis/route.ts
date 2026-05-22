@@ -102,8 +102,21 @@ export async function POST(req: Request) {
   }
   const parsed = PayloadSchema.safeParse(json);
   if (!parsed.success) {
+    // 외부 파이프라인 (eightytwo_judge) 디버깅용 — 어떤 필드가 왜 틀렸는지
+    // dotted path 로 반환. flatten() 은 nested (metadata.*, result.*) 를
+    // 1-depth 로 뭉개 어느 하위 필드인지 안 보이므로 issues 를 직접 매핑.
+    // refine() 위반은 path 가 비어 "(root)" 로 표기. HMAC 검증을 이미 통과한
+    // 호출자만 도달하므로 detail 노출 안전.
+    const fieldErrors = parsed.error.issues.map((issue) => ({
+      field: issue.path.join(".") || "(root)",
+      code: issue.code,
+      message: issue.message,
+    }));
+    console.warn("[webhook/analysis] payload validation failed", {
+      fieldErrors,
+    });
     return Response.json(
-      { error: parsed.error.flatten() },
+      { error: "invalid payload", fieldErrors },
       { status: 400 },
     );
   }
