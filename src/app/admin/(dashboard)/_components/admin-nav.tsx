@@ -9,7 +9,7 @@ const TABS = [
   { href: "/admin", label: "대시보드", exact: true },
   { href: "/admin/requests", label: "요청", exact: false },
   { href: "/admin/analysis-failures", label: "분석 실패", exact: false },
-  { href: "/admin/partners", label: "설계사", exact: false },
+  { href: "/admin/partners", label: "파트너", exact: false },
   { href: "/admin/settings", label: "설정", exact: false },
 ] as const satisfies ReadonlyArray<{
   href:

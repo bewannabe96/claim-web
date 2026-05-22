@@ -80,7 +80,7 @@ export default async function AdminDashboardPage() {
           hint={rematching > 0 ? "수동 개입 필요" : "0건"}
         />
         <Kpi
-          label="활성 설계사"
+          label="활성 파트너"
           value={activePartners}
           hint={`풀 전체 ${partners.length}명`}
         />

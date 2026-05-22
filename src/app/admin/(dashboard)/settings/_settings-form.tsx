@@ -71,7 +71,7 @@ function SettingFields({
       <SettingField
         name="candidateCount"
         label="후보 수 (N)"
-        helper="가입자에게 노출할 설계사 후보 인원"
+        helper="가입자에게 노출할 파트너 후보 인원"
         defaultValue={initial.candidateCount}
         unit="명"
         error={errors?.candidateCount?.[0]}
@@ -87,7 +87,7 @@ function SettingFields({
       <SettingField
         name="submissionDeadlineHours"
         label="제출 마감 시간 (T)"
-        helper="설계사 제안서 제출 시간. 초과 시 미제출 처리."
+        helper="파트너 제안서 제출 시간. 초과 시 미제출 처리."
         defaultValue={initial.submissionDeadlineHours}
         unit="시간"
         error={errors?.submissionDeadlineHours?.[0]}

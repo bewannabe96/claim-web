@@ -183,7 +183,7 @@ export default async function AdminRequestDetailPage({
 
       <Card>
         <CardHeader
-          title="설계사별 제출 현황"
+          title="파트너별 제출 현황"
           meta={
             <span className="tabular-nums">
               제출{" "}
@@ -366,7 +366,7 @@ function AssignmentItem({
           href={`/partner/plan-request-assignments/${assignment.token}`}
           target="_blank"
           rel="noopener noreferrer"
-          title="새 탭에서 열기 — 설계사 POV"
+          title="새 탭에서 열기 — 파트너 POV"
           className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs font-mono text-black break-all hover:bg-[#efefef] transition-colors"
         >
           /partner/plan-request-assignments/{assignment.token}
