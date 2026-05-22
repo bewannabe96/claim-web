@@ -58,7 +58,7 @@
 #### `User`
 - **정의**: 모든 인증 사용자 공통. Supabase `auth.users` 와 매핑 (`authId`). 도메인 nanoid PK.
 - **DB**: `user`
-- **역할 구분**: `Partner` / `Admin` extension row 의 존재 (+ active) 가 권한 결정.
+- **역할 구분**: `Partner` / `Admin` extension row 의 존재가 권한 결정 (admin 은 추가로 `active=true` 필요, partner 는 존재만으로 충분 — `partner.active` 는 매칭 풀 노출 토글).
 
 #### `Partner` (설계사)
 - **정의**: User 와 1:1 (PK 공유). 매칭 대상 풀.

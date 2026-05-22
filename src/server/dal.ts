@@ -16,9 +16,12 @@ import { getSupabaseServerClient } from "@/server/supabase";
  *   - Partner (claim.partner) — partner 추가 정보. id=User.id 공유.
  *   - Admin (claim.admin) — admin 추가 정보. id=User.id 공유.
  *
- * 역할 판단 = Partner / Admin extension row 존재(+active). 한 사용자가 둘 다 가질 수
+ * 역할 판단 = Partner / Admin extension row 의 존재. 한 사용자가 둘 다 가질 수
  * 있음 — 각 require*Session() 은 해당 extension 만 확인. "Supabase 로그인 == 권한"
- * 이 아니라 매 요청마다 extension active 까지 확인해야 통과.
+ * 이 아니라 매 요청마다 extension row 존재까지 확인해야 통과.
+ *   - Admin   : 존재 + `active=true` 둘 다 필요 (active 가 admin kill switch).
+ *   - Partner : 존재만으로 충분 — `partner.active` 는 매칭 풀 노출 토글이라
+ *               로그인 자격과 무관 (비활성 설계사도 로그인 가능).
  *
  * 첫 로그인 시 User.authId 가 null → callback/action 이 email 로 lookup 후 authId 채움
  * (claim). 이후 로그인은 authId 로 직접 조회 (빠른 path).
@@ -101,11 +104,14 @@ export async function getOptionalPartnerSession(): Promise<PartnerSession | null
   const user = await getOptionalUser();
   if (!user) return null;
 
+  // partner extension row 의 존재 자체가 로그인 자격 — `active` 는 매칭 풀
+  // (후보 산출) 노출만 담당하므로 세션 게이트에서 검사하지 않음. 비활성
+  // 설계사도 로그인 + 대시보드 접근 가능, 후보 산출에서만 빠진다.
   const partner = await prisma.partner.findUnique({
     where: { id: user.id },
-    select: { id: true, active: true },
+    select: { id: true },
   });
-  if (!partner || !partner.active) return null;
+  if (!partner) return null;
 
   return { kind: "partner", user, partnerId: partner.id };
 }
