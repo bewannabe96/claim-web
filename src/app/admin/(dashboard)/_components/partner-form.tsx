@@ -124,10 +124,10 @@ export function PartnerForm({
                 onChange={(e) => setAdminSelfChecked(e.target.checked)}
               />
               <span className="flex-1 text-black">
-                <span className="font-medium">어드민 본인 설계사 등록</span>
+                <span className="font-medium">어드민 본인 파트너 등록</span>
                 <span className="block mt-0.5 text-xs text-[#4b4b4b]">
                   {lookup.name} (어드민) 본인 휴대폰으로 인식됐어요. 같은 계정에
-                  설계사 권한을 추가하려면 체크해주세요.
+                  파트너 권한을 추가하려면 체크해주세요.
                 </span>
               </span>
             </label>
@@ -187,7 +187,7 @@ export function PartnerForm({
       <Card>
         <SectionTitle>자격</SectionTitle>
         <div className="mt-5">
-          <Field label="설계사 자격번호" error={errors?.licenseNumber?.[0]}>
+          <Field label="파트너 자격번호" error={errors?.licenseNumber?.[0]}>
             <Input
               name="licenseNumber"
               type="text"
