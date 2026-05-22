@@ -1,9 +1,9 @@
 /**
- * 결과 페이지 컴포넌트들이 공유하는 데이터 shape 정의.
+ * plan-proposals 도메인의 차트/카드 UI 가 공유하는 데이터 shape.
  *
- * adapt-proposal.ts 가 실 데이터 (PlanProposal + 분석 리포트) → PlanProposalData 로
- * 변환하면, 차트/카드 컴포넌트가 이 type 기준으로 그림. 차트 컴포넌트의 prop
- * 시그니처가 이 타입에 강결합돼 있어 별도 type 모듈로 추출.
+ * 결과 페이지(result/[token])는 adapt-proposal.ts 가 실 데이터(PlanProposal +
+ * 분석 리포트)를 이 shape 으로 변환해 채우고, 랜딩 데모는 mock 으로 채운다.
+ * 차트 컴포넌트의 prop 시그니처가 이 타입에 강결합돼 있어 별도 type 모듈로 분리.
  */
 
 /* ============================================================

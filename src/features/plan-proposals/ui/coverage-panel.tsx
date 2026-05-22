@@ -1,5 +1,5 @@
-import { formatKRW } from "../../_lib/format-krw";
-import type { CoverageItem } from "../../_lib/result-types";
+import { formatKRW } from "./format-krw";
+import type { CoverageItem } from "./chart-types";
 
 /**
  * 시나리오 보장 상세 — "이 시나리오에서 받는 총 보장액" + 담보 breakdown.

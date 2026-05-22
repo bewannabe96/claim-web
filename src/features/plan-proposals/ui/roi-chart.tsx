@@ -8,8 +8,15 @@ import {
   type PlanProposalData,
   type RoiPoint,
   type ScenarioMeta,
-} from "../../_lib/result-types";
+} from "./chart-types";
 import { CoveragePanel } from "./coverage-panel";
+
+/**
+ * chip 영역의 각 항목. ScenarioMeta + `isMore` 플래그.
+ * `isMore: true` 인 chip 은 click 시 onScenarioChange(id, true) 로 부모가 모달
+ * 등을 열도록 시그널. active 표시는 일반 chip 과 동일 (id === scenarioId).
+ */
+export type RoiChartChip = ScenarioMeta & { isMore?: boolean };
 
 /**
  * ROI 라인 차트 — 모든 제안서를 한 화면에 비교 + 시나리오 토글.
@@ -22,13 +29,6 @@ import { CoveragePanel } from "./coverage-panel";
  *
  * 발병률 시각화: plot area 하단 background layer — "이 나이대에 위험" 직관 전달.
  */
-/**
- * chip 영역의 각 항목. ScenarioMeta + `isMore` 플래그.
- * `isMore: true` 인 chip 은 click 시 onScenarioChange(id, true) 로 부모가 모달
- * 등을 열도록 시그널. active 표시는 일반 chip 과 동일 (id === scenarioId).
- */
-export type RoiChartChip = ScenarioMeta & { isMore?: boolean };
-
 export function RoiChart({
   proposals,
   scenarios,
@@ -228,8 +228,8 @@ export function RoiChart({
           {scenario.sentenceLabel}에 걸리면
           <br />
           그동안 낸 보험료의{" "}
-          <span className="font-bold">{cursorPoint?.roi ?? 0}배</span>를
-          돌려받아요
+          <span className="font-bold">{formatRoi(cursorPoint?.roi ?? 0)}배</span>
+          를 돌려받아요
         </p>
         {hasIncidence && (
           <p className="text-xs text-[#4b4b4b]">
@@ -402,6 +402,16 @@ export function RoiChart({
       </p>
     </div>
   );
+}
+
+/**
+ * 커서 "N배" 라벨 표기. roi 시계열 자체는 소수 2자리(매끄러운 곡선용)지만,
+ * 문구는 큰 값이면 정수, 작으면 소수 1자리로 읽기 좋게 줄인다.
+ */
+function formatRoi(roi: number): string {
+  return roi >= 10
+    ? String(Math.round(roi))
+    : String(Math.round(roi * 10) / 10);
 }
 
 /** + 아이콘 — chip 의 isMore entry 에서 라벨 대신 사용 (질병 추가 트리거). */
