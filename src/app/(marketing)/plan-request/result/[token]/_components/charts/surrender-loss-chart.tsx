@@ -114,7 +114,9 @@ export function SurrenderLossChart({
   }
 
   // 실제 월 부담 (원). Math.max(0, …): 도메인상 음수 없지만 데이터 이상 안전망.
-  const monthlyWon = Math.max(0, Math.round(cursorPoint.monthly));
+  // cursorPoint?. — 강조 제안서가 surrenderLoss 빈 카드(분석 리포트 null)면
+  // active.points 가 [] 라 cursorPoint 가 undefined. roi-chart 와 동일한 가드.
+  const monthlyWon = Math.max(0, Math.round(cursorPoint?.monthly ?? 0));
 
   return (
     <div className="flex flex-col gap-4">
@@ -199,7 +201,7 @@ export function SurrenderLossChart({
         />
         <circle
           cx={xOf(clampedCursorAge)}
-          cy={yOf(cursorPoint.monthly)}
+          cy={yOf(cursorPoint?.monthly ?? 0)}
           r={4}
           fill="#000"
           stroke="white"
