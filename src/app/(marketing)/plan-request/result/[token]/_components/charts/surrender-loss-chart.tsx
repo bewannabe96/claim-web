@@ -58,12 +58,12 @@ export function SurrenderLossChart({
   const yTicks: number[] = [];
   for (let v = yMin; v <= yMax; v += STEP) yTicks.push(v);
 
-  // x축 도메인 — points 가 채워진 첫 시리즈 기준 (series[0] 은 미분석 제안서면 빈 배열).
-  const ages = (series.find((s) => s.points.length > 0)?.points ?? []).map(
-    (p) => p.age,
-  );
-  const minAge = ages[0] ?? entryAge + 1;
-  const maxAge = ages[ages.length - 1] ?? 100;
+  // x축 도메인 — 제안서마다 만기(maturity_age)가 달라 곡선 길이가 제각각이다.
+  // 한 시리즈만 보고 도메인을 잡으면 더 긴 제안서의 곡선이 x축을 넘어 그려진다.
+  // 모든 시리즈의 합집합으로 잡아 전부 담는다.
+  const domainAges = series.flatMap((s) => s.points).map((p) => p.age);
+  const minAge = domainAges.length > 0 ? Math.min(...domainAges) : entryAge + 1;
+  const maxAge = domainAges.length > 0 ? Math.max(...domainAges) : 100;
 
   const W = 320;
   const H = 220;
@@ -94,7 +94,19 @@ export function SurrenderLossChart({
   const active = series.find((p) => p.id === activeId) ?? series[0];
   const inactive = series.filter((p) => p.id !== active.id);
 
-  const clampedCursorAge = Math.max(minAge, Math.min(maxAge, cursorAge));
+  // cursor 는 강조(검정 굵은) 제안서 곡선의 실제 범위로 제한한다. 제안서마다
+  // 만기가 달라 활성 곡선이 x축 전체보다 짧게 끝날 수 있는데, 그 빈 공간으로
+  // 커서가 넘어가면 점이 곡선에서 떨어져 허공에 뜬다.
+  const activeMinAge =
+    active.points.length > 0 ? active.points[0].age : minAge;
+  const activeMaxAge =
+    active.points.length > 0
+      ? active.points[active.points.length - 1].age
+      : maxAge;
+  const clampedCursorAge = Math.max(
+    activeMinAge,
+    Math.min(activeMaxAge, cursorAge),
+  );
   const cursorPoint =
     active.points.find((p) => p.age === clampedCursorAge) ??
     active.points[active.points.length - 1];
@@ -106,11 +118,12 @@ export function SurrenderLossChart({
     if (rect.width === 0) return;
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     const xView = ratio * W;
-    if (xView <= padding.left) return setCursorAge(minAge);
-    if (xView >= W - padding.right) return setCursorAge(maxAge);
+    // 포인터 x → 나이(x축 전체 도메인 기준) → 강조 곡선 범위로 클램프.
     const ageRaw =
       minAge + ((xView - padding.left) / plotW) * (maxAge - minAge);
-    setCursorAge(Math.round(ageRaw));
+    setCursorAge(
+      Math.max(activeMinAge, Math.min(activeMaxAge, Math.round(ageRaw))),
+    );
   }
 
   // 실제 월 부담 (원). Math.max(0, …): 도메인상 음수 없지만 데이터 이상 안전망.
