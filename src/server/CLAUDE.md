@@ -11,7 +11,7 @@
 - `dal.ts` — Data Access Layer. **모든 인증 검사의 단일 진입점.**
   - `getOptionalUser()` — Supabase `auth.getUser()` → `claim.user` (where authId) 조회. `auth.getUser()` 가 throw (refresh 실패 등) 하면 graceful null — `/admin/login` 이 stale cookie 만으로 error.tsx 로 빠지지 않도록. cache 로 same-request dedupe.
   - `requireAdminSession()` — user + `claim.admin.active` 2단계 검증 (admin extension row 존재 + active).
-  - `requirePartnerSession()` — user + `claim.partner.active` 2단계 검증 (partner extension row 존재 + active).
+  - `requirePartnerSession()` — user + `claim.partner` extension row 존재 검증. `partner.active` 는 매칭 풀 노출 토글이라 로그인 게이트에서 안 봄 (비활성 설계사도 로그인 가능).
   - 한 사용자가 admin/partner 동시 권한 가능 — 각 require\*Session 은 해당 extension 만 확인.
   - 미인증/권한 없음 → 각 영역 login 페이지로 redirect (admin: `/admin/login`, partner: `/partner/login`).
 - `supabase.ts` — `@supabase/ssr` 의 `createServerClient` wrap. cookie-based 세션 +
@@ -360,7 +360,7 @@ partner 는 `partner_signup_invitation → Kakao 가입 콜백` 단일 진입점
 
 - **Admin** (`/admin/login`) — 이메일/비번 → `signInWithPassword` → user lookup (admin.active) → authId claim → `/admin`.
 - **Partner — 로그인** (`/partner/login`) — 이미 가입된 partner. Kakao OAuth → `signInWithOAuth` → Kakao 인증 → `/api/auth/callback` 가
-  code→session 교환 + user lookup (partner.active) → `/partner`.
+  code→session 교환 + user lookup (partner extension 존재 검증 — `active` 무관) → `/partner`.
 - **Partner — 가입** (`/partner/signup/<invitation_token>`) — 어드민이 발급한 일회용 초청. Kakao OAuth →
   `/api/auth/callback?signup=<token>` 가 invitation 재확인 + Kakao phone vs invitation.phone 매칭 +
   user/partner 트랜잭션 INSERT + invitation 소비 → `/partner`. 자세한 건 docs/architecture.md §7.4.

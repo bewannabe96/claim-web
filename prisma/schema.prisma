@@ -190,7 +190,7 @@ model PlanRequestAssignmentCandidate {
 //      User row 를 찾아 authId 채움 (claim). 이후 로그인은 authId 로 직접 lookup.
 //
 // 역할(role)은 별도 필드로 두지 않음 — 한 사용자가 여러 역할을 가질 수 있도록
-// Partner / Admin extension row 의 존재(+active) 자체가 권한 판단 기준. DAL 이 단일 진실.
+// Partner / Admin extension row 의 존재 자체가 권한 판단 기준 (admin 은 +active). DAL 이 단일 진실.
 
 model User {
   id        String   @id                                  // nanoid(16) — 도메인 식별자
@@ -215,7 +215,7 @@ model User {
 // partner — 설계사 추가 정보 (User 와 1:1, PK 공유)
 // ============================================================
 // 가입자 노출:  user.name, bio, yearsOfExperience, trustMetric
-// 운영:        user.email (로그인), user.phone (알림톡), active
+// 운영:        user.email (로그인), user.phone (알림톡), active (매칭 풀 노출 토글)
 // 배정 카운터: partner_assignment_stats 가 1:1 로 보유 (본체 hot row 와 분리).
 //
 // id 는 User.id 와 동일 — 1:1 extension. plan_request_assignment /
@@ -232,6 +232,8 @@ model Partner {
   /// 프로필 사진 S3 key — `partners/avatar/{partnerId}/{nanoid}.{ext}` 형태. nullable (미업로드).
   /// 공개 GET 허용 prefix 라 URL 은 `<bucket>.s3.<region>.amazonaws.com/<key>` 로 직접 노출.
   avatarKey          String?  @map("avatar_key")
+  /// 매칭 풀(후보 산출) 노출 토글. false 면 findAssignmentCandidates 후보에서
+  /// 제외 — 로그인/대시보드 접근에는 영향 없음 (로그인 자격 = partner row 존재).
   active             Boolean  @default(true)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
