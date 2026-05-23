@@ -372,7 +372,10 @@ function AssignmentItem({
 
         {proposal ? (
           <div className="flex flex-col gap-1.5 text-xs text-[#4b4b4b]">
-            <Spec label="PDF" value={pdfBasename(proposal.pdfS3Key)} />
+            <PdfDownloadRow
+              proposalId={proposal.id}
+              filename={pdfBasename(proposal.pdfS3Key)}
+            />
             <Spec label="한줄 요약" value={proposal.note} />
             {!proposal.analyzedAt && proposal.analysisError && (
               <AnalysisFailureBlock
@@ -514,6 +517,34 @@ function Spec({ label, value }: { label: string; value: string }) {
     <span className="truncate">
       <span className="text-[#afafaf]">{label}</span>{" "}
       <span className="font-medium text-black">{value}</span>
+    </span>
+  );
+}
+
+/**
+ * PDF 식별 + 다운로드 anchor. href 는 `/admin/api/proposals/<id>/download` —
+ * 어드민 트램펄린 라우트가 presigned GET URL 발급 + 302 redirect.
+ *
+ * `<a download>` 어트리뷰트는 cross-origin (S3) redirect 에선 무시되므로 파일명은
+ * S3 측 `Content-Disposition` 으로 강제 (s3.ts `presignPlanProposalDownload`).
+ */
+function PdfDownloadRow({
+  proposalId,
+  filename,
+}: {
+  proposalId: string;
+  filename: string;
+}) {
+  return (
+    <span className="truncate">
+      <span className="text-[#afafaf]">PDF</span>{" "}
+      <a
+        href={`/admin/api/proposals/${proposalId}/download`}
+        className="font-medium text-black underline decoration-[#e2e2e2] underline-offset-2 hover:decoration-black"
+        title="PDF 다운로드"
+      >
+        {filename}
+      </a>
     </span>
   );
 }

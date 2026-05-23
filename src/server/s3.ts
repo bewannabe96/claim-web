@@ -26,8 +26,9 @@ import { newId } from "@/lib/id";
  * Vercel 함수 body 4.5MB 한도 + 메모리 효율 이유로 PDF 바이트는 우리 함수를
  * 거치지 않음 (PUT 은 클라 직결). 검증은 키 패턴 + HEAD 만.
  *
- * 다운로드 (GET presign) 는 미구현 — 결과/어드민 페이지가 PDF 본문을 직접
- * 노출하지 않음. 필요 시 `GetObjectCommand` 로 신규 함수 추가할 것.
+ * 다운로드 (GET presign) 는 어드민 트램펄린 라우트 전용
+ * (`/admin/api/proposals/[id]/download`) — 매 클릭마다 60s TTL 의 presigned GET
+ * URL 을 발급해 302 redirect. 가입자/결과 페이지는 PDF 본문을 직접 노출하지 않음.
  */
 
 const EnvSchema = z.object({
@@ -174,4 +175,41 @@ export function isPlanProposalKeyForAssignment(
   if (!s3Key.startsWith(expectedPrefix)) return false;
   const suffix = s3Key.slice(expectedPrefix.length);
   return /^[A-Za-z0-9_-]+\.pdf$/.test(suffix);
+}
+
+/**
+ * 어드민 다운로드용 presigned GET URL. 트램펄린 라우트
+ * (`/admin/api/proposals/[id]/download`) 가 매 클릭마다 호출 — 짧은 TTL 로 HTML
+ * 에 박힐 일 없음.
+ *
+ *   - prefix 검증으로 forgery 차단 (어드민이라도 임의 S3 키 다운로드 못 함).
+ *   - `Content-Disposition: attachment` 로 inline 미리보기 대신 즉시 다운로드.
+ *   - 비ASCII 파일명은 RFC 5987 `filename*=UTF-8''...` 로 안전 인코딩.
+ *
+ * 호출자는 어드민 권한을 이미 확인했다고 가정 — 본 함수는 키 prefix 만 본다.
+ */
+export async function presignPlanProposalDownload(
+  s3Key: string,
+  options?: { filename?: string },
+): Promise<string> {
+  if (!s3Key.startsWith(PROPOSAL_PDF_KEY_PREFIX)) {
+    throw new Error("invalid proposal s3 key");
+  }
+  const { env, client } = getS3();
+  const cmd = new GetObjectCommand({
+    Bucket: env.S3_BUCKET_PROPOSALS,
+    Key: s3Key,
+    ResponseContentDisposition: options?.filename
+      ? buildAttachmentDisposition(options.filename)
+      : "attachment",
+    ResponseContentType: "application/pdf",
+  });
+  return getSignedUrl(client, cmd, { expiresIn: 60 });
+}
+
+function buildAttachmentDisposition(filename: string): string {
+  // ASCII fallback + RFC 5987 utf-8. 옛 클라/IE 호환 + 한글 파일명 보존.
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_");
+  const encoded = encodeURIComponent(filename);
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }
