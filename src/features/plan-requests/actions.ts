@@ -18,9 +18,13 @@ import { getRedis } from "@/server/redis";
 import { getSettings } from "@/server/settings";
 
 import { hasActiveRequestForPhone } from "./queries";
-import { sendAnalysisCompletedNotification } from "./state-transition";
+import {
+  notifyPartnersOfDeadlineExtension,
+  sendAnalysisCompletedNotification,
+} from "./state-transition";
 import {
   CoverageRequestSchema,
+  ExtendDeadlineSchema,
   OtpSchema,
   SendOtpSchema,
   Step1Schema,
@@ -28,6 +32,7 @@ import {
   Step3Schema,
   coverageRequestToText,
   deriveRrn,
+  type ExtendDeadlineResult,
   type FinalizeState,
   type MedicalHistoryEntry,
   type SendOtpState,
@@ -648,6 +653,115 @@ export async function sendRequestResultNotification(
 
   const outcome = await sendAnalysisCompletedNotification(planRequestId);
   return outcome.ok ? { ok: true } : { ok: false, error: outcome.reason };
+}
+
+/* ============================================================
+ * 어드민 — 제출 마감 연장
+ * ============================================================
+ *
+ * `dispatched` / `analyzing` 상태이고 `deadlineAt > now` 인 plan_request 의
+ * deadlineAt 을 N시간 늘림. **마감이 이미 지난 요청은 연장 불가** — cron 의
+ * closePlanRequest 가 곧 expired/completed/rematching 으로 전이할 transient
+ * 상태이므로 "연장" 의 의미가 모호. 명시적으로 `already_past` 반환.
+ *
+ * 새 마감 = 현재 마감 + extendBy
+ *   - 현재 마감이 미래임이 가드로 보장되므로 admin 의 약속 시각 위에 그대로 연장.
+ *
+ * 동시성 — `updateMany WHERE status IN (dispatched, analyzing) AND deadlineAt > now`
+ * 로 race-safe. cron 이 closePlanRequest 로 status 를 먼저 전이했거나 (rare)
+ * 사전 SELECT 와 UPDATE 사이에 deadline 이 지났다면 0 row → `conflict` 반환.
+ *
+ * 자동 반영 (별도 처리 X) — 아래 호출처가 모두 렌더 시점 deadlineAt 을 다시 읽음:
+ *   - cron `/api/cron/assignment-deadline-expiry` — 새 deadlineAt 기준 재평가
+ *   - `closePlanRequest` 의 deadlinePassed — false 가 되어 마감 스킵
+ *   - `/plan-request/[id]/dispatched` — "최대 N시간" 카피 자동 갱신
+ *   - `/partner/plan-request-assignments/[token]` — 폼 차단 / 카운트다운 자동 갱신
+ *
+ * 수동 안내 (이 액션 부수 효과):
+ *   - pending 설계사에게 LMS 1회 — 연장 사실을 통보. 알림톡 신규 템플릿 검수
+ *     회피 + 본문 자유도 필요해 LMS 선택. `notifyPartnersOfDeadlineExtension`
+ *     가 단일 chokepoint.
+ *
+ * 비대상:
+ *   - 가입자 안내 — dispatched 페이지가 자동 갱신되고, 결과 알림톡은 분석 완료 시
+ *     발송이라 시점이 다름. 별도 안내 채널 없음.
+ *   - 어드민 알림 (벨) — 본인이 트리거한 액션이라 자기 자신에게 알림 X.
+ * ============================================================ */
+
+export async function extendRequestDeadline(
+  planRequestId: string,
+  extendByHours: number,
+): Promise<ExtendDeadlineResult> {
+  await requireAdminSession();
+
+  const parsed = ExtendDeadlineSchema.safeParse({ extendByHours });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: "invalid_hours",
+      message:
+        parsed.error.flatten().fieldErrors.extendByHours?.[0] ??
+        "올바른 시간이 아니에요.",
+    };
+  }
+
+  // 현재 상태 + 기존 deadlineAt + 가입자 이름 (LMS 본문) 한 번에.
+  const current = await prisma.planRequest.findUnique({
+    where: { id: planRequestId },
+    select: {
+      status: true,
+      deadlineAt: true,
+      name: true,
+    },
+  });
+  if (!current) return { ok: false, error: "not_found" };
+  if (current.status !== "dispatched" && current.status !== "analyzing") {
+    return { ok: false, error: "invalid_status" };
+  }
+  // finalize 가 항상 set 하므로 dispatched/analyzing 에 도달했다면 NULL 일 수 없음
+  // — defensive. 마감이 없는데 "연장" 은 의미가 모호하므로 invalid 처리.
+  if (!current.deadlineAt) {
+    return { ok: false, error: "invalid_status" };
+  }
+
+  const now = new Date();
+  // 마감 도과 가드 — cron tick (5분) 사이의 transient 케이스. 연장 후의 의미
+  // (가입자 기대 시간 / 설계사 통보) 가 모호해지므로 명시적으로 거부.
+  if (current.deadlineAt.getTime() <= now.getTime()) {
+    return { ok: false, error: "already_past" };
+  }
+
+  const newDeadline = new Date(
+    current.deadlineAt.getTime() + parsed.data.extendByHours * 3_600_000,
+  );
+
+  // race-safe — status 전이 + deadline 도과를 한 번에 가드.
+  //   - cron 이 closePlanRequest 로 status 를 먼저 전이했다면 status 조건 미스 매치
+  //   - SELECT 와 UPDATE 사이 deadline 이 지났다면 deadlineAt 조건 미스 매치
+  // 둘 다 count===0 → `conflict` (UI 가 새로고침 안내).
+  const updated = await prisma.planRequest.updateMany({
+    where: {
+      id: planRequestId,
+      status: { in: ["dispatched", "analyzing"] },
+      deadlineAt: { gt: now },
+    },
+    data: { deadlineAt: newDeadline },
+  });
+  if (updated.count === 0) {
+    return { ok: false, error: "conflict" };
+  }
+
+  // 부수 효과 — pending 설계사 LMS 안내. 실패는 함수 안에서 swallow.
+  await notifyPartnersOfDeadlineExtension(
+    planRequestId,
+    current.name ?? "고객",
+    newDeadline,
+  );
+
+  revalidatePath("/admin/requests");
+  revalidatePath(`/admin/requests/${planRequestId}`);
+
+  return { ok: true, newDeadlineAt: newDeadline.toISOString() };
 }
 
 /* ============================================================
