@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { NO_TRACK_CLASS, NoTrack } from "@/components/analytics/no-track";
 import { PartnerAvatar } from "@/features/partners/ui/partner-avatar";
 import { requestPlanProposalContact } from "@/features/plan-proposals/actions";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
@@ -171,13 +172,18 @@ function PlanProposalBody({
        */}
 
       {/* 설계사 한줄평 — message-from-partner 톤. 본문 끝 attribution 카드는
-        * 프로필/신뢰지표 톤으로 역할이 다름. */}
-      <PartnerNoteBubble
-        className="mt-6"
-        partnerName={proposal.partner.name}
-        avatarUrl={proposal.partner.avatarUrl}
-        note={proposal.note}
-      />
+        * 프로필/신뢰지표 톤으로 역할이 다름.
+        *
+        * NoTrack: 가입자가 매칭된 설계사명 + 설계사의 자유 작성 메시지가 모두 노출 —
+        * 가입자 ↔ 설계사 매칭 사실이 PostHog 에 leak 되지 않도록 wrapping. 데모
+        * 페이지의 PartnerNoteBubble 은 mock 이라 별도 처리 안 함. */}
+      <NoTrack className="mt-6">
+        <PartnerNoteBubble
+          partnerName={proposal.partner.name}
+          avatarUrl={proposal.partner.avatarUrl}
+          note={proposal.note}
+        />
+      </NoTrack>
 
       {/* 분석 안 된 proposal — 데이터 섹션 placeholder 로 대체.
        *   note + partner attribution 은 여전히 노출 (가용한 정보).
@@ -228,8 +234,12 @@ function PlanProposalBody({
         <SurrenderLossChart proposals={proposals} activeId={proposal.id} />
       )}
 
-      {/* 설계사 attribution — 본문 끝에서 "이 한줄평의 작성자" 컨텍스트 */}
-      <section className="rounded-xl border border-[#efefef] p-5">
+      {/* 설계사 attribution — 본문 끝에서 "이 한줄평의 작성자" 컨텍스트.
+        * 가입자 ↔ 설계사 매칭 식별이 가능한 영역이라 전체 분석 제외 (read-only 카드라
+        * 내부 click 추적도 잃을 게 없음). */}
+      <section
+        className={cn("rounded-xl border border-[#efefef] p-5", NO_TRACK_CLASS)}
+      >
         <header className="flex items-start gap-3">
           <PartnerAvatar
             name={proposal.partner.name}
@@ -282,9 +292,17 @@ function PlanProposalBody({
             : "bg-black text-white hover:bg-[#1a1a1a]",
         )}
       >
-        {contactRequested
-          ? "상담 요청을 보냈어요"
-          : `${proposal.partner.name} 설계사와 상담 진행하기`}
+        {contactRequested ? (
+          "상담 요청을 보냈어요"
+        ) : (
+          <>
+            {/* 파트너명만 분석 제외 — 버튼 click 자체 ("상담 진행하기 button 클릭") 는
+                funnel 핵심 conversion 이라 button 전체 마스킹은 X. PostHog autocapture
+                의 element_text 집계 시 ph-no-capture 자식 텍스트는 제외됨. */}
+            <span className={NO_TRACK_CLASS}>{proposal.partner.name}</span> 설계사와
+            상담 진행하기
+          </>
+        )}
       </button>
     </div>
     </>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -88,7 +89,10 @@ export function VerifyForm({
         <Input
           value={name}
           disabled
-          className="h-14 px-4 text-sm bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
+          className={cn(
+            "h-14 px-4 text-sm bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100",
+            NO_TRACK_CLASS,
+          )}
         />
       </Field>
 
@@ -97,7 +101,10 @@ export function VerifyForm({
           <Input
             value={formatPhone(phone)}
             disabled
-            className="h-14 px-4 text-sm tracking-wider flex-1 bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100"
+            className={cn(
+              "h-14 px-4 text-sm tracking-wider flex-1 bg-[#fafafa] text-black disabled:bg-[#fafafa] disabled:text-black disabled:opacity-100",
+              NO_TRACK_CLASS,
+            )}
           />
           <button
             type="button"
@@ -137,7 +144,10 @@ export function VerifyForm({
             onChange={(e) =>
               setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
             }
-            className="h-14 px-4 text-sm tracking-[0.4em] text-center"
+            className={cn(
+              "h-14 px-4 text-sm tracking-[0.4em] text-center",
+              NO_TRACK_CLASS,
+            )}
           />
           {verifyError && (
             <p className="mt-2 text-xs text-red-600">{verifyError}</p>
