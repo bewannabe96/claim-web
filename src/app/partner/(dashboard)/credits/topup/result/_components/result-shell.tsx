@@ -1,11 +1,16 @@
 import Link from "next/link";
 
+import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
  * 결제 결과 안내 셸 — 결과 페이지 (서버) 의 에러 분기와 TopupAck (클라이언트) 의
  * ack 결과 분기가 공용으로 쓰는 순수 프레젠테이션 컴포넌트. server-only 의존 없음.
+ *
+ * `<main>` 자체에 `NO_TRACK_CLASS` — 결제 결과 페이지 전체를 session replay 에서
+ * 블록 (PG 응답으로 표시되는 메시지 / 에러 코드까지). topup/page.tsx 와
+ * 동일한 정책 ([src/components/analytics/CLAUDE.md](../../../../../../../components/analytics/CLAUDE.md)).
  */
 export function ResultShell({
   tone,
@@ -28,7 +33,12 @@ export function ResultShell({
         : "text-amber-600";
 
   return (
-    <main className="flex flex-col flex-1 gap-8 px-6 pt-16 pb-8 bg-white">
+    <main
+      className={cn(
+        "flex flex-col flex-1 gap-8 px-6 pt-16 pb-8 bg-white",
+        NO_TRACK_CLASS,
+      )}
+    >
       <div className="flex flex-col gap-2 text-center">
         <p className={cn("text-xs font-medium uppercase tracking-wide", accent)}>
           {tone === "success" ? "완료" : tone === "error" ? "실패" : "확인 중"}
