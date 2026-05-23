@@ -24,7 +24,7 @@ export function EnvBanner() {
       className="sticky top-0 z-50 flex w-full items-center justify-center gap-2.5 bg-red-600 px-4 py-2.5 text-white shadow-md"
     >
       {stage && (
-        <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-black uppercase tracking-[0.15em]">
+        <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-bold uppercase tracking-[0.15em]">
           {stage}
         </span>
       )}
