@@ -43,9 +43,22 @@ export function PosthogClient({ apiKey, apiHost, envStage }: Props) {
       // identified_only: anonymous 이벤트는 추적하되 person profile (MTU)
       // 은 명시적 identify() 호출 시에만 생성 — 1M event 한도 안에서 MTU 절약.
       person_profiles: "identified_only",
-      // MVP 는 session replay 비활성 — 5K replay/월 한도를 보호.
-      // 추후 enable 할 때는 본인인증/결제 페이지에 mask 설정 필수.
-      disable_session_recording: true,
+      // Session replay 활성. PII 보호는 두 축:
+      //   1) `NO_TRACK_CLASS` (= `ph-no-capture`) 가 PostHog 의 기본 `blockClass`
+      //      와 동일 — 마킹된 element + 자손은 replay 에서 검은 박스로 가려짐
+      //      (autocapture 제외와 동일 심볼이 양쪽을 함께 책임). audit 표는
+      //      [src/components/analytics/CLAUDE.md](./CLAUDE.md).
+      //   2) `maskAllInputs: true` — 모든 input value 가 별표 마스킹. PG 결제
+      //      페이지 (`partner/(dashboard)/credits/topup/*`) 는 `<main>` 자체에
+      //      `NO_TRACK_CLASS` 부여로 전체 트리 차단 (PortOne iframe 밖 결제
+      //      요약/이력 포함).
+      // PostHog 의 default 와 동일하지만, 누가 PostHog UI 에서 project 설정을
+      // 만져도 우리 보호 정책이 코드 단에서 우선되도록 명시.
+      disable_session_recording: false,
+      session_recording: {
+        maskAllInputs: true,
+        blockClass: "ph-no-capture",
+      },
       // autocapture: 모든 click/submit/change 를 자동 캡처 — 도메인 코드에
       // onClick handler 를 추가하지 않아도 행동이 보이게 한다.
       autocapture: true,
