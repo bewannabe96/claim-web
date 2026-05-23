@@ -5,7 +5,7 @@ import { prisma } from "@/server/db/prisma";
 import { getSettings } from "@/server/settings";
 
 /**
- * 요청서 정산 cron — 보관 기간 만료된 PlanRequest 에 대해 contactedAt 있는 파트너들에게
+ * 요청서 정산 cron — 보관 기간 만료된 PlanRequest 에 대해 contactRequestedAt 있는 파트너들에게
  * price/N (1000원 단위 반올림) 일괄 차감.
  *
  * Vercel Cron 진입점. Bearer 토큰은 Vercel 이 자동 주입 (env `CRON_SECRET`).
@@ -16,7 +16,7 @@ import { getSettings } from "@/server/settings";
  *   2. dispatchedAt <= cutoff AND settledAt IS NULL 인 PlanRequest 조회 (batch 100건).
  *   3. 각 request 에 대해 settlePlanRequest 호출.
  *      - settlePlanRequest 가 settledAt atomic claim 을 **먼저** 수행하고 그 후 청구.
- *        이 순서로 동시 진행 중인 action 의 늦은 contactedAt 마킹을 차단 (race-safety).
+ *        이 순서로 동시 진행 중인 action 의 늦은 contactRequestedAt 마킹을 차단 (race-safety).
  *      - partial spendCredit 실패 시 자동 재시도 불가 (settledAt 이미 set) — 운영 모니터링
  *        (console.error) + 같은 멱등키로 수동 재호출로 복구. 자세한 trade-off 는
  *        settlement.ts 헤더 주석 참조.

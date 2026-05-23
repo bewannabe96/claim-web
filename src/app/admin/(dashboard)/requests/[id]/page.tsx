@@ -237,7 +237,14 @@ export default async function AdminRequestDetailPage({
 
       {request.resultToken && (
         <Card>
-          <CardHeader title="결과 페이지" />
+          <CardHeader
+            title="결과 페이지"
+            meta={
+              request.resultViewedAt
+                ? `열람 ${formatDateTime(request.resultViewedAt)}`
+                : "미열람"
+            }
+          />
           <div className="flex flex-col gap-3">
             <a
               href={`/plan-request/result/${request.resultToken}`}
@@ -408,6 +415,11 @@ function AssignmentItem({
         {proposal?.analyzedAt && (
           <span className="text-[#afafaf]">
             분석 {formatDateTime(proposal.analyzedAt)}
+          </span>
+        )}
+        {proposal?.contactRequestedAt && (
+          <span className="text-black font-medium">
+            상담요청 {formatDateTime(proposal.contactRequestedAt)}
           </span>
         )}
       </div>

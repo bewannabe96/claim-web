@@ -217,7 +217,7 @@ function mapPlanProposal(row: PrismaPlanProposal): PlanProposal {
     note: row.note,
     submittedAt: row.submittedAt.toISOString(),
     analyzedAt: row.analyzedAt?.toISOString() ?? undefined,
-    contactedAt: row.contactedAt?.toISOString() ?? undefined,
+    contactRequestedAt: row.contactRequestedAt?.toISOString() ?? undefined,
     analysisError: parseAnalysisError(row.analysisError),
     analysisErrorAt: row.analysisErrorAt?.toISOString() ?? undefined,
   };
