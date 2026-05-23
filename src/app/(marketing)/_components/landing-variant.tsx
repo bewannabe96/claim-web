@@ -1,6 +1,7 @@
 import type { VariantId } from "@/lib/lp-variant";
 
 import { VariantV1 } from "./variants/v1";
+import { VariantV2 } from "./variants/v2";
 
 /**
  * 랜딩 변형 dispatcher — Server Component.
@@ -27,6 +28,10 @@ export function LandingVariant({ variant, googleAdsConversionTarget }: Props) {
     case "v1":
       return (
         <VariantV1 googleAdsConversionTarget={googleAdsConversionTarget} />
+      );
+    case "v2":
+      return (
+        <VariantV2 googleAdsConversionTarget={googleAdsConversionTarget} />
       );
     default: {
       // Exhaustive 체크 — VARIANT_IDS 늘리고 case 안 늘리면 type error.
