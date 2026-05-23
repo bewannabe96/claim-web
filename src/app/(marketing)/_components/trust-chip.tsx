@@ -36,7 +36,7 @@ export function TrustChipList({ className }: { className?: string }) {
     <ul className={className}>
       <TrustChip>100% 무료</TrustChip>
       <TrustChip>약 1분</TrustChip>
-      <TrustChip>전화없음</TrustChip>
+      <TrustChip>영업전화 없음</TrustChip>
     </ul>
   );
 }
