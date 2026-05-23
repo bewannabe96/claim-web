@@ -3,6 +3,7 @@ import { resolveLpVariant } from "@/server/lp-variant";
 import { CookieSetter } from "./_components/cookie-setter";
 import { ExposureBeacon } from "./_components/exposure-beacon";
 import { LandingVariant } from "./_components/landing-variant";
+import { buildGoogleAdsConversionTarget } from "./_lib/google-ads";
 
 /**
  * 마케팅 랜딩 — 가입자(고객) 진입 페이지.
@@ -16,21 +17,9 @@ import { LandingVariant } from "./_components/landing-variant";
  *   - [src/components/analytics/CLAUDE.md](../../components/analytics/CLAUDE.md) (PostHog 측 인벤토리)
  *
  * 페이지 자체는 dispatcher 만 — 실제 마크업은 `_components/variants/<id>/index.tsx`
- * 가 각자 책임. v1 (control) = 기존 운영 중인 랜딩.
+ * 가 각자 책임. 현재는 v3 단독 운영 (v1 / v2 는 디렉토리 보존 + dispatcher 에서만
+ * 제거).
  */
-
-// gtag 의 두 호출은 send_to 형식이 다르다:
-//   - 베이스 스크립트의 gtag('config', …) 는 계정 ID `AW-XXXXXXXXXX` 만 (layout.tsx).
-//   - conversion 이벤트의 send_to 는 `AW-XXXXXXXXXX/<label>` — conversion action
-//     마다 발급되는 label 을 붙여야 Google Ads 에 conversion 으로 매핑된다.
-// 그래서 계정 ID 와 label 을 별도 env 로 받아 여기서 합성한다. 둘 중 하나라도
-// 미설정이면 undefined → CTA 가 gtag 발화를 스킵 (dev/staging 에서 무해).
-function buildGoogleAdsConversionTarget(): string | undefined {
-  const googleAdsId = process.env.GOOGLE_ADS_ID;
-  const googleAdsConversionLabel = process.env.GOOGLE_ADS_CONVERSION_LABEL;
-  if (!googleAdsId || !googleAdsConversionLabel) return undefined;
-  return `${googleAdsId}/${googleAdsConversionLabel}`;
-}
 
 export default async function Home({
   searchParams,
