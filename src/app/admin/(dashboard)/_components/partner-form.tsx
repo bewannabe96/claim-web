@@ -12,6 +12,7 @@ import type { PartnerInput } from "@/features/partners/schema";
 import { cn } from "@/lib/utils";
 
 import { Banner, Card } from "./page-shell";
+import { PhoneInput } from "./phone-input";
 
 type FormAction = (
   state: PartnerMutationState,
@@ -103,14 +104,12 @@ export function PartnerForm({
               />
             </Field>
             <Field label="휴대폰" error={errors?.phone?.[0]}>
-              <Input
+              <PhoneInput
                 name="phone"
-                type="tel"
                 defaultValue={initial?.phone ?? ""}
-                placeholder="01012345678"
                 className="h-11"
                 readOnly={!!lockedExistingUserId}
-                onBlur={(e) => runLookup(e.target.value.trim())}
+                onDigitsBlur={runLookup}
               />
             </Field>
           </div>
