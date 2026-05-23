@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
+import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -491,7 +492,7 @@ function MedicalFields({
           onChange={(e) =>
             setData((d) => ({ ...d, occupation: e.target.value }))
           }
-          className="h-14 px-4 text-sm"
+          className={cn("h-14 px-4 text-sm", NO_TRACK_CLASS)}
         />
       </Field>
 
@@ -561,7 +562,11 @@ function NotesFields({
       onChange={(e) =>
         setData((d) => ({ ...d, additionalNotes: e.target.value }))
       }
-      className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10"
+      // 자유 텍스트 — 가족 병력, 구체 질환명 등 어떤 PII 가 들어갈지 통제 불가.
+      className={cn(
+        "w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10",
+        NO_TRACK_CLASS,
+      )}
     />
   );
 }
@@ -582,7 +587,15 @@ function MedicalEntryCard({
   onRemove: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-[#e2e2e2] bg-white p-4 flex flex-col gap-4">
+    // 카드 전체가 가입자 병력 — 진단명/날짜/입원/외래/수술 모두 민감 의료정보.
+    // 카드 안 chip 선택/삭제 click 추적은 잃지만, 카드 add (외부 button) 와 form
+    // 제출 (외부 CTA) 는 그대로 추적되어 funnel 분석엔 영향 없음.
+    <div
+      className={cn(
+        "rounded-xl border border-[#e2e2e2] bg-white p-4 flex flex-col gap-4",
+        NO_TRACK_CLASS,
+      )}
+    >
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-[#4b4b4b]">
           병력 {index + 1}

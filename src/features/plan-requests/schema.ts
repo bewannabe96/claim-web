@@ -290,6 +290,46 @@ export type FinalizeState =
   | undefined;
 
 /* ============================================================
+ * 어드민 — 제출 마감 연장
+ * ============================================================
+ *
+ * `dispatched` / `analyzing` 상태인 plan_request 의 deadlineAt 을 N시간 늘림.
+ * 정수 시간 단위 — 어드민 mental model 이 `submissionDeadlineHours` (AppSettings)
+ * 와 일치하도록 시간으로 통일. 1~168시간 (최대 7일) — UX/오타 방어 상한.
+ * ============================================================ */
+
+export const ExtendDeadlineSchema = z.object({
+  extendByHours: z.coerce
+    .number({ message: "추가할 시간을 입력해주세요." })
+    .int("정수 시간으로 입력해주세요.")
+    .min(1, "1시간 이상 입력해주세요.")
+    .max(168, "한 번에 168시간(7일) 이상 늘릴 수 없어요."),
+});
+
+export type ExtendDeadlineInput = z.infer<typeof ExtendDeadlineSchema>;
+
+/**
+ * 마감 연장 실행 결과.
+ * - not_found: 요청을 못 찾음
+ * - invalid_status: 마감 가능 상태(dispatched/analyzing)가 아님 (이미 completed/rematching/failed)
+ * - invalid_hours: 시간 입력 자체가 zod 검증 실패
+ * - already_past: 마감 시각이 이미 지남 — 연장은 마감 전에만 허용
+ * - conflict: 액션 진입 후 cron 이 먼저 상태/마감을 전이 — race-safe 가드가 0 row 갱신
+ */
+export type ExtendDeadlineResult =
+  | { ok: true; newDeadlineAt: string }
+  | {
+      ok: false;
+      error:
+        | "not_found"
+        | "invalid_status"
+        | "invalid_hours"
+        | "already_past"
+        | "conflict";
+      message?: string;
+    };
+
+/* ============================================================
  * PlanRequest 도메인 객체 (서버 저장 형태)
  * ============================================================ */
 

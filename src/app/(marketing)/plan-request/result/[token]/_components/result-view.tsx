@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { NO_TRACK_CLASS, NoTrack } from "@/components/analytics/no-track";
 import { PartnerAvatar } from "@/features/partners/ui/partner-avatar";
 import { requestPlanProposalContact } from "@/features/plan-proposals/actions";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
@@ -25,11 +26,11 @@ import { ScenarioPickerRoiChart } from "./scenario-picker-roi-chart";
  *   3. 선택된 제안서 본문 (설계사 헤더 / 핵심 수치 / ROI / 레이더 / 핵심 담보 /
  *      추가 정보 / 상담 진행하기 CTA)
  *
- * 연락 요청 상태 (contacted): SSR 의 proposal.contactedAt 기반으로 초기화 후
- * client state 로 관리. "상담 진행하기" 클릭 → 바텀 시트에서 채널 (카카오톡 / 문자)
- * 선택 → requestPlanProposalContact 액션을 호출. 액션이 멱등이라 서버는 첫 호출만
- * 카운터 +1, 클라는 응답과 무관하게 즉시 토글 (optimistic). 새로고침 / 새 탭에서
- * button 이 다시 활성되는 것은 SSR 의 contactedAt 으로 가려짐.
+ * 연락 요청 상태 (contactRequested): SSR 의 proposal.contactRequestedAt 기반으로
+ * 초기화 후 client state 로 관리. "상담 진행하기" 클릭 → 바텀 시트에서 채널
+ * (카카오톡 / 문자) 선택 → requestPlanProposalContact 액션을 호출. 액션이 멱등이라
+ * 서버는 첫 호출만 카운터 +1, 클라는 응답과 무관하게 즉시 토글 (optimistic). 새로고침
+ * / 새 탭에서 button 이 다시 활성되는 것은 SSR 의 contactRequestedAt 으로 가려짐.
  */
 export function ResultView({
   resultToken,
@@ -49,8 +50,8 @@ export function ResultView({
   resultRetentionDays: number;
 }) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const [contacted, setContacted] = useState<Set<string>>(
-    () => new Set(proposals.filter((p) => p.contacted).map((p) => p.id)),
+  const [contactRequested, setContactRequested] = useState<Set<string>>(
+    () => new Set(proposals.filter((p) => p.contactRequested).map((p) => p.id)),
   );
   // 시트가 어느 proposal 에 대해 열렸는지 식별. 닫혀있으면 null. chip 탭 전환과
   // 무관하게 사용자가 누른 시점의 proposal 을 고정해 잘못된 설계사에게 연락 가는
@@ -74,9 +75,9 @@ export function ResultView({
         .filter((r): r is AnalysisReportV5 => Boolean(r))
     : [];
 
-  function markContacted(id: string, channel: ContactChannel) {
-    if (contacted.has(id)) return;
-    setContacted((s) => new Set(s).add(id));
+  function markContactRequested(id: string, channel: ContactChannel) {
+    if (contactRequested.has(id)) return;
+    setContactRequested((s) => new Set(s).add(id));
     startTransition(async () => {
       const result = await requestPlanProposalContact(resultToken, id, channel);
       if (!result.ok) {
@@ -85,7 +86,7 @@ export function ResultView({
         // invalid_channel — 클라/서버 사이 enum 불일치 (정상 플로우엔 없음, defensive).
         //   세 경우 모두 새로고침하면 ExpiredState 가 렌더되거나 button 이 다시 활성되어
         //   자연스럽게 이탈하므로 별도 토스트 없이 토글 롤백만.
-        setContacted((s) => {
+        setContactRequested((s) => {
           const next = new Set(s);
           next.delete(id);
           return next;
@@ -118,7 +119,7 @@ export function ResultView({
         reports={reports}
         scenarioPriority={scenarioPriority ?? []}
         resultRetentionDays={resultRetentionDays}
-        contacted={contacted.has(active.id)}
+        contactRequested={contactRequested.has(active.id)}
         onContact={() => setSheetProposalId(active.id)}
       />
 
@@ -127,7 +128,7 @@ export function ResultView({
         onClose={() => setSheetProposalId(null)}
         onSelect={(channel) => {
           if (sheetProposal) {
-            markContacted(sheetProposal.id, channel);
+            markContactRequested(sheetProposal.id, channel);
             setSheetProposalId(null);
           }
         }}
@@ -146,7 +147,7 @@ function PlanProposalBody({
   reports,
   scenarioPriority,
   resultRetentionDays,
-  contacted,
+  contactRequested,
   onContact,
 }: {
   proposal: PlanProposalData;
@@ -154,7 +155,7 @@ function PlanProposalBody({
   reports: AnalysisReportV5[];
   scenarioPriority: readonly string[];
   resultRetentionDays: number;
-  contacted: boolean;
+  contactRequested: boolean;
   onContact: () => void;
 }) {
   return (
@@ -171,13 +172,18 @@ function PlanProposalBody({
        */}
 
       {/* 설계사 한줄평 — message-from-partner 톤. 본문 끝 attribution 카드는
-        * 프로필/신뢰지표 톤으로 역할이 다름. */}
-      <PartnerNoteBubble
-        className="mt-6"
-        partnerName={proposal.partner.name}
-        avatarUrl={proposal.partner.avatarUrl}
-        note={proposal.note}
-      />
+        * 프로필/신뢰지표 톤으로 역할이 다름.
+        *
+        * NoTrack: 가입자가 매칭된 설계사명 + 설계사의 자유 작성 메시지가 모두 노출 —
+        * 가입자 ↔ 설계사 매칭 사실이 PostHog 에 leak 되지 않도록 wrapping. 데모
+        * 페이지의 PartnerNoteBubble 은 mock 이라 별도 처리 안 함. */}
+      <NoTrack className="mt-6">
+        <PartnerNoteBubble
+          partnerName={proposal.partner.name}
+          avatarUrl={proposal.partner.avatarUrl}
+          note={proposal.note}
+        />
+      </NoTrack>
 
       {/* 분석 안 된 proposal — 데이터 섹션 placeholder 로 대체.
        *   note + partner attribution 은 여전히 노출 (가용한 정보).
@@ -228,8 +234,12 @@ function PlanProposalBody({
         <SurrenderLossChart proposals={proposals} activeId={proposal.id} />
       )}
 
-      {/* 설계사 attribution — 본문 끝에서 "이 한줄평의 작성자" 컨텍스트 */}
-      <section className="rounded-xl border border-[#efefef] p-5">
+      {/* 설계사 attribution — 본문 끝에서 "이 한줄평의 작성자" 컨텍스트.
+        * 가입자 ↔ 설계사 매칭 식별이 가능한 영역이라 전체 분석 제외 (read-only 카드라
+        * 내부 click 추적도 잃을 게 없음). */}
+      <section
+        className={cn("rounded-xl border border-[#efefef] p-5", NO_TRACK_CLASS)}
+      >
         <header className="flex items-start gap-3">
           <PartnerAvatar
             name={proposal.partner.name}
@@ -274,17 +284,25 @@ function PlanProposalBody({
       <button
         type="button"
         onClick={onContact}
-        disabled={contacted}
+        disabled={contactRequested}
         className={cn(
           "w-full h-14 rounded-full text-base font-medium transition-colors",
-          contacted
+          contactRequested
             ? "bg-[#efefef] text-[#4b4b4b] cursor-default"
             : "bg-black text-white hover:bg-[#1a1a1a]",
         )}
       >
-        {contacted
-          ? "상담 요청을 보냈어요"
-          : `${proposal.partner.name} 설계사와 상담 진행하기`}
+        {contactRequested ? (
+          "상담 요청을 보냈어요"
+        ) : (
+          <>
+            {/* 파트너명만 분석 제외 — 버튼 click 자체 ("상담 진행하기 button 클릭") 는
+                funnel 핵심 conversion 이라 button 전체 마스킹은 X. PostHog autocapture
+                의 element_text 집계 시 ph-no-capture 자식 텍스트는 제외됨. */}
+            <span className={NO_TRACK_CLASS}>{proposal.partner.name}</span> 설계사와
+            상담 진행하기
+          </>
+        )}
       </button>
     </div>
     </>

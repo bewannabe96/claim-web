@@ -31,10 +31,10 @@ export function adaptPlanProposal(
 ): PlanProposalData {
   const { proposal, partner } = card;
   const analyzed = proposal.analyzedAt != null;
-  const contacted = proposal.contactedAt != null;
+  const contactRequested = proposal.contactRequestedAt != null;
 
   if (!report) {
-    return makeFallback(proposal, partner, analyzed, contacted);
+    return makeFallback(proposal, partner, analyzed, contactRequested);
   }
 
   const { headline, refund_table, coverage_payout } = report;
@@ -49,7 +49,7 @@ export function adaptPlanProposal(
       avatarUrl: partner.avatarUrl,
     },
     analyzed,
-    contacted,
+    contactRequested,
     insurer: headline.insurer,
     maturityAge,
     monthlyPremium: headline.total_actual_premium,
@@ -139,7 +139,7 @@ function makeFallback(
   proposal: PlanProposalCard["proposal"],
   partner: PlanProposalCard["partner"],
   analyzed: boolean,
-  contacted: boolean,
+  contactRequested: boolean,
 ): PlanProposalData {
   return {
     id: proposal.id,
@@ -150,7 +150,7 @@ function makeFallback(
       avatarUrl: partner.avatarUrl,
     },
     analyzed,
-    contacted,
+    contactRequested,
     insurer: "",
     maturityAge: 100,
     monthlyPremium: 0,

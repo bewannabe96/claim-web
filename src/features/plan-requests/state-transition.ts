@@ -2,6 +2,7 @@ import "server-only";
 
 import { revalidatePath } from "next/cache";
 
+import { formatDateTime } from "@/lib/datetime";
 import { sendAlimtalk, sendNotificationLms } from "@/server/aligo";
 import { getServiceName } from "@/server/branding";
 import { prisma } from "@/server/db/prisma";
@@ -198,6 +199,81 @@ export async function sendAnalysisCompletedNotification(
     });
     return { ok: false, reason: "send_failed" };
   }
+}
+
+/**
+ * 마감 연장 안내 LMS — admin 이 `extendRequestDeadline` 으로 deadlineAt 을 늘렸을
+ * 때 아직 미제출 (status=pending) 인 설계사에게 새 마감 시각을 알린다.
+ *
+ * LMS 사용 이유: 알림톡 신규 템플릿 검수 회피 (예외성 액션이라 트래픽이 적음) +
+ * 본문에 새 마감 datetime 을 자유 포맷으로 박을 수 있어야 함. 가입자 → 설계사
+ * 결과 페이지 만료 안내 (`notifyPartnersOfExpiry`) 와 같은 LMS 경로 재사용.
+ *
+ * 대상: pending 만. `submitted` 는 이미 제출 끝났고, `expired` 는 정상 흐름에선
+ * 발생하지 않음 (closePlanRequest 가 expired 마킹 시 status 가 함께 dispatched/
+ * analyzing → completed/rematching 로 떨어져 admin 이 연장 못 함).
+ *
+ * 실패는 swallow — 한 설계사 LMS 실패가 다른 설계사 발송 + admin 액션 결과를
+ * 뒤집지 않도록 (정합성 관점에서 deadline 컬럼 update 가 진실).
+ */
+export async function notifyPartnersOfDeadlineExtension(
+  planRequestId: string,
+  customerName: string,
+  newDeadline: Date,
+): Promise<void> {
+  const pendings = await prisma.planRequestAssignment.findMany({
+    where: { requestId: planRequestId, status: "pending" },
+    select: {
+      id: true,
+      partnerId: true,
+      partner: {
+        select: { user: { select: { name: true, phone: true } } },
+      },
+    },
+  });
+  if (pendings.length === 0) return;
+
+  const serviceName = getServiceName();
+  // formatDateTime 는 KST 한국어 친화 포맷 ("2026년 5월 22일 오후 2:30").
+  // 어드민 입력은 정수 시간이고 UTC Date 를 그대로 표시하면 9시간 어긋나므로 필수.
+  const newDeadlineText = formatDateTime(newDeadline);
+
+  await Promise.allSettled(
+    pendings.map(async (s) => {
+      const partnerPhone = s.partner.user.phone;
+      if (!partnerPhone) {
+        console.warn(
+          "[extendRequestDeadline] partner notification skipped — missing phone",
+          {
+            planRequestId,
+            assignmentId: s.id,
+            partnerId: s.partnerId,
+          },
+        );
+        return;
+      }
+      const partnerName = s.partner.user.name ?? "파트너";
+      const msg = [
+        `[${serviceName}] ${partnerName} 파트너님,`,
+        `${customerName}님의 요청서 제출 마감이 연장되었어요.`,
+        `새 마감: ${newDeadlineText}`,
+        `변경된 일정 안에 제출 부탁드려요.`,
+      ].join("\n");
+      try {
+        await sendNotificationLms(partnerPhone, msg);
+      } catch (err) {
+        console.error(
+          "[extendRequestDeadline] partner extension LMS failed",
+          {
+            planRequestId,
+            assignmentId: s.id,
+            partnerId: s.partnerId,
+            error: err instanceof Error ? err.message : err,
+          },
+        );
+      }
+    }),
+  );
 }
 
 /**

@@ -189,7 +189,7 @@ PortOne 흐름에서 webhook 도착 대기 없이 잔액 즉시 갱신:
 |---|---|---|---|
 | 요청서 보관 기간 만료 정산 | [features/plan-requests/settlement.ts](../plan-requests/settlement.ts) `settlePlanRequest` (cron `/api/cron/plan-request-settlement` 발화) | `plan-request-settlement:${requestId}:${partnerId}` | `round(PlanRequest.price / N / 1000) * 1000` (전화요청 받은 파트너 N명 균등 분할, 1000원 단위 반올림) |
 
-**정책 변경 이력**: 이전엔 가입자 연락 요청 시점 ([requestPlanProposalContact](../plan-proposals/actions.ts)) 에 파트너 1명에게 전액 차감. 현재는 보관 기간 만료 시점에 contactedAt 있는 파트너 N명에게 균등 분할 차감으로 전환. `requestPlanProposalContact` 는 contactedAt 마킹 + 알림톡 (UI_0738) 발송만 담당, 차감은 발화하지 않음.
+**정책 변경 이력**: 이전엔 가입자 연락 요청 시점 ([requestPlanProposalContact](../plan-proposals/actions.ts)) 에 파트너 1명에게 전액 차감. 현재는 보관 기간 만료 시점에 contactRequestedAt 있는 파트너 N명에게 균등 분할 차감으로 전환. `requestPlanProposalContact` 는 contactRequestedAt 마킹 + 알림톡 (UI_0738) 발송만 담당, 차감은 발화하지 않음.
 
 신규 spend 트리거 추가 시 템플릿:
 
@@ -217,4 +217,4 @@ export async function someTrigger(/* ... */) {
 
 `idempotencyKey` 는 같은 트리거가 두 번 발화해도 같은 키여야 함. 재시도 안전.
 
-**spend 와 도메인 mutation 의 트랜잭션 경계**: `applyLedger` 가 자체 트랜잭션을 보유하므로, 외부 도메인 mutation (예: `contactedAt` 마킹) 과 같은 트랜잭션으로 묶을 수 없음. 패턴: ① 도메인 mutation 트랜잭션 commit → ② 결과 분기에 따라 `spendCredit` 호출. process crash 시점에 ① 후 ② 전이면 다음 retry 에서 mutation 이 멱등 분기로 빠져 spend 미발화 (corner case — 빈번하면 outbox 패턴 도입).
+**spend 와 도메인 mutation 의 트랜잭션 경계**: `applyLedger` 가 자체 트랜잭션을 보유하므로, 외부 도메인 mutation (예: `contactRequestedAt` 마킹) 과 같은 트랜잭션으로 묶을 수 없음. 패턴: ① 도메인 mutation 트랜잭션 commit → ② 결과 분기에 따라 `spendCredit` 호출. process crash 시점에 ① 후 ② 전이면 다음 retry 에서 mutation 이 멱등 분기로 빠져 spend 미발화 (corner case — 빈번하면 outbox 패턴 도입).

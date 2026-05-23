@@ -1,5 +1,7 @@
 import Script from "next/script";
 
+import { PosthogBootstrap } from "@/components/analytics/posthog-bootstrap";
+
 /**
  * (marketing) 레이아웃 — 가입자 비인증 영역.
  * 480px 모바일 컨테이너. 페이지가 직접 hero 를 그림 (chrome 헤더 없음).
@@ -9,6 +11,9 @@ import Script from "next/script";
  * <Script> 자체가 렌더되지 않아 외부 픽셀 호출 0건. PageView 는 베이스
  * 스크립트가 로드 시 자동 firing. CTA 클릭 conversion 은
  * _components/landing-cta-button.tsx 가 책임.
+ *
+ * 행동 분석 (PostHog) 은 `<PosthogBootstrap />` 가 책임 — 도메인 코드와 분리된
+ * 격리 경계는 [src/components/analytics/CLAUDE.md](src/components/analytics/CLAUDE.md) 참조.
  */
 export default function MarketingLayout({
   children,
@@ -20,6 +25,7 @@ export default function MarketingLayout({
 
   return (
     <>
+      <PosthogBootstrap />
       {metaPixelId && (
         <>
           <Script id="meta-pixel" strategy="afterInteractive">

@@ -69,8 +69,8 @@ model PlanRequest {
   resultToken   String? @map("result_token")
 
   /// 요청서 생성 시점에 PlanRequestPriceTier 에서 매칭한 가격을 snapshot.
-  /// 보관 기간 만료 시점에 contactedAt 있는 파트너 N명에게 `price/N` (1000원 단위
-  /// 반올림) 으로 분할 차감 — 자세한 흐름은 features/plan-requests/settlement.ts.
+  /// 보관 기간 만료 시점에 contactRequestedAt 있는 파트너 N명에게 `price/N` (1000원
+  /// 단위 반올림) 으로 분할 차감 — 자세한 흐름은 features/plan-requests/settlement.ts.
   /// admin 이 tier 가격을 바꿔도 진행 중 요청에는 영향 X. Step1 트랜잭션에서
   /// 항상 채우므로 신규 row 는 NOT NULL 보장 — nullable 은 기존 row 보호용.
   price         Int?
@@ -84,7 +84,7 @@ model PlanRequest {
   /// 액션을 호출 — 멱등 (WHERE result_viewed_at IS NULL) 이라 최초 열람만 기록.
   resultViewedAt  DateTime? @db.Timestamptz(6) @map("result_viewed_at")
   /// 정산 완료 시각. NULL = 미정산 (보관 기간 만료 cron 대기).
-  /// 정산 정책: 보관 기간 만료 시점에 contactedAt 있는 proposal 의 파트너 N명에게
+  /// 정산 정책: 보관 기간 만료 시점에 contactRequestedAt 있는 proposal 의 파트너 N명에게
   /// price/N (1000원 단위 반올림) 차감. cron 이 spendCredit 모두 성공 후에만 마킹
   /// → 부분 실패는 다음 tick 에서 멱등키로 재시도 (spendCredit alreadyApplied 흡수).
   settledAt       DateTime? @db.Timestamptz(6) @map("settled_at")
@@ -267,10 +267,10 @@ model Partner {
 //   - selectedCount: plan_request_assignment INSERT (= 가입자가 Step3
 //     finalize 까지 완료해 알림톡 발송 대상으로 배정됨). finalizeRequest
 //     트랜잭션 안에서 assignment 와 같이 증가.
-//   - contactedCount: 결과 페이지에서 제안서 비교 후 가입자가 "문자 보내기"
-//     액션으로 연락을 요청한 횟수. proposal.contactedAt IS NULL 인 경우에만
+//   - contactedCount: 결과 페이지에서 제안서 비교 후 가입자가 "상담 진행하기"
+//     액션으로 연락을 요청한 횟수. proposal.contactRequestedAt IS NULL 인 경우에만
 //     +1 (멱등) — requestProposalContact 액션 트랜잭션 안에서 proposal
-//     마킹과 함께.
+//     마킹과 함께. (컬럼/필드 이름의 `contacted` 는 이력상 명칭 — 의미는 "연락 요청".)
 //
 // 항상 exposureCount >= selectedCount >= contactedCount (퍼널의 부분집합 관계).
 // DB CHECK 미사용 정책이라 앱 레이어가 정의로 보장.
@@ -550,11 +550,15 @@ model PlanProposal {
   analysisError   Json?     @map("analysis_error")
   analysisErrorAt DateTime? @db.Timestamptz(6) @map("analysis_error_at")
 
-  /// 가입자가 결과 페이지에서 이 제안서를 보고 "문자 보내기" 로 설계사에게 연락
-  /// 요청한 시각. requestProposalContact 액션이 한 번만 set (WHERE contactedAt IS
-  /// NULL 로 멱등) + 같은 트랜잭션에서 partner_assignment_stats.contacted_count +1.
+  /// 가입자가 결과 페이지에서 이 제안서를 보고 "상담 진행하기" 로 설계사에게 연락을
+  /// 요청한 시각 (실제 연락 발생 시각이 아님 — 요청 트리거 시각).
+  /// requestProposalContact 액션이 한 번만 set (WHERE contactRequestedAt IS NULL
+  /// 로 멱등) + 같은 트랜잭션에서 partner_assignment_stats.contacted_count +1.
   /// NULL = 아직 연락 요청 전 (또는 연락 요청 이전에 분석 미완료).
-  contactedAt DateTime? @db.Timestamptz(6) @map("contacted_at")
+  ///
+  /// `@map("contacted_at")` 유지 — 이력상 컬럼명. data-preserving DB rename 은
+  /// 별도 manual-migration PR 로 분리.
+  contactRequestedAt DateTime? @db.Timestamptz(6) @map("contacted_at")
 
   assignment     PlanRequestAssignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   analysisReport PlanProposalAnalysisReport?

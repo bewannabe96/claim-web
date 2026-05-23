@@ -97,8 +97,14 @@ function FailureCard({
             <dt className="text-xs text-[#afafaf]">message</dt>
             <dd className="text-black">{error.message}</dd>
             <dt className="text-xs text-[#afafaf]">PDF</dt>
-            <dd className="font-mono text-xs text-[#4b4b4b] break-all">
-              {pdfS3Key}
+            <dd className="font-mono text-xs break-all">
+              <a
+                href={`/admin/api/proposals/${proposalId}/download`}
+                className="text-black underline decoration-[#e2e2e2] underline-offset-2 hover:decoration-black"
+                title="PDF 다운로드"
+              >
+                {pdfS3Key}
+              </a>
             </dd>
           </dl>
 

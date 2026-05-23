@@ -17,10 +17,12 @@ import {
 } from "@/features/plan-requests/schema";
 import { RequestStatusBadge } from "@/features/plan-requests/ui/status-badge";
 import { cn } from "@/lib/utils";
+import { nowMs } from "@/lib/wall-clock";
 import { GENDER_LABEL } from "@/types";
 
 import { formatDateTime, formatPhone } from "../../_lib/format";
 import { AnalysisErrorPill } from "../../_components/analysis-error-pill";
+import { ExtendDeadlineControl } from "../../_components/extend-deadline-control";
 import {
   BackLink,
   Badge,
@@ -209,9 +211,40 @@ export default async function AdminRequestDetailPage({
         )}
       </Card>
 
+      {/* 연장은 마감 전에만 의미 있음 — 도과된 요청은 cron 이 곧 closePlanRequest
+          로 expired/completed/rematching 전이할 transient 이라 카드 자체를 숨김.
+          서버 액션도 같은 가드를 갖고 있어 race 가 나면 conflict/already_past 로
+          반환됨. */}
+      {request.deadlineAt &&
+        (request.status === "dispatched" ||
+          request.status === "analyzing") &&
+        Date.parse(request.deadlineAt) > nowMs() && (
+          <Card>
+            <CardHeader
+              title="제출 마감"
+              meta={
+                <span className="tabular-nums">
+                  {formatDateTime(request.deadlineAt)}
+                </span>
+              }
+            />
+            <ExtendDeadlineControl
+              planRequestId={id}
+              currentDeadlineAt={request.deadlineAt}
+            />
+          </Card>
+        )}
+
       {request.resultToken && (
         <Card>
-          <CardHeader title="결과 페이지" />
+          <CardHeader
+            title="결과 페이지"
+            meta={
+              request.resultViewedAt
+                ? `열람 ${formatDateTime(request.resultViewedAt)}`
+                : "미열람"
+            }
+          />
           <div className="flex flex-col gap-3">
             <a
               href={`/plan-request/result/${request.resultToken}`}
@@ -339,7 +372,10 @@ function AssignmentItem({
 
         {proposal ? (
           <div className="flex flex-col gap-1.5 text-xs text-[#4b4b4b]">
-            <Spec label="PDF" value={pdfBasename(proposal.pdfS3Key)} />
+            <PdfDownloadRow
+              proposalId={proposal.id}
+              filename={pdfBasename(proposal.pdfS3Key)}
+            />
             <Spec label="한줄 요약" value={proposal.note} />
             {!proposal.analyzedAt && proposal.analysisError && (
               <AnalysisFailureBlock
@@ -382,6 +418,11 @@ function AssignmentItem({
         {proposal?.analyzedAt && (
           <span className="text-[#afafaf]">
             분석 {formatDateTime(proposal.analyzedAt)}
+          </span>
+        )}
+        {proposal?.contactRequestedAt && (
+          <span className="text-black font-medium">
+            상담요청 {formatDateTime(proposal.contactRequestedAt)}
           </span>
         )}
       </div>
@@ -476,6 +517,34 @@ function Spec({ label, value }: { label: string; value: string }) {
     <span className="truncate">
       <span className="text-[#afafaf]">{label}</span>{" "}
       <span className="font-medium text-black">{value}</span>
+    </span>
+  );
+}
+
+/**
+ * PDF 식별 + 다운로드 anchor. href 는 `/admin/api/proposals/<id>/download` —
+ * 어드민 트램펄린 라우트가 presigned GET URL 발급 + 302 redirect.
+ *
+ * `<a download>` 어트리뷰트는 cross-origin (S3) redirect 에선 무시되므로 파일명은
+ * S3 측 `Content-Disposition` 으로 강제 (s3.ts `presignPlanProposalDownload`).
+ */
+function PdfDownloadRow({
+  proposalId,
+  filename,
+}: {
+  proposalId: string;
+  filename: string;
+}) {
+  return (
+    <span className="truncate">
+      <span className="text-[#afafaf]">PDF</span>{" "}
+      <a
+        href={`/admin/api/proposals/${proposalId}/download`}
+        className="font-medium text-black underline decoration-[#e2e2e2] underline-offset-2 hover:decoration-black"
+        title="PDF 다운로드"
+      >
+        {filename}
+      </a>
     </span>
   );
 }

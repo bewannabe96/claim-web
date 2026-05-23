@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 
+import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
 import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -174,7 +175,7 @@ export function ConfirmWizard({
             placeholder="홍길동"
             value={data.name}
             onChange={(e) => setData((d) => ({ ...d, name: e.target.value }))}
-            className="h-14 px-4 text-sm"
+            className={cn("h-14 px-4 text-sm", NO_TRACK_CLASS)}
             autoComplete="name"
           />
         </Field>
@@ -195,7 +196,10 @@ export function ConfirmWizard({
                   rrnFront: e.target.value.replace(/\D/g, "").slice(0, 6),
                 }))
               }
-              className="h-14 px-4 text-sm tracking-wider flex-1"
+              className={cn(
+                "h-14 px-4 text-sm tracking-wider flex-1",
+                NO_TRACK_CLASS,
+              )}
               aria-invalid={state?.errors?.rrnFront ? true : undefined}
               autoComplete="off"
             />
@@ -213,7 +217,7 @@ export function ConfirmWizard({
                   rrnBack1: e.target.value.replace(/\D/g, "").slice(0, 1),
                 }))
               }
-              className="h-14 px-3 text-sm text-center w-12"
+              className={cn("h-14 px-3 text-sm text-center w-12", NO_TRACK_CLASS)}
               aria-invalid={state?.errors?.rrnBack1 ? true : undefined}
               autoComplete="off"
             />
@@ -248,7 +252,10 @@ export function ConfirmWizard({
               onChange={(e) =>
                 setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))
               }
-              className="h-14 px-4 text-sm tracking-wider flex-1"
+              className={cn(
+                "h-14 px-4 text-sm tracking-wider flex-1",
+                NO_TRACK_CLASS,
+              )}
             />
             <button
               type="button"
@@ -290,7 +297,10 @@ export function ConfirmWizard({
                   otpCode: e.target.value.replace(/\D/g, "").slice(0, 6),
                 }))
               }
-              className="h-14 px-4 text-sm tracking-[0.4em] text-center"
+              className={cn(
+                "h-14 px-4 text-sm tracking-[0.4em] text-center",
+                NO_TRACK_CLASS,
+              )}
               autoFocus
             />
             {state?.errors?.code?.[0] && (
@@ -385,7 +395,14 @@ function RequestSummary({ step1 }: { step1: Step1Input }) {
   const budgetLabel = `${formatBudget(step1.monthlyBudgetMin)}~${formatBudget(step1.monthlyBudgetMax)}`;
 
   return (
-    <section className="mt-6 rounded-xl border border-[#e2e2e2] p-5 flex flex-col gap-4">
+    // 사용자가 입력한 내용 요약 — 직업/병력/추가요청 모두 PII. 통째로 분석 제외.
+    // 요약은 read-only 라 섹션 내부 click 추적 가치도 없어 wrapping cost 0.
+    <section
+      className={cn(
+        "mt-6 rounded-xl border border-[#e2e2e2] p-5 flex flex-col gap-4",
+        NO_TRACK_CLASS,
+      )}
+    >
       <p className="text-xs font-medium tracking-wide text-[#4b4b4b]">
         설계사에게 전달될 내용
       </p>

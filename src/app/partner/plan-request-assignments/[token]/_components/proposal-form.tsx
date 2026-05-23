@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 
+import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
 import { Button } from "@/components/ui/button";
 import {
   requestPdfUpload,
@@ -133,7 +134,10 @@ export function PlanProposalForm({
     <main className="flex flex-col flex-1 px-6 pt-6 pb-8 bg-white">
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">
-          {partnerName} 설계사님
+          {/* 파트너 본인 이름 — token 진입 (비로그인) 이라 식별 가치는 없고, 식별
+              위험만 있어 element-level 마스킹. 주변 "설계사님 / 새 제안서 ..." 텍스트는
+              여전히 캡처되어 페이지 유형은 분석 가능. */}
+          <span className={NO_TRACK_CLASS}>{partnerName}</span> 설계사님
           <br />새 제안서 요청이 도착했어요
         </h1>
         {remainingMs !== null && <DeadlineBadge initialMs={remainingMs} />}
@@ -263,7 +267,15 @@ function CustomerContext({ request }: { request: PlanRequest }) {
   const phone = step3?.phone;
 
   return (
-    <section className="mt-6 rounded-xl border border-[#e2e2e2] p-5 flex flex-col gap-4">
+    // 가입자 컨텍스트 섹션 전체 — 이름/생년월일/성별/직업/휴대폰/병력/추가요청
+    // 모두 가입자 PII. 섹션은 read-only display 라 안쪽 click 추적 가치도 없어
+    // 통째로 분석 제외.
+    <section
+      className={cn(
+        "mt-6 rounded-xl border border-[#e2e2e2] p-5 flex flex-col gap-4",
+        NO_TRACK_CLASS,
+      )}
+    >
       <p className="text-xs font-medium tracking-wide text-[#4b4b4b]">
         가입자 요청
       </p>
@@ -454,7 +466,12 @@ function NoteInput({
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         placeholder="예: 가장 걱정되시는 암 보장에 집중했어요. 30대에 가입하시면 평생 같은 보험료라 부담이 적답니다."
-        className="w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10 leading-relaxed disabled:opacity-60"
+        // 설계사가 자유 작성 — 고객 이름/연락처를 우연히 포함할 수 있어 입력
+        // 자체를 분석 제외 (autocapture 가 textarea $change 도 잡기 때문).
+        className={cn(
+          "w-full px-4 py-3 text-sm rounded-lg border border-black resize-none focus:outline-none focus:ring-2 focus:ring-black/10 leading-relaxed disabled:opacity-60",
+          NO_TRACK_CLASS,
+        )}
       />
       <p
         className={cn(
