@@ -49,6 +49,14 @@ PII 가 닿는 element 는 [no-track.tsx](no-track.tsx) 의 `NO_TRACK_CLASS` /
 
 **프로젝트 super-property (`posthog.register`)**:
 - `env` — `production` / `staging` / `preview` / `development` / `unknown` (`ENV_STAGE` env 값. 비면 `"unknown"` 으로 박혀 운영 누락 표면화)
+- `lp_variant` — 현재 device 가 배정된 랜딩 변형 ID (예: `v1`). `<ExposureBeacon />`
+  ([src/app/(marketing)/_components/exposure-beacon.tsx](../../app/(marketing)/_components/exposure-beacon.tsx)) 가
+  page 마운트 시 등록. **첫 방문의 첫 `$pageview` 한 건만 누락 가능** —
+  useEffect 실행 순서가 `PageviewTracker (capture queued)` → `posthog.init() (큐 flush)`
+  → `ExposureBeacon (register)` 라, init 직후 flush 된 첫 pageview 에는 `lp_variant`
+  super-property 가 아직 안 박혀 있을 수 있다. 후속 모든 이벤트엔 정상 첨부.
+  `lp_exposure` 이벤트가 funnel 분모 역할이고 그 이벤트 자체엔 `lp_variant` 가
+  props 로 직접 박혀 있으므로 측정엔 영향 없음. 변형 결정 흐름은 [src/server/lp-variant.ts](../../server/lp-variant.ts).
 
 **광고 attribution super-property (first-touch, `register_once`)** — 자세한 건
 아래 "광고 유입 attribution" 섹션. device cookie 가 살아있는 한 (기본 365일)
@@ -56,6 +64,8 @@ PII 가 닿는 element 는 [no-track.tsx](no-track.tsx) 의 `NO_TRACK_CLASS` /
 - `initial_gclid`, `initial_gbraid`, `initial_wbraid` (Google Ads)
 - `initial_fbclid` (Meta)
 - `initial_n_ad`, `initial_n_query`, `initial_n_keyword`, `initial_n_rank`, `initial_n_campaign_type` (네이버 검색광고)
+- `initial_lp_variant` — first-touch 랜딩 변형. 쿠키 만료/재배정 후에도 "어느 변형이
+  이 device 를 데려왔나" 보존. `lp_variant` (overwrite) 과 짝.
 
 **SDK 가 first-touch 로 자동 첨부 (`$initial_*`)**:
 - `$initial_referrer`, `$initial_referring_domain`
@@ -75,15 +85,12 @@ PII 가 닿는 element 는 [no-track.tsx](no-track.tsx) 의 `NO_TRACK_CLASS` /
 
 ### 커스텀 이벤트
 
-**현재 0건.** features/ / 라우트 어디에서도 `track()` 호출 없음. 모든 행동
-데이터는 위 3종 자동 이벤트에서 나옴.
-
-추후 추가 시 [src/lib/analytics.ts](../../lib/analytics.ts) 의 규약 (`snake_case`,
-도메인 prefix) 을 따르고 이 표에 한 줄 추가:
-
 | 이벤트 | 호출 위치 | property | 의미 |
 |---|---|---|---|
-| _(예시)_ `plan_request_submitted` | `confirm-wizard.tsx` 의 finalizeRequest 성공 후 | `price_tier` | 가입자가 본인인증 통과 + 요청 확정 |
+| `lp_exposure` | [`<ExposureBeacon />`](../../app/(marketing)/_components/exposure-beacon.tsx) — page 첫 마운트, `justAssigned=true` 일 때만 1회 | `lp_variant` | 가입자 device 에 랜딩 변형이 처음 노출됨. A/B funnel 의 분모 (denominator). 매 페이지뷰가 아니라 **device 당 1회**. 변형 결정 흐름: [src/server/lp-variant.ts](../../server/lp-variant.ts) |
+
+추후 추가 시 [src/lib/analytics.ts](../../lib/analytics.ts) 의 규약 (`snake_case`,
+도메인 prefix) 을 따르고 이 표에 한 줄 추가.
 
 ### 의도적으로 로깅 안 되는 것
 
