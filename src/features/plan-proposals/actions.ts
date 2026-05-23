@@ -200,18 +200,18 @@ export async function submitPlanProposal(
  * LMS 본문에 그대로 박혀 어느 채널로 연락할지 지시.
  *
  * 멱등성: 같은 (resultToken, proposalId) 로 여러 번 호출돼도 카운터는 1 만 올라감.
- * updateMany 의 `contactedAt: null` + `request.settledAt: null` 복합 조건이 0 row 면
- * (이미 마킹됐거나 cron 이 정산 완료) 카운터 증가 트랜잭션 자체를 스킵. 새 탭 /
- * 새로고침으로 button 재활성 케이스 방어 + 정산 후 늦은 클릭 차단 양쪽 커버.
+ * updateMany 의 `contactRequestedAt: null` + `request.settledAt: null` 복합 조건이
+ * 0 row 면 (이미 마킹됐거나 cron 이 정산 완료) 카운터 증가 트랜잭션 자체를 스킵. 새
+ * 탭 / 새로고침으로 button 재활성 케이스 방어 + 정산 후 늦은 클릭 차단 양쪽 커버.
  *
  * 검증:
  *   1. channel → enum 검증 (서버측 zod gate)
  *   2. resultToken → plan_request 존재 확인
  *   3. proposalId → assignment.requestId 가 위 plan_request 와 일치
  *   4. request.settledAt 이 NULL (보관 기간 만료 cron 정산 전) — 늦은 클릭 차단
- *   5. proposal.contactedAt 이 NULL 일 때만 set + counter +1 (멱등 + race-safe)
+ *   5. proposal.contactRequestedAt 이 NULL 일 때만 set + counter +1 (멱등 + race-safe)
  *
- * 과금 분리: 이 시점엔 **차감하지 않음**. 보관 기간 만료 cron 이 contactedAt 있는
+ * 과금 분리: 이 시점엔 **차감하지 않음**. 보관 기간 만료 cron 이 contactRequestedAt 있는
  * 파트너 N명에게 PlanRequest.price/N (1000원 단위 반올림) 을 일괄 차감.
  * 자세한 정책은 features/plan-requests/settlement.ts.
  * ============================================================ */
@@ -241,7 +241,7 @@ export async function requestPlanProposalContact(
     where: { id: proposalId },
     select: {
       id: true,
-      contactedAt: true,
+      contactRequestedAt: true,
       assignment: {
         select: {
           requestId: true,
@@ -261,20 +261,20 @@ export async function requestPlanProposalContact(
   }
 
   // 보관 기간 만료 + cron 정산 완료된 요청에는 늦은 연락요청 차단. stale 결과
-  // 페이지 탭에서 도착하는 클릭이 정산 후 contactedAt 만 set 되어 무상 알림톡 발송
-  // 되는 케이스 방지. 사전 검사로 대부분 잡고, 동시 race 의 잔여 윈도우는 아래
-  // updateMany WHERE 의 `request.settledAt: null` 조건이 닫음.
+  // 페이지 탭에서 도착하는 클릭이 정산 후 contactRequestedAt 만 set 되어 무상
+  // 알림톡 발송되는 케이스 방지. 사전 검사로 대부분 잡고, 동시 race 의 잔여 윈도우는
+  // 아래 updateMany WHERE 의 `request.settledAt: null` 조건이 닫음.
   if (proposal.assignment.request.settledAt) {
     return { ok: false, error: "settled" };
   }
 
-  if (proposal.contactedAt) {
+  if (proposal.contactRequestedAt) {
     // 멱등 — UI 가 button 을 disabled 로 풀어줄 수 있도록 ok=true 로 응답.
     return { ok: true, alreadyContacted: true };
   }
 
   // race-safe 마킹 + 카운터 증가 — 한 트랜잭션. count=0 이면 두 가지 경우:
-  //   a) 다른 호출이 먼저 contactedAt 마킹 (legit 멱등)
+  //   a) 다른 호출이 먼저 contactRequestedAt 마킹 (legit 멱등)
   //   b) 사전 검사 직후 cron 이 settledAt 마킹 (late race)
   // 두 케이스 모두 spend/알림톡은 건너뛰는 게 맞고, 응답만 분기하기 위해 transaction
   // 종료 후 한 번 더 settledAt 확인.
@@ -282,10 +282,10 @@ export async function requestPlanProposalContact(
     const m = await tx.planProposal.updateMany({
       where: {
         id: proposalId,
-        contactedAt: null,
+        contactRequestedAt: null,
         assignment: { request: { settledAt: null } },
       },
-      data: { contactedAt: new Date() },
+      data: { contactRequestedAt: new Date() },
     });
     if (m.count === 0) return { newlyMarked: false };
     await tx.partnerAssignmentStats.updateMany({
@@ -296,8 +296,9 @@ export async function requestPlanProposalContact(
   });
 
   if (!newlyMarked) {
-    // 두 케이스 구별 — settledAt 가 set 됐는지 확인 (late race) vs contactedAt 가 이미
-    // 있었는지 (legit 멱등). 한 번의 추가 SELECT 비용 < 정확한 UX 응답.
+    // 두 케이스 구별 — settledAt 가 set 됐는지 확인 (late race) vs
+    // contactRequestedAt 가 이미 있었는지 (legit 멱등). 한 번의 추가 SELECT 비용 <
+    // 정확한 UX 응답.
     const after = await prisma.planRequest.findUnique({
       where: { id: request.id },
       select: { settledAt: true },
@@ -307,7 +308,7 @@ export async function requestPlanProposalContact(
   }
 
   // 차감은 본 액션에서 발화하지 않음 — 보관 기간 만료 cron 이 한 PlanRequest 의
-  // contactedAt 있는 파트너들을 모아 PlanRequest.price/N (1000원 반올림) 으로
+  // contactRequestedAt 있는 파트너들을 모아 PlanRequest.price/N (1000원 반올림) 으로
   // 일괄 정산. 자세한 흐름은 features/plan-requests/settlement.ts.
 
   await notifyPartnerOfContactRequest({

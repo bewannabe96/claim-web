@@ -7,28 +7,29 @@ import { prisma } from "@/server/db/prisma";
  * 요청서 정산 — 보관 기간 만료 시점에 호출.
  *
  * 정책:
- *   - "전화요청" (contactedAt IS NOT NULL) 을 받은 파트너 N명에게 PlanRequest.price/N
- *     을 1000원 단위 반올림한 금액을 spendCredit 으로 차감.
- *   - N=0 (전화요청 없음) 이면 차감 없이 settledAt 마킹만.
+ *   - "연락 요청" (contactRequestedAt IS NOT NULL) 을 받은 파트너 N명에게
+ *     PlanRequest.price/N 을 1000원 단위 반올림한 금액을 spendCredit 으로 차감.
+ *   - N=0 (연락 요청 없음) 이면 차감 없이 settledAt 마킹만.
  *   - 1000원 단위 반올림 후 0원이 되는 경우 (가격이 매우 작은 tier) 차감 없이 마킹만.
  *
  * 실행 순서 — **settledAt atomic claim 을 먼저**:
  *   1. $transaction 안에서: updateMany WHERE settledAt IS NULL 로 settledAt 마킹
- *      (= 정산 lock) + contactedAt 있는 assignments 읽기. 두 op 을 한 tx 로 묶어
- *      claim 후 코드 throw 로 인한 inconsistency (settledAt set 되었으나 청구 대상
- *      목록 못 읽음) 방지.
+ *      (= 정산 lock) + contactRequestedAt 있는 assignments 읽기. 두 op 을 한 tx 로
+ *      묶어 claim 후 코드 throw 로 인한 inconsistency (settledAt set 되었으나 청구
+ *      대상 목록 못 읽음) 방지.
  *   2. tx commit 후 각 파트너에게 spendCredit (멱등키 plan-request-settlement:${requestId}:${partnerId}).
  *      spendCredit 은 자체 tx 보유 — 본 tx 안에서 호출 불가.
  *
  * 이 순서로 race window 차단:
  *   - settledAt 이 set 되면 `requestPlanProposalContact` 의 updateMany WHERE 가
- *     `assignment.request.settledAt: null` 조건에 막혀 신규 contactedAt 생성 불가.
- *   - 정산 직전에 들어온 contactedAt 은 settledAt 마킹 이전에 commit 됐다면 같은 tx 의
- *     assignments READ 에서 보임 → 정상 청구. 마킹 이후 commit 이면 차단됨 → 누락 없음.
+ *     `assignment.request.settledAt: null` 조건에 막혀 신규 contactRequestedAt 생성 불가.
+ *   - 정산 직전에 들어온 contactRequestedAt 은 settledAt 마킹 이전에 commit 됐다면
+ *     같은 tx 의 assignments READ 에서 보임 → 정상 청구. 마킹 이후 commit 이면
+ *     차단됨 → 누락 없음.
  *   - 잔여 race 윈도우 (microsecond 수준): action 의 updateMany 가 cron tx 의 commit
- *     직전에 statement 시작해서 settledAt null 로 보고 contactedAt 마킹 → cron 의
- *     READ 가 그 contactedAt commit 전이라 못 봄. SERIALIZABLE isolation 으로만 완전
- *     차단 가능하나 retry 비용 대비 빈도가 낮아 운영 모니터링으로 흡수.
+ *     직전에 statement 시작해서 settledAt null 로 보고 contactRequestedAt 마킹 →
+ *     cron 의 READ 가 그 contactRequestedAt commit 전이라 못 봄. SERIALIZABLE
+ *     isolation 으로만 완전 차단 가능하나 retry 비용 대비 빈도가 낮아 운영 모니터링으로 흡수.
  *
  * 트레이드오프 — partial spendCredit 실패 시 자동 재시도 불가:
  *   - settledAt 이 이미 set 됐으므로 다음 cron tick 이 collect 안 함.
@@ -78,7 +79,7 @@ export async function settlePlanRequest(
       select: {
         price: true,
         assignments: {
-          where: { proposal: { contactedAt: { not: null } } },
+          where: { proposal: { contactRequestedAt: { not: null } } },
           select: { partnerId: true },
         },
       },
