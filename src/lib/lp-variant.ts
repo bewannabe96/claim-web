@@ -32,8 +32,18 @@
  * 항상 끝에 push 하거나, 실험 자체를 epoch 올려 리셋할 것.
  *
  * v1 은 항상 control (현재 운영 중인 랜딩). v2+ 는 새 디자인.
+ *
+ * **현재 v2 비활성** — VariantV2 컴포넌트와 디렉토리 (`_components/variants/v2/`)
+ * 는 보존되어 있고, dispatcher 에서만 빠져 있다. 다시 켜려면:
+ *   1. 아래 배열에 `"v2"` 다시 추가
+ *   2. [landing-variant.tsx](../app/(marketing)/_components/landing-variant.tsx)
+ *      에 `import { VariantV2 }` + `case "v2"` 복구
+ *   3. 옛 v2 쿠키와 카운터를 깨끗하게 분리하고 싶으면 EXPERIMENT_EPOCH 올림.
+ *
+ * 비활성 중 이미 v2 쿠키를 들고 있는 사용자는 isValidVariant 가 false 처리 →
+ * 신규 배정 흐름을 다시 타고 v1 로 흘러간다 (modulo 가 v1 단일).
  */
-export const VARIANT_IDS = ["v1", "v2"] as const;
+export const VARIANT_IDS = ["v1"] as const;
 
 export type VariantId = (typeof VARIANT_IDS)[number];
 
