@@ -33,7 +33,7 @@
  *
  * v1 은 항상 control (현재 운영 중인 랜딩). v2+ 는 새 디자인.
  */
-export const VARIANT_IDS = ["v1"] as const;
+export const VARIANT_IDS = ["v1", "v2"] as const;
 
 export type VariantId = (typeof VARIANT_IDS)[number];
 

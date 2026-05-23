@@ -57,7 +57,8 @@ INCR + 쿠키 sticky. 성과는 PostHog 의 `lp_variant` super-property + `lp_ex
    ├─ cookie-setter.tsx              # client leaf. document.cookie write (justAssigned 만)
    ├─ exposure-beacon.tsx            # client leaf. registerLpVariant() 호출
    └─ variants/
-      └─ v1/index.tsx                # control. 현재 운영 중인 랜딩 본체
+      ├─ v1/index.tsx                # control. 인터랙티브 데모 랜딩
+      └─ v2/index.tsx                # a8fc490 이전의 정적 narrative 랜딩
 ```
 
 ### 새 변형 추가
