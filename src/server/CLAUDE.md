@@ -32,6 +32,9 @@
   - `otp:rl:{ip}` (EX 3600) — IP 별 OTP 발송 시도 카운터. `OTP_RATE_LIMIT_DISABLED=Y` env 로 카운터 자체를 스킵 (load test / 스테이징 디버깅 편의).
   - `topup:pending:{paymentId}` (EX 3600) — 크레딧 충전 개시 시 `(partnerId, amount)` 보관.
     Stub / PortOne 양 provider 공유 — webhook 와 `acknowledgeTopup` 모두 이 stash 로 partnerId/amount 정규화 + 위변조 금액 검증.
+  - `lp:counter:{epoch}` (TTL 없음, 영속) — 랜딩 변형 (A/B) 라운드로빈 카운터.
+    epoch 는 [src/lib/lp-variant.ts](../lib/lp-variant.ts) 의 `EXPERIMENT_EPOCH`.
+    실험 갈아끼우면 새 epoch 키가 0 부터 시작. 자세한 건 [src/server/lp-variant.ts](lp-variant.ts).
 
   HMR-safe (globalThis 캐싱). 백엔드 자동 선택:
   - `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` → Upstash REST (HTTP, prod / serverless 권장).

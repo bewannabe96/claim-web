@@ -32,6 +32,8 @@ declare global {
   interface Window {
     posthog?: {
       capture: (event: string, props?: Record<string, unknown>) => void;
+      register: (props: Record<string, unknown>) => void;
+      register_once: (props: Record<string, unknown>) => void;
     };
   }
 }
@@ -47,4 +49,43 @@ declare global {
 export function track(event: string, props?: Record<string, unknown>): void {
   if (typeof window === "undefined") return;
   window.posthog?.capture(event, props);
+}
+
+/**
+ * 랜딩 페이지 변형 (A/B) 식별을 PostHog 에 등록 + 첫 노출 이벤트 발화.
+ *
+ * `<ExposureBeacon />` (page-level client leaf) 의 useEffect 가 마운트 직후
+ * 1회 호출. 변형 결정 흐름 자체는 [server/lp-variant.ts](../server/lp-variant.ts).
+ *
+ * 등록되는 것:
+ *  - **`lp_variant`** super-property (overwrite) — 현재 변형. 모든 후속 이벤트
+ *    (`$pageview`, `$autocapture`, `$pageleave`, 커스텀 `track()` 등) 에 자동
+ *    부착되어 funnel / breakdown 에 그대로 사용 가능.
+ *  - **`initial_lp_variant`** super-property (register_once) — first-touch.
+ *    쿠키 재배정 후에도 "어느 변형이 이 device 를 데려왔나" 를 잃지 않음.
+ *    기존 광고 `initial_gclid` / `initial_fbclid` 와 같은 정책.
+ *  - **`lp_exposure`** 이벤트 — `justAssigned=true` 일 때만 1회. A/B funnel 의
+ *    분모로 사용 (denominator). `$pageview` 를 분모로 써도 무방하지만,
+ *    명시적 exposure 이벤트가 PostHog UI 에서 실험 단위 사고를 강제.
+ *
+ * SDK 미로드 시 조용히 no-op. 호출 시점에 `window.posthog` 가 아직 init 안
+ * 됐어도 SDK 내부 큐가 받아주므로 race 무해 (단, 그 사이에 fired 된 자동
+ * 이벤트 — 가장 첫 `$pageview` — 는 super-property 누락 가능성 있음.
+ * `lp_exposure` 이벤트 자체는 `lp_variant` 를 props 로 직접 박아 항상 안전).
+ *
+ * @param variant 변형 ID
+ * @param justAssigned 이번 요청이 첫 배정인가 — true 면 `lp_exposure` 발화
+ */
+export function registerLpVariant(
+  variant: string,
+  justAssigned: boolean,
+): void {
+  if (typeof window === "undefined") return;
+  const ph = window.posthog;
+  if (!ph) return;
+  ph.register({ lp_variant: variant });
+  ph.register_once({ initial_lp_variant: variant });
+  if (justAssigned) {
+    ph.capture("lp_exposure", { lp_variant: variant });
+  }
 }
