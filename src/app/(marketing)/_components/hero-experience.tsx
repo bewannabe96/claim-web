@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { DEMO_PROPOSALS } from "../_lib/demo-proposals";
 import { LandingCtaButton } from "./landing-cta-button";
 import { ProposalComparisonDemo } from "./proposal-comparison-demo";
+import { TrustChipList } from "./trust-chip";
 
 /**
  * 랜딩 Hero — 스크롤에 반응하는 제품 화면 가이드.
@@ -27,19 +28,6 @@ const HEADLINE_PHRASES = [
   "당신은 선택합니다.",
 ];
 
-/**
- * 신뢰/마찰해소 칩 — 무료/소요시간 같은 1차 의문에 답하는 작은 pill.
- * 모노크롬 시스템 (border + light bg). HeroExperience 위에 선언해
- * Turbopack HMR 의 hoisting 불안정성 회피.
- */
-function TrustChip({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="rounded-full border border-[#e2e2e2] bg-[#f7f7f7] px-2.5 py-1 text-[0.7rem] font-medium text-[#4b4b4b]">
-      {children}
-    </li>
-  );
-}
-
 export function HeroExperience({
   googleAdsConversionTarget,
 }: {
@@ -51,10 +39,16 @@ export function HeroExperience({
   const [stuck, setStuck] = useState(false);
   // 선택된 설계사 — sticky pill-group 이 관장, 데모로 내려준다.
   const [activeId, setActiveId] = useState(DEMO_PROPOSALS[0].id);
-  // 첫 진입 시 pill-group 아래 (2nd pill 이서연 기준) 에 "탭해서 비교" 툴팁
-  // 노출. 첫 탭 후 영구 해제.
+  // 첫 진입 시 pill-group 아래 (2nd pill 기준) 에 "탭해서 비교" 툴팁 노출.
+  // 첫 탭 후 영구 해제.
   const [showPillTooltip, setShowPillTooltip] = useState(true);
+  // 2nd pill 중심의 x 좌표 — pill-group 컨테이너(px-6) 기준. 측정 전 null.
+  // pill 이름 길이가 비균일(예: "도라에몽"/"세일러문"/"짱구")해도 정확히 정렬되도록
+  // 하드코딩 대신 DOM 측정 + ResizeObserver 로 동적 계산.
+  const [tooltipLeft, setTooltipLeft] = useState<number | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const pillContainerRef = useRef<HTMLDivElement | null>(null);
+  const pillStripRef = useRef<HTMLDivElement | null>(null);
 
   const active =
     DEMO_PROPOSALS.find((p) => p.id === activeId) ?? DEMO_PROPOSALS[0];
@@ -69,6 +63,28 @@ export function HeroExperience({
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, []);
+
+  // 툴팁 위치를 2nd pill 중심으로 동적 맞춤. 각 pill 의 폭이 이름 길이에 따라
+  // 달라지므로 정적 left 값으론 정렬이 깨진다. 폰트 로딩 / 뷰포트 변화에도
+  // 따라가도록 모든 pill + 컨테이너에 ResizeObserver 부착.
+  useEffect(() => {
+    if (!showPillTooltip) return;
+    const container = pillContainerRef.current;
+    const strip = pillStripRef.current;
+    if (!container || !strip) return;
+    const measure = () => {
+      const secondPill = strip.children[1] as HTMLElement | undefined;
+      if (!secondPill) return;
+      const cRect = container.getBoundingClientRect();
+      const pRect = secondPill.getBoundingClientRect();
+      setTooltipLeft(pRect.left - cRect.left + pRect.width / 2);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(container);
+    for (const child of Array.from(strip.children)) ro.observe(child);
+    return () => ro.disconnect();
+  }, [showPillTooltip]);
 
   return (
     <section className="px-6 pt-10 pb-14">
@@ -88,10 +104,7 @@ export function HeroExperience({
         >
           1분만에 무료로 제안받기
         </LandingCtaButton>
-        <ul className="mt-3 flex flex-wrap justify-center gap-1.5">
-          <TrustChip>100% 무료</TrustChip>
-          <TrustChip>약 1분</TrustChip>
-        </ul>
+        <TrustChipList className="mt-3 flex flex-wrap justify-center gap-1.5" />
       </div>
 
       {/* 헤더 고정 시점을 감지하는 sentinel */}
@@ -137,8 +150,11 @@ export function HeroExperience({
           * 0–25% 이탈). 첫 진입 시 짧은 검정 툴팁을 띄워 인터랙티브함을
           * 신호하고, 첫 탭 즉시 자동 dismiss.
           */}
-        <div className="relative bg-white/90 px-6 pb-3">
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1">
+        <div ref={pillContainerRef} className="relative bg-white/90 px-6 pb-3">
+          <div
+            ref={pillStripRef}
+            className="-mx-1 flex gap-2 overflow-x-auto px-1"
+          >
             {DEMO_PROPOSALS.map((p) => (
               <ProposalTabChip
                 key={p.id}
@@ -151,16 +167,16 @@ export function HeroExperience({
               />
             ))}
           </div>
-          {showPillTooltip && (
+          {showPillTooltip && tooltipLeft !== null && (
             <div
               aria-live="polite"
-              // left-[170px] = 2nd pill (이서연) 중심의 sticky-container 기준 x 좌표.
-              // -translate-x-1/2 로 툴팁 중심을 그 x 에 맞춘다. pill 폭이 균일
-              // (~92px) + gap (8px) + px-6 (24px) 가정. 폭이 바뀌면 재측정.
-              className="pointer-events-none absolute top-full left-[170px] z-30 mt-1 -translate-x-1/2"
+              // left = 2nd pill 중심의 컨테이너(px-6) 기준 x 좌표 (DOM 측정).
+              // -translate-x-1/2 로 툴팁 중심을 그 x 에 맞춘다.
+              style={{ left: `${tooltipLeft}px` }}
+              className="pointer-events-none absolute top-full z-30 mt-1 -translate-x-1/2"
             >
               <div className="relative rounded-md bg-black px-2.5 py-1.5 text-[0.7rem] font-medium whitespace-nowrap text-white shadow-[0_4px_12px_rgba(0,0,0,0.18)]">
-                {/* 위쪽을 가리키는 삼각 포인터 — 2nd pill (이서연) 중심으로. */}
+                {/* 위쪽을 가리키는 삼각 포인터 — 2nd pill 중심으로. */}
                 <span
                   aria-hidden
                   className="absolute -top-1 left-1/2 size-2 -translate-x-1/2 rotate-45 bg-black"
