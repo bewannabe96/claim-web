@@ -1,7 +1,6 @@
 import type { VariantId } from "@/lib/lp-variant";
 
 import { VariantV1 } from "./variants/v1";
-import { VariantV2 } from "./variants/v2";
 
 /**
  * 랜딩 변형 dispatcher — Server Component.
@@ -17,6 +16,10 @@ import { VariantV2 } from "./variants/v2";
  * **공유 props**: 모든 변형이 동일 시그니처를 가져야 dispatch 가 깔끔. 현재는
  * `googleAdsConversionTarget` 한 개만. CTA 가 변형마다 달라도 conversion 발화
  * 책임은 동일하므로 이 prop 은 변형 공통 인터페이스.
+ *
+ * **현재 v2 비활성** — VariantV2 컴포넌트는 보존되어 있지만 dispatcher 에서
+ * 빠져 있다. 재활성 절차는 [src/lib/lp-variant.ts](../../../lib/lp-variant.ts)
+ * 의 `VARIANT_IDS` 코멘트 참조.
  */
 type Props = {
   variant: VariantId;
@@ -28,10 +31,6 @@ export function LandingVariant({ variant, googleAdsConversionTarget }: Props) {
     case "v1":
       return (
         <VariantV1 googleAdsConversionTarget={googleAdsConversionTarget} />
-      );
-    case "v2":
-      return (
-        <VariantV2 googleAdsConversionTarget={googleAdsConversionTarget} />
       );
     default: {
       // Exhaustive 체크 — VARIANT_IDS 늘리고 case 안 늘리면 type error.
