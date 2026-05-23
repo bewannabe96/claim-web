@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 import { DEMO_PROPOSALS, DEMO_SCENARIOS } from "../_lib/demo-proposals";
 import { LandingCtaButton } from "./landing-cta-button";
+import { TrustChipList } from "./trust-chip";
 
 /**
  * 랜딩 Hero 의 인터랙티브 제품 화면.
@@ -94,7 +95,11 @@ export function ProposalComparisonDemo({
         }}
         className={cn("transition-all duration-500", blurClass(0))}
       >
-        <ZoneHeader index="01" active={activeZone === 0} />
+        <ZoneHeader
+          index="01"
+          active={activeZone === 0}
+          title="제안서가 도착했어요"
+        />
         <div className={cn(CARD, "flex flex-col gap-5 px-5 py-6")}>
           <PartnerNoteBubble
             partnerName={active.partner.name}
@@ -113,7 +118,12 @@ export function ProposalComparisonDemo({
         }}
         className={cn("transition-all duration-500", blurClass(1))}
       >
-        <ZoneHeader index="02" active={activeZone === 1} />
+        <ZoneHeader
+          index="02"
+          active={activeZone === 1}
+          title="AI가 꼼꼼히 비교해드려요"
+          caption="아래 차트와 숫자는 모두 예시예요"
+        />
         <div className={cn(CARD, "px-5 py-6")}>
           <RoiChart
             proposals={DEMO_PROPOSALS}
@@ -135,12 +145,7 @@ export function ProposalComparisonDemo({
         <ZoneHeader
           index="03"
           active={activeZone === 2}
-          caption={
-            <>
-              비교를 끝냈다면,
-              <br />이제 당신 차례예요.
-            </>
-          }
+          caption="이제 실제로 제안서를 받아보고 비교하세요"
           emphasis
         />
         <LandingCtaButton
@@ -149,6 +154,8 @@ export function ProposalComparisonDemo({
         >
           요청서 작성하고 제안 받기
         </LandingCtaButton>
+        {/* CTA 직후 마찰해소 재확인 — Hero 상단의 trust chips 와 동일 셋. */}
+        <TrustChipList className="mt-4 flex flex-wrap justify-center gap-1.5" />
       </section>
     </div>
   );
@@ -165,11 +172,14 @@ export function ProposalComparisonDemo({
 function ZoneHeader({
   index,
   active,
+  title,
   caption,
   emphasis = false,
 }: {
   index: string;
   active: boolean;
+  /** 인덱스 오른쪽에 인라인으로 붙는 짧은 제목. zone 1·2 의 카드 내용 한 줄 요약. */
+  title?: string;
   caption?: React.ReactNode;
   /** 중요한 카피 — 캡션을 크게 키운다 (zone 3 의 CTA 리드 문구용). */
   emphasis?: boolean;
@@ -177,14 +187,26 @@ function ZoneHeader({
   // px-3: 모든 zone 머리말을 카드 안쪽으로 살짝 들여 — 위치 일관.
   return (
     <div className="px-3 pb-4">
-      <span
-        className={cn(
-          "font-mono text-[0.72rem] font-bold tracking-[0.12em] transition-colors duration-300",
-          active ? "text-black" : "text-[#cdcdcd]",
+      <div className="flex items-baseline gap-2">
+        <span
+          className={cn(
+            "font-mono text-[0.72rem] font-bold tracking-[0.12em] transition-colors duration-300",
+            active ? "text-black" : "text-[#cdcdcd]",
+          )}
+        >
+          {index}
+        </span>
+        {title && (
+          <span
+            className={cn(
+              "text-sm font-semibold transition-colors duration-300",
+              active ? "text-black" : "text-[#9a9a9a]",
+            )}
+          >
+            {title}
+          </span>
         )}
-      >
-        {index}
-      </span>
+      </div>
       {caption && (
         <p
           className={cn(

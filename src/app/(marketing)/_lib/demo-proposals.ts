@@ -49,10 +49,10 @@ type ProposalSeed = {
 const SEEDS: ProposalSeed[] = [
   {
     id: "a",
-    partnerName: "김도윤",
+    partnerName: "도라에몽",
     yearsOfExperience: 11,
     trustMetric: "최근 1년 가입설계 제안 240건",
-    insurer: "한화손해보험",
+    insurer: "4차원손해보험",
     monthlyPremium: 78_000,
     paymentYears: 20,
     maturityAge: 90,
@@ -77,10 +77,10 @@ const SEEDS: ProposalSeed[] = [
   },
   {
     id: "b",
-    partnerName: "이서연",
+    partnerName: "세일러문",
     yearsOfExperience: 8,
     trustMetric: "재가입 고객 비율 상위 10%",
-    insurer: "삼성생명",
+    insurer: "달빛생명",
     monthlyPremium: 94_000,
     paymentYears: 20,
     maturityAge: 100,
@@ -103,10 +103,10 @@ const SEEDS: ProposalSeed[] = [
   },
   {
     id: "c",
-    partnerName: "박준호",
+    partnerName: "짱구",
     yearsOfExperience: 15,
     trustMetric: "평균 상담 응답 12분",
-    insurer: "DB손해보험",
+    insurer: "액션가면보험",
     monthlyPremium: 62_000,
     paymentYears: 30,
     maturityAge: 90,
