@@ -257,19 +257,36 @@ export function RoiChart({
         </div>
       )}
 
-      {/* SVG */}
+      {/* SVG
+        *
+        * touch-action: pan-y — 세로 스와이프는 브라우저가 페이지 스크롤로 가져가게
+        * 양보(없으면 차트 위에서 세로 스크롤이 막힘). 가로 이동은 브라우저가 끼어들지
+        * 않아 우리 pointer 이벤트로 그대로 들어와 커서 갱신.
+        *
+        * 터치 포인터엔 setPointerCapture 를 걸지 않는다. 잡아두면 브라우저가
+        * pan-y 로 가져갈 때 충돌. 터치는 어차피 묵시적으로 캡처되므로 따로 잡을
+        * 필요도 없음. 마우스만 명시 capture — SVG 밖으로 드래그해도 추적 유지.
+        * 브라우저가 세로 pan 으로 인식하면 pointercancel 이 발생 → 자동 해제.
+        */}
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-auto touch-none"
+        className="w-full h-auto touch-pan-y"
         role="img"
         aria-label={`회수 배율 — ${scenario.label} 시나리오, ${active.partner.name} 강조`}
         onPointerMove={(e) => updateCursorFromPointer(e.clientX)}
         onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
+          if (e.pointerType !== "touch") {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }
           updateCursorFromPointer(e.clientX);
         }}
         onPointerUp={(e) => {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }
+        }}
+        onPointerCancel={(e) => {
           if (e.currentTarget.hasPointerCapture(e.pointerId)) {
             e.currentTarget.releasePointerCapture(e.pointerId);
           }
