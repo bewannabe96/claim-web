@@ -1,4 +1,5 @@
 import { HeroExperience } from "./_components/hero-experience";
+import { StickyBottomCta } from "./_components/sticky-bottom-cta";
 
 /**
  * 마케팅 랜딩 — 가입자(고객) 진입 페이지.
@@ -38,6 +39,7 @@ export default function Home() {
       <HeroExperience googleAdsConversionTarget={googleAdsConversionTarget} />
       <HowItWorksSection />
       <Footer />
+      <StickyBottomCta googleAdsConversionTarget={googleAdsConversionTarget} />
     </main>
   );
 }
