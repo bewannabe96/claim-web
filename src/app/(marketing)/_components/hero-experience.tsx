@@ -65,10 +65,15 @@ export function HeroExperience({
         {/* 헤드라인 텍스트 (비인터랙티브). */}
         <div className="pointer-events-none bg-white/90 px-6 pt-4 pb-3">
           {/* 맨 위에선 조금 크게(scale 1.15), 고정되면 원래 크기로 — transform
-            * 만 바뀌어 레이아웃은 불변, 아래 콘텐츠가 밀리는 스냅 없음. */}
+            * 만 바뀌어 레이아웃은 불변, 아래 콘텐츠가 밀리는 스냅 없음.
+            *
+            * w-fit 필수 — h1 이 컨테이너 전폭 블록이면 scale(1.15) 한 박스가
+            * 뷰포트보다 15% 넓어지고, scale 은 scrollable overflow 에 포함돼
+            * 페이지가 좌우로 스크롤된다. 텍스트 폭만큼만 차지하게 줄여서
+            * 1.15 배 해도 뷰포트 안에 머물게 한다. */}
           <h1
             className={cn(
-              "origin-bottom-left text-[2rem] font-bold leading-[1.22] tracking-tight transition-transform duration-300 ease-out",
+              "w-fit origin-bottom-left text-[2rem] font-bold leading-[1.22] tracking-tight transition-transform duration-300 ease-out",
               stuck ? "scale-[0.8]" : "scale-[1.15]",
             )}
           >
