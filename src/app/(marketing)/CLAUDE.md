@@ -58,8 +58,12 @@ INCR + 쿠키 sticky. 성과는 PostHog 의 `lp_variant` super-property + `lp_ex
    ├─ exposure-beacon.tsx            # client leaf. registerLpVariant() 호출
    └─ variants/
       ├─ v1/index.tsx                # control. 인터랙티브 데모 랜딩
-      └─ v2/index.tsx                # a8fc490 이전의 정적 narrative 랜딩
+      └─ v2/index.tsx                # (현재 비활성) a8fc490 이전의 정적 narrative 랜딩
 ```
+
+> **v2 비활성 중** — `VARIANT_IDS` 에서 빠져 있어 dispatcher 가 import 안 함.
+> 디렉토리/컴포넌트는 보존. 재활성 절차는 [src/lib/lp-variant.ts](../../lib/lp-variant.ts)
+> 의 `VARIANT_IDS` 코멘트 참조.
 
 ### 새 변형 추가
 
