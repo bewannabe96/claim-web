@@ -17,10 +17,12 @@ import {
 } from "@/features/plan-requests/schema";
 import { RequestStatusBadge } from "@/features/plan-requests/ui/status-badge";
 import { cn } from "@/lib/utils";
+import { nowMs } from "@/lib/wall-clock";
 import { GENDER_LABEL } from "@/types";
 
 import { formatDateTime, formatPhone } from "../../_lib/format";
 import { AnalysisErrorPill } from "../../_components/analysis-error-pill";
+import { ExtendDeadlineControl } from "../../_components/extend-deadline-control";
 import {
   BackLink,
   Badge,
@@ -208,6 +210,30 @@ export default async function AdminRequestDetailPage({
           </ul>
         )}
       </Card>
+
+      {/* 연장은 마감 전에만 의미 있음 — 도과된 요청은 cron 이 곧 closePlanRequest
+          로 expired/completed/rematching 전이할 transient 이라 카드 자체를 숨김.
+          서버 액션도 같은 가드를 갖고 있어 race 가 나면 conflict/already_past 로
+          반환됨. */}
+      {request.deadlineAt &&
+        (request.status === "dispatched" ||
+          request.status === "analyzing") &&
+        Date.parse(request.deadlineAt) > nowMs() && (
+          <Card>
+            <CardHeader
+              title="제출 마감"
+              meta={
+                <span className="tabular-nums">
+                  {formatDateTime(request.deadlineAt)}
+                </span>
+              }
+            />
+            <ExtendDeadlineControl
+              planRequestId={id}
+              currentDeadlineAt={request.deadlineAt}
+            />
+          </Card>
+        )}
 
       {request.resultToken && (
         <Card>
