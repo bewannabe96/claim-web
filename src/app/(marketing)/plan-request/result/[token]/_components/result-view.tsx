@@ -26,11 +26,11 @@ import { ScenarioPickerRoiChart } from "./scenario-picker-roi-chart";
  *   3. 선택된 제안서 본문 (설계사 헤더 / 핵심 수치 / ROI / 레이더 / 핵심 담보 /
  *      추가 정보 / 상담 진행하기 CTA)
  *
- * 연락 요청 상태 (contacted): SSR 의 proposal.contactedAt 기반으로 초기화 후
- * client state 로 관리. "상담 진행하기" 클릭 → 바텀 시트에서 채널 (카카오톡 / 문자)
- * 선택 → requestPlanProposalContact 액션을 호출. 액션이 멱등이라 서버는 첫 호출만
- * 카운터 +1, 클라는 응답과 무관하게 즉시 토글 (optimistic). 새로고침 / 새 탭에서
- * button 이 다시 활성되는 것은 SSR 의 contactedAt 으로 가려짐.
+ * 연락 요청 상태 (contactRequested): SSR 의 proposal.contactRequestedAt 기반으로
+ * 초기화 후 client state 로 관리. "상담 진행하기" 클릭 → 바텀 시트에서 채널
+ * (카카오톡 / 문자) 선택 → requestPlanProposalContact 액션을 호출. 액션이 멱등이라
+ * 서버는 첫 호출만 카운터 +1, 클라는 응답과 무관하게 즉시 토글 (optimistic). 새로고침
+ * / 새 탭에서 button 이 다시 활성되는 것은 SSR 의 contactRequestedAt 으로 가려짐.
  */
 export function ResultView({
   resultToken,
@@ -50,8 +50,8 @@ export function ResultView({
   resultRetentionDays: number;
 }) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const [contacted, setContacted] = useState<Set<string>>(
-    () => new Set(proposals.filter((p) => p.contacted).map((p) => p.id)),
+  const [contactRequested, setContactRequested] = useState<Set<string>>(
+    () => new Set(proposals.filter((p) => p.contactRequested).map((p) => p.id)),
   );
   // 시트가 어느 proposal 에 대해 열렸는지 식별. 닫혀있으면 null. chip 탭 전환과
   // 무관하게 사용자가 누른 시점의 proposal 을 고정해 잘못된 설계사에게 연락 가는
@@ -75,9 +75,9 @@ export function ResultView({
         .filter((r): r is AnalysisReportV5 => Boolean(r))
     : [];
 
-  function markContacted(id: string, channel: ContactChannel) {
-    if (contacted.has(id)) return;
-    setContacted((s) => new Set(s).add(id));
+  function markContactRequested(id: string, channel: ContactChannel) {
+    if (contactRequested.has(id)) return;
+    setContactRequested((s) => new Set(s).add(id));
     startTransition(async () => {
       const result = await requestPlanProposalContact(resultToken, id, channel);
       if (!result.ok) {
@@ -86,7 +86,7 @@ export function ResultView({
         // invalid_channel — 클라/서버 사이 enum 불일치 (정상 플로우엔 없음, defensive).
         //   세 경우 모두 새로고침하면 ExpiredState 가 렌더되거나 button 이 다시 활성되어
         //   자연스럽게 이탈하므로 별도 토스트 없이 토글 롤백만.
-        setContacted((s) => {
+        setContactRequested((s) => {
           const next = new Set(s);
           next.delete(id);
           return next;
@@ -119,7 +119,7 @@ export function ResultView({
         reports={reports}
         scenarioPriority={scenarioPriority ?? []}
         resultRetentionDays={resultRetentionDays}
-        contacted={contacted.has(active.id)}
+        contactRequested={contactRequested.has(active.id)}
         onContact={() => setSheetProposalId(active.id)}
       />
 
@@ -128,7 +128,7 @@ export function ResultView({
         onClose={() => setSheetProposalId(null)}
         onSelect={(channel) => {
           if (sheetProposal) {
-            markContacted(sheetProposal.id, channel);
+            markContactRequested(sheetProposal.id, channel);
             setSheetProposalId(null);
           }
         }}
@@ -147,7 +147,7 @@ function PlanProposalBody({
   reports,
   scenarioPriority,
   resultRetentionDays,
-  contacted,
+  contactRequested,
   onContact,
 }: {
   proposal: PlanProposalData;
@@ -155,7 +155,7 @@ function PlanProposalBody({
   reports: AnalysisReportV5[];
   scenarioPriority: readonly string[];
   resultRetentionDays: number;
-  contacted: boolean;
+  contactRequested: boolean;
   onContact: () => void;
 }) {
   return (
@@ -284,15 +284,15 @@ function PlanProposalBody({
       <button
         type="button"
         onClick={onContact}
-        disabled={contacted}
+        disabled={contactRequested}
         className={cn(
           "w-full h-14 rounded-full text-base font-medium transition-colors",
-          contacted
+          contactRequested
             ? "bg-[#efefef] text-[#4b4b4b] cursor-default"
             : "bg-black text-white hover:bg-[#1a1a1a]",
         )}
       >
-        {contacted ? (
+        {contactRequested ? (
           "상담 요청을 보냈어요"
         ) : (
           <>
