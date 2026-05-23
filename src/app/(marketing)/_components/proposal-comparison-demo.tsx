@@ -85,23 +85,16 @@ export function ProposalComparisonDemo({
 
   return (
     <div className="flex flex-col gap-[120px] pb-[200px]">
-      {/* ── 01 설계사가 제안하고 ── */}
+      {/* ── 01 설계사가 제안하고 ──
+        * 캡션 제거 — "위 탭에서 바꿔보세요" 안내는 sticky header 의 툴팁이 담당.
+        * 인덱스 번호 "01" 만 남겨 zone 진행 가이드로 사용. */}
       <section
         ref={(el) => {
           zoneRefs.current[0] = el;
         }}
         className={cn("transition-all duration-500", blurClass(0))}
       >
-        <ZoneHeader
-          index="01"
-          active={activeZone === 0}
-          caption={
-            <>
-              설계사마다 보낸 제안서가 달라요.
-              <br />위 탭에서 설계사를 바꿔보세요.
-            </>
-          }
-        />
+        <ZoneHeader index="01" active={activeZone === 0} />
         <div className={cn(CARD, "flex flex-col gap-5 px-5 py-6")}>
           <PartnerNoteBubble
             partnerName={active.partner.name}
@@ -112,23 +105,15 @@ export function ProposalComparisonDemo({
         </div>
       </section>
 
-      {/* ── 02 AI가 비교하고 ── */}
+      {/* ── 02 AI가 비교하고 ──
+        * 캡션 제거 — 차트 자체가 시각적으로 충분히 설명적. 인덱스만 유지. */}
       <section
         ref={(el) => {
           zoneRefs.current[1] = el;
         }}
         className={cn("transition-all duration-500", blurClass(1))}
       >
-        <ZoneHeader
-          index="02"
-          active={activeZone === 1}
-          caption={
-            <>
-              AI가 보장 범위와 예상 수령액을 분석했어요.
-              <br />그래프를 움직여보세요.
-            </>
-          }
-        />
+        <ZoneHeader index="02" active={activeZone === 1} />
         <div className={cn(CARD, "px-5 py-6")}>
           <RoiChart
             proposals={DEMO_PROPOSALS}
@@ -170,9 +155,12 @@ export function ProposalComparisonDemo({
 }
 
 /**
- * zone 머리말 — 카드 밖에 놓이는 번호 + 한 줄 설명. 헤드라인 구절은 여기 두지
- * 않는다(sticky 헤드라인이 담당). 화면 중앙에 온 zone 은 번호·설명이 검정으로
- * 강조돼 헤드라인의 하이라이트 구절과 함께 움직인다.
+ * zone 머리말 — 카드 밖에 놓이는 번호 + (옵션) 한 줄 설명. 헤드라인 구절은
+ * 여기 두지 않는다(sticky 헤드라인이 담당). 화면 중앙에 온 zone 은 번호·설명이
+ * 검정으로 강조돼 헤드라인의 하이라이트 구절과 함께 움직인다.
+ *
+ * caption 은 옵션 — zone 1·2 는 sticky 헤드라인·툴팁·차트 자체가 설명 역할을
+ * 하므로 인덱스만 표시. zone 3 만 CTA 리드 문구를 emphasis 로 크게 띄운다.
  */
 function ZoneHeader({
   index,
@@ -182,7 +170,7 @@ function ZoneHeader({
 }: {
   index: string;
   active: boolean;
-  caption: React.ReactNode;
+  caption?: React.ReactNode;
   /** 중요한 카피 — 캡션을 크게 키운다 (zone 3 의 CTA 리드 문구용). */
   emphasis?: boolean;
 }) {
@@ -197,19 +185,21 @@ function ZoneHeader({
       >
         {index}
       </span>
-      <p
-        className={cn(
-          "mt-1.5 leading-relaxed transition-colors duration-300",
-          emphasis ? "text-lg font-medium" : "text-xs",
-          active
-            ? emphasis
-              ? "text-black"
-              : "text-[#4b4b4b]"
-            : "text-[#9a9a9a]",
-        )}
-      >
-        {caption}
-      </p>
+      {caption && (
+        <p
+          className={cn(
+            "mt-1.5 leading-relaxed transition-colors duration-300",
+            emphasis ? "text-lg font-medium" : "text-xs",
+            active
+              ? emphasis
+                ? "text-black"
+                : "text-[#4b4b4b]"
+              : "text-[#9a9a9a]",
+          )}
+        >
+          {caption}
+        </p>
+      )}
     </div>
   );
 }
