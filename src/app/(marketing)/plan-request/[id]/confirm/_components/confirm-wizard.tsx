@@ -31,7 +31,7 @@ type FormState = {
   phone: string;
   /** 6자리 OTP — digits only */
   otpCode: string;
-  consentThirdParty: boolean;
+  // consentThirdParty: boolean;   // ← UI 숨김 처리 (항상 false 저장). 복원 시 주석 해제.
   consentMessaging: boolean;
 };
 
@@ -79,7 +79,7 @@ export function ConfirmWizard({
     rrnBack1: "",
     phone: "",
     otpCode: "",
-    consentThirdParty: false,
+    // consentThirdParty: false,
     consentMessaging: false,
   });
 
@@ -110,7 +110,7 @@ export function ConfirmWizard({
     phoneValid &&
     otpSent &&
     data.otpCode.length === 6 &&
-    data.consentThirdParty &&
+    // data.consentThirdParty &&
     data.consentMessaging;
 
   function handleSendOtp() {
@@ -311,12 +311,15 @@ export function ConfirmWizard({
           </Field>
         )}
 
-        {/* 보험사 문자 안내 — 설계사가 제안서를 작성하는 과정에서 보험사가 본인에게
-            직접 문자를 보낼 수 있음을 미리 인지시켜, 받았을 때 당황하지 않도록 함. */}
-        <InsurerMessageNotice />
+        {/* 보험사 문자 안내 — UI 숨김 처리. 복원 시 주석 해제. */}
+        {/* <InsurerMessageNotice /> */}
 
-        {/* 동의 항목 */}
+        {/* 동의 항목. consentThirdParty 항목은 UI 숨김 + 항상 "off" 전송으로
+            DB 에 false 저장. 복원 시 ConsentRow 주석 해제 + 폼 hidden 의 value 를
+            checked 일 때만 "on" 으로 바꾸고, schema.ts 의 enum 을 literal "on"
+            required 로 되돌릴 것. */}
         <div className="flex flex-col gap-3 pt-2">
+          {/*
           <ConsentRow
             checked={data.consentThirdParty}
             onChange={(v) => setData((d) => ({ ...d, consentThirdParty: v }))}
@@ -324,6 +327,7 @@ export function ConfirmWizard({
             required
             description="입력한 정보가 선택한 설계사들에게 전달됩니다. 설계사는 제안서 작성 목적으로만 사용해요."
           />
+          */}
           <ConsentRow
             checked={data.consentMessaging}
             onChange={(v) => setData((d) => ({ ...d, consentMessaging: v }))}
@@ -342,9 +346,10 @@ export function ConfirmWizard({
 
       {/* CTA */}
       <form action={formAction} className="pt-6 mt-auto">
-        {data.consentThirdParty && (
-          <input type="hidden" name="consentThirdParty" value="on" />
-        )}
+        {/* consentThirdParty 는 UI 항목이 숨겨져 항상 "off" 로 전송 — 액션이 값
+            그대로 DB 에 false 로 저장. UI 복원 시 ConsentRow 추가 + 이 hidden 을
+            조건부 ("on" when checked) 로 바꿀 것. */}
+        <input type="hidden" name="consentThirdParty" value="off" />
         {data.consentMessaging && (
           <input type="hidden" name="consentMessaging" value="on" />
         )}
@@ -439,7 +444,10 @@ function RequestSummary({ step1 }: { step1: Step1Input }) {
  * 보험사 문자 안내 — 설계사가 제안서를 만들려면 보험사 전산에 고객 등록이 필요하고,
  * 그 과정에서 보험사가 가입자 휴대폰으로 '가입설계동의 및 고객등록 요청' 문자를 보낸다.
  * 가입자 입장에선 신청하지 않은 곳에서 온 문자처럼 보일 수 있어, 미리 알려 안심시킨다.
+ *
+ * 현재 UI 숨김 처리. 복원 시 위의 호출부 주석 해제 + 이 함수도 주석 해제.
  */
+/*
 function InsurerMessageNotice() {
   return (
     <div className="rounded-xl bg-[#f8f8f8] p-4 flex gap-3">
@@ -465,6 +473,7 @@ function InsurerMessageNotice() {
     </div>
   );
 }
+*/
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
