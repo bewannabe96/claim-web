@@ -98,8 +98,11 @@ export async function countPreSubmissionRequests(): Promise<number> {
 /**
  * Prisma row → 도메인 nested 형태 (step1/step3).
  *
- * consents 필드: DB 는 boolean, zod Step3Schema 는 literal "on". finalize 가 통과해야
- * step3 가 채워지므로 두 값 모두 true 가 보장. 따라서 매핑 시 "on" 으로 고정.
+ * consents 필드: DB 는 boolean, zod Step3Schema 는 "on" | "off" (consentThirdParty) /
+ * literal "on" (consentMessaging). consentMessaging 은 finalize 통과 시 항상 true
+ * 가 보장되어 "on" 으로 고정. consentThirdParty 는 현재 UI 에서 숨겨져 항상 false
+ * 로 저장되므로 row 의 실제 boolean 을 반영 — true 면 "on", 아니면 "off"
+ * (어드민 상세가 `=== "on"` 으로 "동의/—" 분기).
  */
 function mapPlanRequest(row: PlanRequestRow): PlanRequest {
   return {
@@ -126,7 +129,7 @@ function mapPlanRequest(row: PlanRequestRow): PlanRequest {
             name: row.name,
             phone: row.phone,
             birthDate: row.birthDate?.toISOString().slice(0, 10) ?? undefined,
-            consentThirdParty: "on",
+            consentThirdParty: row.consentThirdParty ? "on" : "off",
             consentMessaging: "on",
           }
         : undefined,

@@ -232,7 +232,14 @@ export const Step3Schema = z
     rrnFront: RRN_FRONT,
     rrnBack1: RRN_BACK1,
     phone: PHONE,
-    consentThirdParty: z.literal("on", { message: "정보 제공 동의가 필요합니다." }),
+    /**
+     * 제3자 정보 제공 동의 — 현재 UI 에서 항목 자체를 숨김 처리하여 항상 "off"
+     * 가 전송됨. enum 으로 명시 검증하고 액션이 boolean 으로 변환해 DB 저장.
+     * UI 복원 시 confirm-wizard.tsx 의 ConsentRow 주석 해제 + 폼 hidden 을
+     * checked 일 때만 "on" 전송하도록 조건부 렌더로 되돌리고, 필수 동의로 강제
+     * 하려면 `z.literal("on")` 로 좁히면 됨.
+     */
+    consentThirdParty: z.enum(["on", "off"]),
     consentMessaging: z.literal("on", { message: "통신 수신 동의가 필요합니다." }),
   })
   .refine((v) => deriveRrn(v.rrnFront, v.rrnBack1) !== null, {

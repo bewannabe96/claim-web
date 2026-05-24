@@ -487,8 +487,9 @@ export async function finalizeRequest(
         phone: parsed.data.phone,
         birthDate: rrn.birthDate,
         gender: rrn.gender,
-        // Step3 검증 통과 시점에 두 consent 모두 literal "on" 으로 강제됨.
-        consentThirdParty: true,
+        // consentThirdParty 는 UI 에서 숨겨져 폼이 "off" 만 전송 → false 저장.
+        // consentMessaging 은 Step3 검증에서 literal "on" 으로 여전히 강제됨.
+        consentThirdParty: parsed.data.consentThirdParty === "on",
         consentMessaging: true,
         status: "dispatched",
         dispatchedAt: now,
