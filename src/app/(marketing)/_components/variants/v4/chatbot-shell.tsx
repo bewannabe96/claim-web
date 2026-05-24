@@ -38,7 +38,18 @@ import { PromptSlot } from "./prompts/prompt-slot";
  * 없고, advance() 한 reducer 로 전체 흐름을 일관되게 관리. 슬롯의 입력 위젯
  * 들은 `prompts/` 하위에 분리해 PromptSlot 이 phase 별로 dispatch.
  */
-export function ChatbotShell({ priceTiers }: { priceTiers: PriceTier[] }) {
+export function ChatbotShell({
+  priceTiers,
+  googleAdsConversionTarget,
+}: {
+  priceTiers: PriceTier[];
+  /**
+   * Q1 (첫 응답) 클릭 시 Google Ads conversion `send_to` 대상.
+   * `AW-XXXXXXXXXX/<label>` 형식 — env 미설정 시 undefined → 발화 스킵.
+   * `(marketing)/_lib/ads-conversion.ts` 의 `fireLandingConversion` 이 사용.
+   */
+  googleAdsConversionTarget: string | undefined;
+}) {
   const [state, setState] = useState<ChatState>(() => initialChatState());
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [, startTransition] = useTransition();
@@ -147,6 +158,7 @@ export function ChatbotShell({ priceTiers }: { priceTiers: PriceTier[] }) {
           state={state}
           setState={setState}
           priceTiers={priceTiers}
+          googleAdsConversionTarget={googleAdsConversionTarget}
         />
       </div>
     </main>
