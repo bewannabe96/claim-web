@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -461,10 +462,25 @@ export function PromptSlot({
         />
       );
 
-    /* ─── PROC3 / DONE: chatbot-shell 이 처리. 슬롯 비움. ────────── */
+    /* ─── PROC3: chatbot-shell 이 server action 호출 중. 슬롯 비움. ─── */
     case "PROC3":
-    case "DONE":
       return null;
+
+    /* ─── DONE: 완료 안내 후 AI 분석 데모 라우트(/demo) 로 보내는 CTA. ───
+     * navigation 없는 챗봇 흐름이 끝나는 지점. 사용자는 입력 슬롯 자리에
+     * "AI 분석기능 자세히 보기" 버튼을 보고 클릭 시 v1 의 인터랙티브 스크롤
+     * 데모로 이동한다 (요청→제안→AI 비교 흐름). chatbot-shell 이 직전에
+     * push 한 bot 메시지가 버튼 위에 노출돼 흐름이 연결됨. */
+    case "DONE":
+      return (
+        <Button
+          render={<Link href="/demo" />}
+          nativeButton={false}
+          className="h-14 w-full rounded-full text-sm font-medium"
+        >
+          AI 분석기능 자세히 보기
+        </Button>
+      );
 
     /* ─── ERROR: 재시작 안내 ────────────────────────────────── */
     case "ERROR":

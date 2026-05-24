@@ -296,8 +296,16 @@ export const OtpSchema = z.object({
 
 export type OtpInput = z.infer<typeof OtpSchema>;
 
-/** 최종 확정 — Step3 데이터 + OTP 코드 한꺼번에 받아 검증/저장/디스패치. */
+/** 최종 확정 — Step3 데이터 + OTP 코드 한꺼번에 받아 검증/저장/디스패치.
+ *
+ * 성공 시 기본 흐름은 server action 안에서 redirect 가 throw 되므로 client 는
+ * 반환값을 받지 못한다. `skipRedirect` 옵션 (v4 챗봇 흐름) 으로 호출하면 redirect
+ * 대신 `{ ok: true }` 를 반환해 client 가 후속 UI 전이를 직접 처리. `errors?:
+ * undefined` 가 ok=true 변형에 명시돼 있어 기존 `state?.errors?....` optional
+ * chain 패턴이 타입 에러 없이 그대로 동작 (confirm-wizard 의 useActionState
+ * 사용자가 그대로 호환). */
 export type FinalizeState =
+  | { ok: true; errors?: undefined }
   | {
       ok?: false;
       errors?: Partial<
