@@ -57,11 +57,20 @@ export async function closePlanRequest(requestId: string): Promise<void> {
     prisma.planRequestAssignment.count({
       where: { requestId, status: "submitted" },
     }),
+    // "분석 마무리" 카운트 — 정상 완료 (analyzedAt) + 어드민이 건너뜀 처리
+    // (analysisSkippedAt) 를 동급. skip 은 외부 파이프라인이 회복 불가능할 때
+    // 운영자가 결과 화면을 마감으로 진행시키기 위한 escape hatch (자세한 정의는
+    // `features/plan-proposals/actions.ts:skipPlanProposalAnalysis`).
     prisma.planRequestAssignment.count({
       where: {
         requestId,
         status: "submitted",
-        proposal: { analyzedAt: { not: null } },
+        proposal: {
+          OR: [
+            { analyzedAt: { not: null } },
+            { analysisSkippedAt: { not: null } },
+          ],
+        },
       },
     }),
   ]);

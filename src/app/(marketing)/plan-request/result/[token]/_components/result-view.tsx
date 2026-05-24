@@ -187,8 +187,21 @@ function PlanProposalBody({
 
       {/* 분석 안 된 proposal — 데이터 섹션 placeholder 로 대체.
        *   note + partner attribution 은 여전히 노출 (가용한 정보).
-       *   분석 완료 후 새로고침 안내. */}
-      {!proposal.analyzed && (
+       *   `analysisSkipped` 면 회복 불가 안내 (새로고침으로 변하지 않음),
+       *   그 외 미완료면 진행 중 안내 (1–2분 후 새로고침). */}
+      {!proposal.analyzed && proposal.analysisSkipped && (
+        <section className="rounded-xl border border-[#e2e2e2] bg-[#fafafa] p-8 flex flex-col items-center gap-3 text-center">
+          <p className="text-sm font-semibold text-black">
+            분석을 진행할 수 없는 제안서예요
+          </p>
+          <p className="text-xs text-[#4b4b4b] leading-relaxed">
+            PDF 에서 정보를 자동으로 추출하지 못했어요.
+            <br />
+            보험료·담보 상세는 설계사에게 직접 문의해 주세요.
+          </p>
+        </section>
+      )}
+      {!proposal.analyzed && !proposal.analysisSkipped && (
         <section className="rounded-xl border border-dashed border-[#e2e2e2] p-8 flex flex-col items-center gap-3 text-center">
           <div className="flex items-center gap-1.5">
             <span

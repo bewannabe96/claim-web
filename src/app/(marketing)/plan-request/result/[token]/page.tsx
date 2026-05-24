@@ -125,7 +125,11 @@ export default async function ResultPage({
 
   // 분석 진행 현황 — 분석 안 된 proposal 이 있으면 progress 배지, 모두 완료면 "결과 준비됨".
   // 이 지점부터 proposals.length > 0 보장 (위 early return).
-  const analyzedCount = proposals.filter((p) => p.analyzed).length;
+  // skip 처리된 제안서는 더 이상 진행되지 않으므로 "분석 완료" 와 동급으로 묶어
+  // 진행률에 포함 — 그렇지 않으면 영원히 "X/N 진행 중" 으로 남는다.
+  const analyzedCount = proposals.filter(
+    (p) => p.analyzed || p.analysisSkipped,
+  ).length;
   const allAnalyzed = analyzedCount === proposals.length;
 
   return (

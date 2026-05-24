@@ -78,7 +78,8 @@ admin/
       ├─ admin-nav.tsx
       ├─ analysis-error-pill.tsx # 분석 실패 group 색상/라벨 단일화 — pill 직접 정의 금지
       ├─ page-shell.tsx
-      └─ retry-analysis-button.tsx  # 분석 재시도 client 버튼 (useTransition + retryPlanProposalAnalysis)
+      ├─ retry-analysis-button.tsx  # 분석 재시도 client 버튼 (useTransition + retryPlanProposalAnalysis)
+      └─ skip-analysis-button.tsx   # 분석 건너뛰기 client 버튼 (두 단계 confirm + skipPlanProposalAnalysis)
 ```
 
 ## ENV

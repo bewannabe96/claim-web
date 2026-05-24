@@ -25,7 +25,7 @@ features/<도메인>/
 [features/plan-proposals/](plan-proposals/)
 - `schema.ts` — `PlanProposalSubmissionSchema` (zod) + `PlanProposalSubmissionState` 타입 + `PlanProposal` / `PlanRequestAssignment` 도메인 타입
 - `queries.ts` — `getPlanProposalById`, `listPlanProposalCardsForRequest`, `listFailedAnalysisPlanProposals`
-- `actions.ts` — `submitPlanProposal`, `requestPlanProposalContact`, `retryPlanProposalAnalysis` (Server Action)
+- `actions.ts` — `submitPlanProposal`, `requestPlanProposalContact`, `retryPlanProposalAnalysis`, `skipPlanProposalAnalysis` (Server Action)
 
 ## ❌ 안티패턴
 

@@ -179,6 +179,7 @@ export const DEMO_PROPOSALS: PlanProposalData[] = SEEDS.map((seed) => {
       avatarUrl: null,
     },
     analyzed: true,
+    analysisSkipped: false,
     contactRequested: false,
     insurer: seed.insurer,
     maturityAge: seed.maturityAge,

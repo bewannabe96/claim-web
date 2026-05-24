@@ -12,6 +12,7 @@ import {
   PageHeader,
 } from "../_components/page-shell";
 import { RetryAnalysisButton } from "../_components/retry-analysis-button";
+import { SkipAnalysisButton } from "../_components/skip-analysis-button";
 
 /**
  * /admin/analysis-failures
@@ -125,7 +126,8 @@ function FailureCard({
         </p>
       )}
 
-      <div className="mt-5 pt-4 border-t border-[#efefef] flex justify-end">
+      <div className="mt-5 pt-4 border-t border-[#efefef] flex flex-wrap justify-end gap-2">
+        <SkipAnalysisButton proposalId={proposalId} />
         <RetryAnalysisButton proposalId={proposalId} />
       </div>
     </Card>
