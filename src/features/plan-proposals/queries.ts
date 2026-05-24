@@ -220,6 +220,7 @@ function mapPlanProposal(row: PrismaPlanProposal): PlanProposal {
     contactRequestedAt: row.contactRequestedAt?.toISOString() ?? undefined,
     analysisError: parseAnalysisError(row.analysisError),
     analysisErrorAt: row.analysisErrorAt?.toISOString() ?? undefined,
+    analysisSkippedAt: row.analysisSkippedAt?.toISOString() ?? undefined,
   };
 }
 
@@ -242,6 +243,9 @@ function parseAnalysisError(raw: unknown): AnalysisError | undefined {
  * 콜백을 받았으나 마지막 시도가 실패 상태로 남은 것. 성공이 한 번이라도 들어오면
  * (analyzedAt 채워짐) 더 이상 실패로 표시하지 않음.
  *
+ * `analysisSkippedAt IS NOT NULL` 인 행은 어드민이 "건너뜀" 처리한 케이스로,
+ * 미해결 목록에서 자연스럽게 사라지도록 동일 WHERE 에 가드 추가.
+ *
  * partner + request 정보를 함께 join 해서 어드민이 컨텍스트 한 화면에 보도록.
  * ============================================================ */
 
@@ -256,7 +260,11 @@ export async function listFailedAnalysisPlanProposals(): Promise<
   FailedPlanProposalRow[]
 > {
   const rows = await prisma.planProposal.findMany({
-    where: { analyzedAt: null, analysisErrorAt: { not: null } },
+    where: {
+      analyzedAt: null,
+      analysisErrorAt: { not: null },
+      analysisSkippedAt: null,
+    },
     include: {
       assignment: { select: { partnerId: true, requestId: true } },
     },

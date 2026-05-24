@@ -33,6 +33,7 @@ import {
 } from "../../_components/page-shell";
 import { RetryAnalysisButton } from "../../_components/retry-analysis-button";
 import { SendResultNotificationButton } from "../../_components/send-result-notification-button";
+import { SkipAnalysisButton } from "../../_components/skip-analysis-button";
 
 export default async function AdminRequestDetailPage({
   params,
@@ -51,8 +52,10 @@ export default async function AdminRequestDetailPage({
   const submittedCount = details.filter(
     (d) => d.assignment.status === "submitted",
   ).length;
+  // 분석 진행 카운트는 정상 완료 + skip 처리 두 케이스를 합산 — closePlanRequest 의
+  // 조기 마감 조건 (`analyzedAt OR analysisSkippedAt`) 과 동일 의미.
   const analyzedCount = details.filter(
-    (d) => d.proposal?.analyzedAt != null,
+    (d) => d.proposal?.analyzedAt != null || d.proposal?.analysisSkippedAt != null,
   ).length;
 
   const headerDescription = [
@@ -98,7 +101,9 @@ export default async function AdminRequestDetailPage({
           {request.step3 ? (
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
               <Field label="이름">{request.step3.name}</Field>
-              <Field label="휴대폰">{formatPhone(request.step3.phone)}</Field>
+              <Field label="휴대폰">
+                {request.step3.phone ? formatPhone(request.step3.phone) : "—"}
+              </Field>
               <Field label="제3자 정보 제공">
                 {request.step3.consentThirdParty === "on" ? "동의" : "—"}
               </Field>
@@ -377,16 +382,27 @@ function AssignmentItem({
               filename={pdfBasename(proposal.pdfS3Key)}
             />
             <Spec label="한줄 요약" value={proposal.note} />
-            {!proposal.analyzedAt && proposal.analysisError && (
-              <AnalysisFailureBlock
-                proposalId={proposal.id}
-                error={proposal.analysisError}
-                erroredAt={proposal.analysisErrorAt}
-              />
-            )}
-            {!proposal.analyzedAt && !proposal.analysisError && (
-              <AnalysisPendingBlock proposalId={proposal.id} />
-            )}
+            {!proposal.analyzedAt &&
+              proposal.analysisSkippedAt && (
+                <AnalysisSkippedBlock
+                  error={proposal.analysisError}
+                  skippedAt={proposal.analysisSkippedAt}
+                />
+              )}
+            {!proposal.analyzedAt &&
+              !proposal.analysisSkippedAt &&
+              proposal.analysisError && (
+                <AnalysisFailureBlock
+                  proposalId={proposal.id}
+                  error={proposal.analysisError}
+                  erroredAt={proposal.analysisErrorAt}
+                />
+              )}
+            {!proposal.analyzedAt &&
+              !proposal.analysisSkippedAt &&
+              !proposal.analysisError && (
+                <AnalysisPendingBlock proposalId={proposal.id} />
+              )}
           </div>
         ) : (
           <p className="text-xs text-[#afafaf]">
@@ -420,6 +436,11 @@ function AssignmentItem({
             분석 {formatDateTime(proposal.analyzedAt)}
           </span>
         )}
+        {proposal && !proposal.analyzedAt && proposal.analysisSkippedAt && (
+          <span className="text-[#afafaf]">
+            건너뜀 {formatDateTime(proposal.analysisSkippedAt)}
+          </span>
+        )}
         {proposal?.contactRequestedAt && (
           <span className="text-black font-medium">
             상담요청 {formatDateTime(proposal.contactRequestedAt)}
@@ -431,11 +452,18 @@ function AssignmentItem({
 }
 
 /**
- * proposal 의 분석 상태 pill (우선순위: 성공 > 실패 > 진행 중).
+ * proposal 의 분석 상태 pill — 우선순위:
+ *   1. analyzedAt           → "분석 완료" (정상)
+ *   2. analysisSkippedAt    → "분석 건너뜀" (어드민 결정 — 실패 pill 보다 위)
+ *   3. analysisError        → 실패 group pill
+ *   4. 그 외                → "분석 중"
  */
 function AnalysisStatusPill({ proposal }: { proposal: PlanProposal }) {
   if (proposal.analyzedAt) {
     return <Badge tone="solid">분석 완료</Badge>;
+  }
+  if (proposal.analysisSkippedAt) {
+    return <Badge tone="outline">분석 건너뜀</Badge>;
   }
   if (proposal.analysisError) {
     return <AnalysisErrorPill group={proposal.analysisError.group} />;
@@ -483,9 +511,50 @@ function AnalysisFailureBlock({
           </pre>
         </details>
       )}
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <SkipAnalysisButton proposalId={proposalId} size="sm" />
         <RetryAnalysisButton proposalId={proposalId} size="sm" />
       </div>
+    </div>
+  );
+}
+
+/**
+ * 어드민이 "분석 건너뜀" 처리한 proposal — 회복 불가능 판단으로 결과 화면 마감을
+ * 위해 마킹된 상태. 분석 결과는 영구히 없고, 가입자 화면은 "분석 불가" placeholder.
+ * 마지막 실패 페이로드는 detail 로 접어두어 운영 audit 에 남긴다.
+ */
+function AnalysisSkippedBlock({
+  error,
+  skippedAt,
+}: {
+  error: AnalysisError | undefined;
+  skippedAt: string;
+}) {
+  return (
+    <div className="mt-1 rounded-xl border border-[#e2e2e2] bg-[#fafafa] px-3 py-2.5 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="font-medium text-[#4b4b4b]">분석 건너뜀</span>
+        <span className="text-[#afafaf] tabular-nums">
+          {formatDateTime(skippedAt)}
+        </span>
+      </div>
+      <p className="text-[11px] text-[#afafaf] leading-relaxed">
+        가입자 화면에 “분석 불가” 안내로 표시돼요. 결과 마감 카운트에 포함됩니다.
+      </p>
+      {error && (
+        <details className="rounded border border-[#e2e2e2] bg-white px-2 py-1.5">
+          <summary className="cursor-pointer text-[11px] text-[#4b4b4b]">
+            건너뛸 때의 마지막 실패 정보
+          </summary>
+          <dl className="mt-1.5 grid grid-cols-[56px_1fr] gap-x-2 gap-y-1 text-[11px]">
+            <dt className="text-[#afafaf]">type</dt>
+            <dd className="font-mono text-black">{error.type}</dd>
+            <dt className="text-[#afafaf]">message</dt>
+            <dd className="text-black">{error.message}</dd>
+          </dl>
+        </details>
+      )}
     </div>
   );
 }

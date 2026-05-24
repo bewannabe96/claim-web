@@ -9,8 +9,10 @@ import { getEnvStage, isProductionEnv } from "@/lib/env-stage";
  *
  * stage 값이 있으면 pill 로 라벨링, 없으면 부연 문구만 노출.
  *
- * Server Component — root layout 에서만 사용. 다른 sticky 요소 (admin/partner top nav,
- * z-10~30) 위에 z-50 으로 올라옴.
+ * Server Component — root layout 에서만 사용. `fixed top-0` 으로 layout flow
+ * 에서 빠져 페이지 컨텐츠 높이/배치에 영향 X (특히 챗봇 변형 v4 의 h-[100dvh]
+ * 메인 컨테이너처럼 viewport 정확 분배가 중요한 페이지 보호). 다른 sticky
+ * 요소 (admin/partner top nav, z-10~30) 위에 z-50 으로 올라옴.
  */
 export function EnvBanner() {
   if (isProductionEnv()) return null;
@@ -21,7 +23,7 @@ export function EnvBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="sticky top-0 z-50 flex w-full items-center justify-center gap-2.5 bg-red-600 px-4 py-2.5 text-white shadow-md"
+      className="fixed inset-x-0 top-0 z-50 flex items-center justify-center gap-2.5 bg-red-600 px-4 py-2.5 text-white shadow-md"
     >
       {stage && (
         <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-bold uppercase tracking-[0.15em]">

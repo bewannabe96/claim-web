@@ -129,6 +129,16 @@ export const Step1Schema = z
     monthlyBudgetMax: z.coerce.number().int().min(0),
     /** 최대 20건 — 빈 배열 허용 (병력 없음) */
     medicalHistory: z.array(MedicalHistoryEntrySchema).max(20),
+    /**
+     * 외부 설계안 PDF 의 S3 키 배열 (챗봇 변형 v4 Q4_8 에서 수집). 최대 5건.
+     * 각 키는 `externals/{nanoid}.pdf` 패턴 — server action 이 추가로 prefix
+     * 검증 (`isExternalProposalKey`) 후 plan_request 에 저장. 다른 진입점
+     * (기존 /plan-request/new wizard 등) 은 이 필드를 보내지 않으므로 default [].
+     */
+    externalProposalKeys: z
+      .array(z.string().min(1).max(200))
+      .max(5, "외부 설계안은 최대 5건까지 첨부할 수 있어요.")
+      .default([]),
     /** 그외 요청사항 — 자유 텍스트, 선택 */
     additionalNotes: z
       .string()
@@ -232,7 +242,14 @@ export const Step3Schema = z
     rrnFront: RRN_FRONT,
     rrnBack1: RRN_BACK1,
     phone: PHONE,
-    consentThirdParty: z.literal("on", { message: "정보 제공 동의가 필요합니다." }),
+    /**
+     * 제3자 정보 제공 동의 — 현재 UI 에서 항목 자체를 숨김 처리하여 항상 "off"
+     * 가 전송됨. enum 으로 명시 검증하고 액션이 boolean 으로 변환해 DB 저장.
+     * UI 복원 시 confirm-wizard.tsx 의 ConsentRow 주석 해제 + 폼 hidden 을
+     * checked 일 때만 "on" 전송하도록 조건부 렌더로 되돌리고, 필수 동의로 강제
+     * 하려면 `z.literal("on")` 로 좁히면 됨.
+     */
+    consentThirdParty: z.enum(["on", "off"]),
     consentMessaging: z.literal("on", { message: "통신 수신 동의가 필요합니다." }),
   })
   .refine((v) => deriveRrn(v.rrnFront, v.rrnBack1) !== null, {
@@ -285,6 +302,72 @@ export type FinalizeState =
       ok?: false;
       errors?: Partial<
         Record<keyof Step3Input | "code" | "_form", string[]>
+      >;
+    }
+  | undefined;
+
+/* ============================================================
+ * 어드민 — 가입자 대신 요청서 작성 (proxy)
+ * ============================================================
+ *
+ * 관리자가 가입자에게 정보를 받아 직접 입력해 즉시 dispatched 상태로 송부.
+ * 본인인증 (OTP) 은 생략 — 관리자가 attest 하는 모델. 검증 통과 시 한 트랜잭션에
+ * plan_request (status='dispatched') + medical_history + candidates + assignments 까지
+ * 생성하고, 가입자 흐름의 finalize 와 동일하게 partner 알림톡을 발송한다.
+ *
+ * Step1Schema (요청서 본문) + Step3 본인정보(이름 / RRN / 휴대폰) + 동의 두 필드를
+ * 합친 형태. consentMessaging 은 가입자 흐름과 동일하게 literal "on" 강제 — 알림톡
+ * 발송 채널이 살아있어야 결과 전달 가능. consentThirdParty 는 enum on/off (관리자
+ * 토글) — 보험사 phone 노출 게이트 (`partner/plan-request-assignments/[token]`) 가
+ * 이 값에 따라 분기됨.
+ *
+ * Step1Schema 와 같은 cross-field refine (budgetMax >= budgetMin) 을 유지하기 위해
+ * Step1Schema 의 base z.object 를 .merge 하지 않고 별도 z.object 로 작성 후 refine.
+ * 새 필드가 Step1Schema 에 추가되면 여기도 같이 갱신할 것. */
+
+export const AdminCreatePlanRequestSchema = z
+  .object({
+    occupation: z
+      .string()
+      .min(1, "직업을 입력해주세요.")
+      .max(50, "직업은 50자 이내로 입력해주세요."),
+    coverage: CoverageRequestSchema,
+    monthlyBudgetMin: z.coerce.number().int().min(0),
+    monthlyBudgetMax: z.coerce.number().int().min(0),
+    medicalHistory: z.array(MedicalHistoryEntrySchema).max(20),
+    additionalNotes: z
+      .string()
+      .max(1000, "추가 요청사항은 1000자 이내로 입력해주세요.")
+      .optional(),
+    name: z
+      .string()
+      .min(1, "이름을 입력해주세요.")
+      .max(20, "이름은 20자 이내로 입력해주세요."),
+    rrnFront: RRN_FRONT,
+    rrnBack1: RRN_BACK1,
+    phone: PHONE,
+    consentThirdParty: z.enum(["on", "off"]),
+    consentMessaging: z.literal("on", { message: "알림톡 수신 동의가 필요합니다." }),
+  })
+  .refine((v) => v.monthlyBudgetMax >= v.monthlyBudgetMin, {
+    message: "최대 보험료는 최소 보험료보다 커야 합니다.",
+    path: ["monthlyBudgetMax"],
+  })
+  .refine((v) => deriveRrn(v.rrnFront, v.rrnBack1) !== null, {
+    message: "올바른 생년월일이 아닙니다.",
+    path: ["rrnFront"],
+  });
+
+export type AdminCreatePlanRequestInput = z.infer<
+  typeof AdminCreatePlanRequestSchema
+>;
+
+export type AdminCreatePlanRequestState =
+  | { ok: true; requestId: string }
+  | {
+      ok?: false;
+      errors?: Partial<
+        Record<keyof AdminCreatePlanRequestInput | "_form", string[]>
       >;
     }
   | undefined;
@@ -376,10 +459,16 @@ export const PRE_SUBMISSION_STATUSES: readonly PlanRequestStatus[] = [
 /**
  * 저장된 step3 — Step3Input 의 입력 폼 필드 중 RRN 두 개는 derive 후 폐기되므로
  * 저장 형태에서는 빠짐. 대신 birthDate (ISO date) 가 채워짐.
+ *
+ * `phone` 은 DB 에는 항상 있지만 타입에서는 optional — 서버 컴포넌트가
+ * 정보 제공 동의(consentThirdParty=on) 여부에 따라 client 컴포넌트로 넘어가는
+ * 단계에서 잘라낼 수 있도록 한다. mapPlanRequest 직후 / admin 등 서버 컨텍스트
+ * 에서는 step3 가 존재하면 phone 도 채워져 있다.
  */
-export type Step3Stored = Omit<Step3Input, "rrnFront" | "rrnBack1"> & {
+export type Step3Stored = Omit<Step3Input, "rrnFront" | "rrnBack1" | "phone"> & {
   /** YYYY-MM-DD — RRN front6+back1 에서 derive 후 저장됨. */
   birthDate?: string;
+  phone?: string;
 };
 
 export type PlanRequest = {

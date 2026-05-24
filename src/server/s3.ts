@@ -80,6 +80,16 @@ function getS3(): { env: S3Env; client: S3Client } {
 export const PROPOSAL_PDF_KEY_PREFIX = "proposals/";
 
 /**
+ * 가입자가 다른 곳에서 받아온 외부 설계안 PDF — 챗봇 변형 v4 가 Q4_8 에서 수집.
+ *
+ * 같은 `S3_BUCKET_PROPOSALS` 버킷의 별도 prefix. 가입자 흐름이므로 키에 사용자
+ * ID 가 박힐 곳이 없어 (plan_request 생성 전에 업로드), nanoid 단독 키. forgery
+ * 방어는 prefix + suffix 형식 검증으로만 가능 — submit 단계에서 키 패턴 일치
+ * 확인 후 plan_request 에 저장.
+ */
+export const EXTERNAL_PROPOSAL_KEY_PREFIX = "externals/";
+
+/**
  * 제안서 PDF 업로드용 presigned PUT URL 발급.
  *
  * Key 형태: `proposals/{assignmentId}/{nanoid}.pdf`. assignmentId 가 path 에
@@ -175,6 +185,74 @@ export function isPlanProposalKeyForAssignment(
   if (!s3Key.startsWith(expectedPrefix)) return false;
   const suffix = s3Key.slice(expectedPrefix.length);
   return /^[A-Za-z0-9_-]+\.pdf$/.test(suffix);
+}
+
+/**
+ * 외부 설계안 업로드 허용 mime → 키 확장자 매핑.
+ *
+ * PDF 외에 가입자가 카카오톡 등으로 받아 사진 찍어둔 케이스 (image) 도 허용.
+ * iOS 카메라 기본 포맷이 HEIC 라 그것도 받음 — 백엔드 분석 단계가 처리 못 할
+ * 가능성은 있지만 챗봇은 업로드까지만 책임.
+ *
+ * presigned PUT URL 의 ContentType 서명에 그대로 박혀 클라가 다른 타입 PUT 시
+ * signature mismatch 로 거부 (서버 사후 검증과는 별개 1차 방어).
+ */
+const EXTERNAL_PROPOSAL_ALLOWED_TYPES = {
+  "application/pdf": "pdf",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/heic": "heic",
+  "image/heif": "heif",
+} as const;
+
+export type ExternalProposalContentType =
+  keyof typeof EXTERNAL_PROPOSAL_ALLOWED_TYPES;
+
+/** runtime narrowing — server action 진입부에서 클라이언트 입력 검증. */
+export function isAllowedExternalProposalContentType(
+  contentType: string,
+): contentType is ExternalProposalContentType {
+  return contentType in EXTERNAL_PROPOSAL_ALLOWED_TYPES;
+}
+
+/**
+ * 외부 설계안 업로드용 presigned PUT URL 발급 (챗봇 v4 Q4_9).
+ *
+ * Key 형태: `externals/{nanoid}.{pdf|jpg|png|webp|heic|heif}` — 확장자는 mime
+ * 매핑 결정. plan_request 가 아직 생성되지 않은 시점에 발급되므로 ID 바인딩
+ * 없음. 키 자체는 nanoid 라 추측 불가능 — submit 단계에서 키 패턴 검증
+ * (`isExternalProposalKey`) 으로 forgery 차단.
+ *
+ * URL TTL: 10분. ContentType 은 presign 서명에 박혀 클라가 다른 타입 PUT 시
+ * signature mismatch.
+ */
+export async function presignExternalProposalUpload(
+  contentType: ExternalProposalContentType,
+): Promise<{ url: string; s3Key: string }> {
+  const { env, client } = getS3();
+  const ext = EXTERNAL_PROPOSAL_ALLOWED_TYPES[contentType];
+  const s3Key = `${EXTERNAL_PROPOSAL_KEY_PREFIX}${newId()}.${ext}`;
+  const cmd = new PutObjectCommand({
+    Bucket: env.S3_BUCKET_PROPOSALS,
+    Key: s3Key,
+    ContentType: contentType,
+  });
+  const url = await getSignedUrl(client, cmd, { expiresIn: 600 });
+  return { url, s3Key };
+}
+
+/**
+ * 키가 `externals/` prefix + nanoid.{허용확장자} 패턴인지 검증. submitStep1 이
+ * 챗봇에서 받은 키 배열을 plan_request 에 저장하기 전 1차 forgery 방어.
+ *
+ * 허용 확장자 셋은 `EXTERNAL_PROPOSAL_ALLOWED_TYPES` 의 value 들과 정합 — 매핑
+ * 변경 시 regex 도 함께 갱신.
+ */
+export function isExternalProposalKey(s3Key: string): boolean {
+  if (!s3Key.startsWith(EXTERNAL_PROPOSAL_KEY_PREFIX)) return false;
+  const suffix = s3Key.slice(EXTERNAL_PROPOSAL_KEY_PREFIX.length);
+  return /^[A-Za-z0-9_-]+\.(pdf|jpg|png|webp|heic|heif)$/.test(suffix);
 }
 
 /**

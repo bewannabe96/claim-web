@@ -16,6 +16,7 @@ import {
   verifyUploadedObject,
 } from "@/server/s3";
 import { publishAnalysisJob } from "@/server/sqs";
+import { closePlanRequest } from "@/features/plan-requests/state-transition";
 
 import {
   CONTACT_CHANNEL_LABEL,
@@ -406,19 +407,27 @@ export async function retryPlanProposalAnalysis(
       id: true,
       pdfS3Key: true,
       analyzedAt: true,
+      analysisSkippedAt: true,
       assignment: { select: { requestId: true } },
     },
   });
 
   if (!proposal) return { ok: false, error: "not_found" };
-  if (proposal.analyzedAt) return { ok: false, error: "already_analyzed" };
+  // "분석 완료" (analyzedAt) 와 "분석 건너뜀" (analysisSkippedAt) 은 이후 단계
+  // 관점에서 동일한 terminal 상태 — 둘 중 하나라도 set 이면 재시도 불가.
+  // error 라벨은 단순화를 위해 "already_analyzed" 로 공유 (UI 의 메시지는 두
+  // 케이스를 구분할 필요 없는 race 가드 성격이라 충분).
+  if (proposal.analyzedAt || proposal.analysisSkippedAt) {
+    return { ok: false, error: "already_analyzed" };
+  }
 
-  // race-safe 초기화 — 동시에 webhook 이 success 콜백을 처리 중이면 analyzedAt 이
-  // 채워지면서 이 update 가 0 row 가 되고, 그 경우 success 가 이미 들어왔단 뜻이라
-  // 재시도 자체가 무의미. 그래도 publish 는 멱등 (webhook 이 또 다른 success 받아도
-  // updateMany WHERE analyzedAt IS NULL 로 no-op) 이므로 그대로 진행.
+  // race-safe 초기화 — 동시에 webhook 의 success 콜백 또는 skip 액션이 처리
+  // 중이면 analyzedAt / analysisSkippedAt 이 채워지면서 이 update 가 0 row 가 되고,
+  // 그 경우 분석이 이미 종결됐단 뜻이라 재시도 자체가 무의미. 그래도 publish 는
+  // 멱등 (webhook 의 updateMany WHERE analyzedAt IS NULL AND analysisSkippedAt
+  // IS NULL 로 no-op) 이므로 그대로 진행.
   await prisma.planProposal.updateMany({
-    where: { id: proposalId, analyzedAt: null },
+    where: { id: proposalId, analyzedAt: null, analysisSkippedAt: null },
     // nullable Json 컬럼을 명시적으로 비우려면 sentinel `Prisma.JsonNull` 사용
     // (raw `null` 은 "필드 자체를 건드리지 말라"는 의미라 컴파일 거부).
     data: { analysisError: Prisma.JsonNull, analysisErrorAt: null },
@@ -429,6 +438,92 @@ export async function retryPlanProposalAnalysis(
     s3Key: proposal.pdfS3Key,
     proposalId,
   });
+
+  revalidatePath("/admin/analysis-failures");
+  revalidatePath(`/admin/requests/${proposal.assignment.requestId}`);
+
+  return { ok: true };
+}
+
+/* ============================================================
+ * 분석 건너뛰기 — 어드민 전용
+ *
+ * 분석이 계속 실패해 (예: 외부 카탈로그가 끝내 매핑 안 됨) 재시도로도 회복 안 되는
+ * 제안서를 운영자가 수기로 "건너뜀" 처리한다. 마킹 후엔:
+ *   - 가입자 결과 화면 → 해당 제안서 카드만 "분석 불가" placeholder 로 표시
+ *     (나머지 제안서의 차트/수치는 그대로). 카드 자체는 chip 탭에 남아 설계사 한줄평
+ *     과 연락 CTA 는 계속 제공 — 설계사가 제출은 했다는 사실 자체는 사라지지 않아야
+ *     attribution 이 깨지지 않는다.
+ *   - closePlanRequest 가 `analyzedAt` 과 `analysisSkippedAt` 을 동급 취급하므로,
+ *     skip 으로 인해 마지막 미해결 제안서가 사라지면 `analyzing → completed` 조기
+ *     마감이 트리거된다.
+ *
+ * 가드:
+ *   1. analyzedAt 차 있으면 거부 (이미 성공 — 외부에서 늦은 success 콜백이 들어와
+ *      analyzedAt 이 채워진 케이스).
+ *   2. analysisErrorAt NULL 이면 거부 — 실패 콜백이 들어오지 않은 상태에서 skip 을
+ *      허용하면 정체된 (영원히 분석중) 제안서까지 임의로 끌 수 있게 되어 정책상
+ *      좁힌다. 정체 케이스는 retryPlanProposalAnalysis 로 한 번 재발행해 실패 응답
+ *      유도 후 skip.
+ *   3. analysisSkippedAt 이미 차 있으면 멱등 ok (UI 가 race 로 두 번 호출하는 케이스).
+ *
+ * race-safe 마킹: WHERE analyzedAt IS NULL AND analysisSkippedAt IS NULL AND
+ * analysisErrorAt IS NOT NULL 로 update — 동시에 webhook 이 success 콜백을 처리
+ * 중이면 그 쪽이 이기고 skip 은 no-op 으로 떨어진다 (count=0).
+ * ============================================================ */
+
+export type SkipAnalysisResult =
+  | { ok: true }
+  | {
+      ok: false;
+      error: "not_found" | "already_analyzed" | "no_failure";
+    };
+
+export async function skipPlanProposalAnalysis(
+  proposalId: string,
+): Promise<SkipAnalysisResult> {
+  await requireAdminSession();
+
+  const proposal = await prisma.planProposal.findUnique({
+    where: { id: proposalId },
+    select: {
+      id: true,
+      analyzedAt: true,
+      analysisErrorAt: true,
+      analysisSkippedAt: true,
+      assignment: { select: { requestId: true } },
+    },
+  });
+
+  if (!proposal) return { ok: false, error: "not_found" };
+  if (proposal.analyzedAt) return { ok: false, error: "already_analyzed" };
+  // 이미 skip 처리된 경우 멱등 ok — UI 가 race 로 두 번 호출하거나 새로고침 직후
+  // stale 버튼 누른 경우. closePlanRequest 도 다시 호출할 필요 없음 (앞선 skip 호출
+  // 이 이미 트리거했고 멱등).
+  if (proposal.analysisSkippedAt) return { ok: true };
+  if (!proposal.analysisErrorAt) return { ok: false, error: "no_failure" };
+
+  // race-safe — webhook 의 success 콜백 (analyzedAt 마킹) 과 동시 실행돼도 한 쪽만 이김.
+  // 가드 모두 WHERE 안으로 옮겨 트랜잭션 격리 수준에 의존하지 않는다.
+  const updated = await prisma.planProposal.updateMany({
+    where: {
+      id: proposalId,
+      analyzedAt: null,
+      analysisSkippedAt: null,
+      analysisErrorAt: { not: null },
+    },
+    data: { analysisSkippedAt: new Date() },
+  });
+
+  if (updated.count === 0) {
+    // 사전 검사 직후 webhook 이 success 를 처리한 경우. 이미 분석 완료 상태이므로
+    // skip 의 의미가 없어졌다 — already_analyzed 로 보고.
+    return { ok: false, error: "already_analyzed" };
+  }
+
+  // skip 마킹으로 미해결 제안서가 사라졌다면 조기 마감 가능 — closePlanRequest 가
+  // 멱등 + 가드 (status='analyzing' / count 재평가) 를 갖고 있어 안전하게 호출.
+  await closePlanRequest(proposal.assignment.requestId);
 
   revalidatePath("/admin/analysis-failures");
   revalidatePath(`/admin/requests/${proposal.assignment.requestId}`);

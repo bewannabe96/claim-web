@@ -35,17 +35,20 @@ import { prisma } from "@/server/db/prisma";
  * 동작:
  *   - `failed` → proposal.analysisError + analysisErrorAt 마킹 (analyzedAt 은
  *     건드리지 않음 → plan_request 전이 안 일어남). updateMany + WHERE id +
- *     assignment.requestId + analyzedAt IS NULL → 성공 분석이 이미 들어와 있으면
- *     덮어쓰기 금지 (race-safe). 어드민 "분석 실패" 페이지에서 인지 + 수동 fix
- *     후 `retryPlanProposalAnalysis` 액션으로 재발행.
+ *     assignment.requestId + `analyzedAt IS NULL AND analysisSkippedAt IS NULL`
+ *     → 성공 분석 또는 어드민의 "건너뜀" 처리가 이미 들어와 있으면 덮어쓰기 금지
+ *     (race-safe). 어드민 "분석 실패" 페이지에서 인지 + 수동 fix 후
+ *     `retryPlanProposalAnalysis` 액션으로 재발행, 또는 회복 불가 판단 시
+ *     `skipPlanProposalAnalysis` 로 마감 진행.
  *   - `succeeded` → 트랜잭션:
  *       1. proposal.analyzedAt = now() (첫 콜백만, WHERE id + assignment.requestId
- *          매치 + analyzedAt IS NULL — plan_request_id cross-check 로 페이로드 위조 차단)
+ *          매치 + `analyzedAt IS NULL AND analysisSkippedAt IS NULL` —
+ *          plan_request_id cross-check 로 페이로드 위조 차단, skip terminal 보장)
  *       2. updated.count===1 이면 plan_proposal_analysis_report INSERT (proposalId 1:1)
- *     그 후 `closePlanRequest(plan_request_id)` 호출 — 모든 제출 제안서가 분석 완료된
- *     경우 (조기 마감) `analyzing → completed`. 마감 판정/전이/알림 책임은 cron (시간
- *     마감) 과 공유하므로 `features/plan-requests/state-transition.ts` 의 `closePlanRequest`
- *     단일 진입점에 통합.
+ *     그 후 `closePlanRequest(plan_request_id)` 호출 — 모든 제출 제안서가 분석 완료
+ *     (또는 어드민이 건너뜀 처리) 된 경우 (조기 마감) `analyzing → completed`. 마감
+ *     판정/전이/알림 책임은 cron (시간 마감) 과 공유하므로
+ *     `features/plan-requests/state-transition.ts` 의 `closePlanRequest` 단일 진입점에 통합.
  *
  * 발신측 재시도 안전: 첫 콜백이 transition 직전에 끊겨도 retry 가 pending 을
  * 재평가해서 전이 마무리.
@@ -147,11 +150,15 @@ export async function POST(req: Request) {
     // 마지막 실패만 보존 (시도 history 는 추적 안 함). WHERE 절:
     //   - analyzedAt IS NULL → 성공 분석이 이미 들어와 있으면 덮어쓰기 금지.
     //     (외부 파이프라인이 success 후 failed 재전송하는 비정상 케이스 방어.)
+    //   - analysisSkippedAt IS NULL → 어드민이 "건너뜀" 처리한 케이스도 terminal.
+    //     skip 후 늦게 도착한 failed 콜백이 analysisError 만 다시 마킹해
+    //     "분석 실패" 페이지에 부활시키는 케이스 차단.
     //   - assignment.requestId 매치 → succeeded 분기와 동일한 cross-validation.
     const updated = await prisma.planProposal.updateMany({
       where: {
         id: proposal_id,
         analyzedAt: null,
+        analysisSkippedAt: null,
         assignment: { requestId: plan_request_id },
       },
       data: {
@@ -162,7 +169,7 @@ export async function POST(req: Request) {
 
     if (updated.count !== 1) {
       console.warn(
-        "[webhook/analysis] failed payload no-op (already analyzed, mismatched plan_request_id, or unknown id)",
+        "[webhook/analysis] failed payload no-op (already analyzed, skipped, mismatched plan_request_id, or unknown id)",
         { request_id, proposal_id, plan_request_id },
       );
     } else {
@@ -181,10 +188,16 @@ export async function POST(req: Request) {
   await prisma.$transaction(async (tx) => {
     // WHERE 에 assignment.requestId 매치까지 포함 — 페이로드 위조/혼선 (다른
     // plan_request 의 proposal_id 가 와도) 차단. assignment relation 으로 join.
+    //
+    // `analysisSkippedAt IS NULL` 가드: 어드민이 "건너뜀" 처리한 직후 늦게 도착한
+    // success 콜백이 analyzedAt 을 마킹하고 report 를 INSERT 하면, 가입자 화면이
+    // "분석 불가" 안내에서 갑자기 분석 결과로 바뀌는 회귀가 발생. skip 은 이후
+    // 단계 관점에서 terminal — 도착한 success 도 no-op 으로 받아들인다.
     const updated = await tx.planProposal.updateMany({
       where: {
         id: proposal_id,
         analyzedAt: null,
+        analysisSkippedAt: null,
         assignment: { requestId: plan_request_id },
       },
       data: { analyzedAt: new Date() },
@@ -203,7 +216,7 @@ export async function POST(req: Request) {
       });
     } else {
       console.warn(
-        "[webhook/analysis] no update (proposal already analyzed, mismatched plan_request_id, or unknown id)",
+        "[webhook/analysis] no update (proposal already analyzed, skipped, mismatched plan_request_id, or unknown id)",
         { request_id, proposal_id, plan_request_id },
       );
     }

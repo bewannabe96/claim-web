@@ -54,6 +54,12 @@ model PlanRequest {
   coverage           Json
   additionalNotes    String? @map("additional_notes")
 
+  /// 가입자가 다른 곳에서 받아온 외부 설계안(PDF) 의 S3 키 배열. 챗봇 변형 v4 의
+  /// Q4_8 phase 에서 수집 — 최대 5건. 키 패턴은 `externals/{nanoid}.pdf` (S3_BUCKET_PROPOSALS
+  /// 버킷, externals/ prefix). 파일 자체는 presigned PUT 으로 브라우저가 직접 S3 에 업로드 —
+  /// 우리 서버는 키 메타데이터만 보관. 분석/비교 파이프라인에서 참조용.
+  externalProposalKeys String[] @default([]) @map("external_proposal_keys")
+
   // Step3: 본인 인증 (1:1 sparse — 인증 완료 시 채워짐)
   name               String?
   phone              String?
@@ -549,6 +555,16 @@ model PlanProposal {
   /// 시점에 두 컬럼 모두 null 로 초기화.
   analysisError   Json?     @map("analysis_error")
   analysisErrorAt DateTime? @db.Timestamptz(6) @map("analysis_error_at")
+
+  /// 어드민이 분석 실패한 제안서를 "분석 건너뜀" 처리한 시각. 한 번 실패한 외부
+  /// 시스템이 수기 매핑 / 재시도로도 회복 안 되는 경우, 가입자 결과 페이지를 마감
+  /// (closePlanRequest 조기 마감 조건) 까지 전이시키기 위한 운영자 escape hatch.
+  /// 마킹 가드: analyzedAt IS NULL AND analysisErrorAt IS NOT NULL — 성공한 / 아직
+  /// 응답조차 없는 케이스에는 적용 안 함. skip 후엔 그 분석 리포트는 영구 없음 —
+  /// 가입자 화면이 "분석 불가" 안내로 분기 (adapt-proposal 의 fallback).
+  /// state-transition 의 analyzed count 가 `analyzedAt IS NOT NULL OR
+  /// analysisSkippedAt IS NOT NULL` 로 둘을 동급 처리 (조기 마감 트리거).
+  analysisSkippedAt DateTime? @db.Timestamptz(6) @map("analysis_skipped_at")
 
   /// 가입자가 결과 페이지에서 이 제안서를 보고 "상담 진행하기" 로 설계사에게 연락을
   /// 요청한 시각 (실제 연락 발생 시각이 아님 — 요청 트리거 시각).
