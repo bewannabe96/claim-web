@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { getPartnerCardsByIds } from "@/features/partners/queries";
-import type { PartnerCard } from "@/features/partners/schema";
 import { submitStep2 } from "@/features/plan-requests/actions";
+import { pickAssignedPartners } from "@/features/plan-requests/auto-assignment";
 import { getRequestById } from "@/features/plan-requests/queries";
 import { getSettings } from "@/server/settings";
 
@@ -45,11 +45,11 @@ import { getSettings } from "@/server/settings";
  *    D. 파일 하단 [원본] coverageBrief / formatBudget 헬퍼
  *
  * 2. [임시] 표시 영역 제거:
- *    - 상단 PartnerCard / submitStep2 import
+ *    - 상단 submitStep2 / pickAssignedPartners import (auto-assignment.ts 모듈 자체는
+ *      챗봇 변형 v4 의 actions.autoSelectAndAdvance 가 사용하므로 그대로 유지)
  *    - 현재 metadata ("설계사 배정 중")
  *    - CandidatesPage 함수 안 pickAssignedPartners(...) + FormData + submitStep2
  *      직접 호출 + console.error fallback + notFound() 한 덩어리
- *    - 파일 하단 [임시] 자동배정 헬퍼 블록 (pickAssignedPartners / hashSeed)
  *
  * 3. 검증:
  *    - `pnpm tsc --noEmit` 0 errors / `pnpm lint` clean
@@ -128,37 +128,12 @@ export default async function CandidatesPage({
 }
 
 /* ============================================================
- * [임시] 자동배정 헬퍼 — 선택 단계 frontend skip 용. 롤백 시 이 블록 전체 제거.
+ * [임시] 자동배정 헬퍼 — features/plan-requests/auto-assignment.ts 로 추출됨.
+ *   이전엔 이 파일 안에 private 으로 정의돼 있었으나, 챗봇 변형 v4 의
+ *   autoSelectAndAdvance 액션이 동일 결정성을 공유해야 해서 모듈 승격.
+ *   롤백 시에도 import 라인만 제거하면 되며, auto-assignment.ts 는 다른
+ *   사용처(actions.ts)가 있으므로 모듈 자체는 유지.
  * ============================================================ */
-
-/**
- * 후보 배열에서 최대 count 명을 seed 기준으로 결정적 추출 (자동배정).
- *
- * 각 후보를 (seed + 후보 id) 해시값으로 정렬해 앞 count 개를 취한다. 같은
- * seed(요청서 id)면 새로고침해도 항상 같은 결과 — 자동배정이 고정돼 보이면서
- * 요청서마다는 다른 조합이 나온다. (무작위가 아니라 seed 에 대해 결정적.)
- */
-function pickAssignedPartners(
-  items: PartnerCard[],
-  count: number,
-  seed: string,
-): PartnerCard[] {
-  return [...items]
-    .map((item) => ({ item, key: hashSeed(seed + item.id) }))
-    .sort((a, b) => a.key - b.key)
-    .slice(0, count)
-    .map((entry) => entry.item);
-}
-
-/** 문자열 → 32bit 부호없는 해시 (FNV-1a). pickAssignedPartners 의 정렬 키. */
-function hashSeed(str: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
 
 /* ============================================================
  * [원본] 롤백 시 복원 — CandidatesSelector subtitle 빌드용 헬퍼.

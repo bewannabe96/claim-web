@@ -6,7 +6,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { emitAdminNotification } from "@/features/notifications/emit";
-import { findAssignmentCandidates } from "@/features/partners/queries";
+import {
+  findAssignmentCandidates,
+  getPartnerCardsByIds,
+} from "@/features/partners/queries";
 import { getPriceForBudget } from "@/features/plan-request-pricing/queries";
 import { newId, newToken } from "@/lib/id";
 import { isAligoTestMode, sendAlimtalk, sendOtpSms } from "@/server/aligo";
@@ -15,9 +18,15 @@ import { prisma } from "@/server/db/prisma";
 import { getClientIp } from "@/server/get-client-ip";
 import { buildNewAssignmentAlimtalk } from "@/server/kakao-templates";
 import { getRedis } from "@/server/redis";
+import {
+  isAllowedExternalProposalContentType,
+  isExternalProposalKey,
+  presignExternalProposalUpload,
+} from "@/server/s3";
 import { getSettings } from "@/server/settings";
 
-import { hasActiveRequestForPhone } from "./queries";
+import { pickAssignedPartners } from "./auto-assignment";
+import { getRequestById, hasActiveRequestForPhone } from "./queries";
 import {
   notifyPartnersOfDeadlineExtension,
   sendAnalysisCompletedNotification,
@@ -72,17 +81,33 @@ export async function submitStep1(
     };
   }
 
+  // 외부 설계안 키 배열 — 챗봇 v4 만 전송. 다른 진입점은 누락 → default [].
+  // formData.getAll 은 누락 시 [] 반환이라 zod default 와 정합.
+  const externalProposalKeys = formData
+    .getAll("externalProposalKeys")
+    .filter((v): v is string => typeof v === "string");
+
   const parsed = Step1Schema.safeParse({
     occupation: formData.get("occupation"),
     coverage,
     monthlyBudgetMin: formData.get("monthlyBudgetMin"),
     monthlyBudgetMax: formData.get("monthlyBudgetMax"),
     medicalHistory,
+    externalProposalKeys,
     additionalNotes: formData.get("additionalNotes") || undefined,
   });
 
   if (!parsed.success) {
     return { ok: false, errors: parsed.error.flatten().fieldErrors };
+  }
+
+  // 키 형식 검증 — forgery 차단 (zod 는 string 길이만 확인, prefix 패턴은 별도).
+  // 한 개라도 패턴 어긋나면 전체 거부 — 챗봇이 정상 발급한 키는 항상 통과.
+  if (!parsed.data.externalProposalKeys.every(isExternalProposalKey)) {
+    return {
+      ok: false,
+      errors: { externalProposalKeys: ["올바르지 않은 첨부 파일이 포함되어 있어요."] },
+    };
   }
 
   // 요청서 가격 snapshot — admin 이 이후 tier 가격/구성을 바꿔도 이 요청에는 영향 X.
@@ -111,6 +136,7 @@ export async function submitStep1(
         monthlyBudgetMax: parsed.data.monthlyBudgetMax,
         coverage: parsed.data.coverage,
         additionalNotes: parsed.data.additionalNotes ?? null,
+        externalProposalKeys: parsed.data.externalProposalKeys,
         status: "selecting",
         price,
       },
@@ -183,6 +209,49 @@ function parseJsonField(raw: FormDataEntryValue | null): unknown | "INVALID" {
 }
 
 /* ============================================================
+ * 외부 설계안 PDF — 챗봇 변형 v4 Q4_8 전용 presign action
+ * ============================================================
+ *
+ * 가입자가 다른 곳에서 받아온 PDF 를 챗봇 안에서 첨부할 때 사용. 호출 → S3
+ * 키 + presigned PUT URL 받음 → 브라우저가 그 URL 로 PDF 직접 PUT → 업로드된
+ * 키만 submitStep1 의 externalProposalKeys 폼 필드로 전달.
+ *
+ * 비인증 라우트 (랜딩 챗봇) 에서 호출하므로 세션 검증 없음. forgery 보호는
+ * 키 자체가 nanoid 라 추측 불가능 + submit 단계 prefix 패턴 검증이 책임.
+ * 키 발급 빈도 abuse 방지는 별도 레이트리밋 도입 시점에 (현재는 미적용).
+ */
+
+export type ExternalProposalPresignResult =
+  | { ok: true; url: string; s3Key: string }
+  | { ok: false; message: string };
+
+/**
+ * @param contentType — 클라이언트가 업로드할 파일의 MIME (file.type). 허용
+ *   화이트리스트 (PDF + 이미지 5종) 통과 후 presign — presigned URL 의
+ *   ContentType 서명에 그대로 박혀 클라가 다른 타입 PUT 시 signature mismatch.
+ */
+export async function presignExternalProposal(
+  contentType: string,
+): Promise<ExternalProposalPresignResult> {
+  if (!isAllowedExternalProposalContentType(contentType)) {
+    return {
+      ok: false,
+      message: "PDF 또는 사진 파일만 첨부할 수 있어요.",
+    };
+  }
+  try {
+    const { url, s3Key } = await presignExternalProposalUpload(contentType);
+    return { ok: true, url, s3Key };
+  } catch (err) {
+    console.error("[presignExternalProposal] failed", err);
+    return {
+      ok: false,
+      message: "파일 업로드 준비에 실패했어요. 잠시 후 다시 시도해주세요.",
+    };
+  }
+}
+
+/* ============================================================
  * Step 2 — 후보 선택
  * ============================================================ */
 
@@ -209,18 +278,48 @@ export async function submitStep2(
     };
   }
 
-  // 요청 상태 + 후보 유효성 확인
+  const persist = await persistStep2Selection(requestId, parsed.data.partnerIds);
+  if (!persist.ok) {
+    return {
+      ok: false,
+      errors: {
+        _form: [
+          persist.reason === "not_selecting"
+            ? "요청을 찾을 수 없습니다."
+            : "잘못된 설계사 선택입니다.",
+        ],
+      },
+    };
+  }
+
+  redirect(`/plan-request/${requestId}/confirm`);
+}
+
+/**
+ * Step2 의 트랜잭션 부분 — 후보 유효성 확인 + selected 토글 + status 전환.
+ *
+ * submitStep2 (URL 기반 선택 흐름) 와 autoSelectAndAdvance (챗봇 변형 v4 의
+ * 백그라운드 자동 배정) 두 진입점이 공유. selectLimit 가드는 호출자 책임 —
+ * submitStep2 는 zod + selectLimit 직접 검증, autoSelectAndAdvance 는
+ * pickAssignedPartners 가 slice(0, selectLimit) 로 보장.
+ */
+async function persistStep2Selection(
+  requestId: string,
+  partnerIds: string[],
+): Promise<
+  | { ok: true }
+  | { ok: false; reason: "not_selecting" | "invalid_candidates" }
+> {
   const req = await prisma.planRequest.findUnique({
     where: { id: requestId },
     include: { candidates: { select: { partnerId: true } } },
   });
   if (!req || req.status !== "selecting") {
-    return { ok: false, errors: { _form: ["요청을 찾을 수 없습니다."] } };
+    return { ok: false, reason: "not_selecting" };
   }
   const candidateIds = new Set(req.candidates.map((c) => c.partnerId));
-  const allValid = parsed.data.partnerIds.every((id) => candidateIds.has(id));
-  if (!allValid) {
-    return { ok: false, errors: { _form: ["잘못된 설계사 선택입니다."] } };
+  if (!partnerIds.every((id) => candidateIds.has(id))) {
+    return { ok: false, reason: "invalid_candidates" };
   }
 
   // selected 갱신 + status 전환 — 트랜잭션.
@@ -233,7 +332,7 @@ export async function submitStep2(
       data: { selected: false },
     }),
     prisma.planRequestAssignmentCandidate.updateMany({
-      where: { requestId, partnerId: { in: parsed.data.partnerIds } },
+      where: { requestId, partnerId: { in: partnerIds } },
       data: { selected: true },
     }),
     prisma.planRequest.update({
@@ -242,7 +341,61 @@ export async function submitStep2(
     }),
   ]);
 
-  redirect(`/plan-request/${requestId}/confirm`);
+  return { ok: true };
+}
+
+/* ============================================================
+ * Step 2 자동 배정 — 챗봇 변형 v4 전용
+ * ============================================================
+ *
+ * 사용자에게 후보 선택 단계 자체를 노출하지 않는 챗봇 흐름의 백그라운드 진입점.
+ * candidates URL ([src/app/(marketing)/plan-request/[id]/candidates/page.tsx]) 가
+ * 하는 일과 동일한 결정성을 가지지만 redirect 없이 ok 만 반환 — 챗봇은 동일
+ * 화면에 머물러야 하므로 navigation 발생 X.
+ *
+ * 정책: 후보 풀에서 selectLimit 명을 requestId 기준 FNV-1a 해시로 결정적 추출
+ * (`pickAssignedPartners`). 같은 requestId 면 호출 반복해도 같은 조합 — candidates
+ * URL 의 자동 skip 로직과 정확히 같은 partner 셋이 선택된다.
+ *
+ * 호출 컨텍스트: client (챗봇) 에서 startTransition + server action — 사용자
+ * 매칭 로딩 화면이 노출되는 동안 한 번 호출.
+ * ============================================================ */
+
+export type AutoSelectResult =
+  | { ok: true; selectedCount: number }
+  | {
+      ok: false;
+      reason: "not_found" | "not_selecting" | "no_candidates";
+    };
+
+export async function autoSelectAndAdvance(
+  requestId: string,
+): Promise<AutoSelectResult> {
+  const req = await getRequestById(requestId);
+  if (!req) return { ok: false, reason: "not_found" };
+  if (req.status !== "selecting") return { ok: false, reason: "not_selecting" };
+
+  const candidates = await getPartnerCardsByIds(req.candidatePartnerIds);
+  if (candidates.length === 0) return { ok: false, reason: "no_candidates" };
+
+  const { selectLimit } = await getSettings();
+  const picked = pickAssignedPartners(candidates, selectLimit, requestId);
+
+  const persist = await persistStep2Selection(
+    requestId,
+    picked.map((p) => p.id),
+  );
+  if (!persist.ok) {
+    // not_selecting: race — 다른 진입점이 먼저 confirming 으로 전이. 챗봇 입장에선
+    //   다음 단계로 그대로 진행해도 됨 (요청 자체는 살아있으므로) 이지만 명시적으로
+    //   알려 호출자가 처리.
+    // invalid_candidates: pickAssignedPartners 가 req.candidatePartnerIds 에서 직접
+    //   추출했고 그 사이 candidates row 가 삭제되지 않았다면 발생 불가. 정합성
+    //   문제이므로 not_selecting 으로 폴백 (UI 는 "잠시 후 다시 시도해주세요").
+    return { ok: false, reason: "not_selecting" };
+  }
+
+  return { ok: true, selectedCount: picked.length };
 }
 
 /* ============================================================

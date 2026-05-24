@@ -129,6 +129,16 @@ export const Step1Schema = z
     monthlyBudgetMax: z.coerce.number().int().min(0),
     /** 최대 20건 — 빈 배열 허용 (병력 없음) */
     medicalHistory: z.array(MedicalHistoryEntrySchema).max(20),
+    /**
+     * 외부 설계안 PDF 의 S3 키 배열 (챗봇 변형 v4 Q4_8 에서 수집). 최대 5건.
+     * 각 키는 `externals/{nanoid}.pdf` 패턴 — server action 이 추가로 prefix
+     * 검증 (`isExternalProposalKey`) 후 plan_request 에 저장. 다른 진입점
+     * (기존 /plan-request/new wizard 등) 은 이 필드를 보내지 않으므로 default [].
+     */
+    externalProposalKeys: z
+      .array(z.string().min(1).max(200))
+      .max(5, "외부 설계안은 최대 5건까지 첨부할 수 있어요.")
+      .default([]),
     /** 그외 요청사항 — 자유 텍스트, 선택 */
     additionalNotes: z
       .string()

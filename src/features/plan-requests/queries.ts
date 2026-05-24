@@ -121,6 +121,7 @@ function mapPlanRequest(row: PlanRequestRow): PlanRequest {
         outpatientVisits: m.outpatientVisits,
         hadSurgery: m.hadSurgery,
       })),
+      externalProposalKeys: row.externalProposalKeys,
       additionalNotes: row.additionalNotes ?? undefined,
     },
     step3:
