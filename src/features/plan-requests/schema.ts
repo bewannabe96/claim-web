@@ -376,10 +376,16 @@ export const PRE_SUBMISSION_STATUSES: readonly PlanRequestStatus[] = [
 /**
  * 저장된 step3 — Step3Input 의 입력 폼 필드 중 RRN 두 개는 derive 후 폐기되므로
  * 저장 형태에서는 빠짐. 대신 birthDate (ISO date) 가 채워짐.
+ *
+ * `phone` 은 DB 에는 항상 있지만 타입에서는 optional — 서버 컴포넌트가
+ * 정보 제공 동의(consentThirdParty=on) 여부에 따라 client 컴포넌트로 넘어가는
+ * 단계에서 잘라낼 수 있도록 한다. mapPlanRequest 직후 / admin 등 서버 컨텍스트
+ * 에서는 step3 가 존재하면 phone 도 채워져 있다.
  */
-export type Step3Stored = Omit<Step3Input, "rrnFront" | "rrnBack1"> & {
+export type Step3Stored = Omit<Step3Input, "rrnFront" | "rrnBack1" | "phone"> & {
   /** YYYY-MM-DD — RRN front6+back1 에서 derive 후 저장됨. */
   birthDate?: string;
+  phone?: string;
 };
 
 export type PlanRequest = {

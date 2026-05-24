@@ -5,6 +5,7 @@ import { AlertIcon, StatusScreen } from "@/components/status-screen";
 import { getPartnerById } from "@/features/partners/queries";
 import { getAssignmentByToken } from "@/features/plan-proposals/queries";
 import { getRequestById } from "@/features/plan-requests/queries";
+import type { PlanRequest } from "@/features/plan-requests/schema";
 import { nowMs } from "@/lib/wall-clock";
 
 import { PlanProposalForm } from "./_components/proposal-form";
@@ -75,12 +76,25 @@ export default async function PartnerAssignmentPage({
     );
   }
 
+  // 가입자가 "선택한 설계사에게 정보 제공" 동의를 안 했으면 phone 자체를 client
+  // bundle 에 안 싣는다. 동의 상태 확인은 서버 컨텍스트에서만 일어나고, 미동의 시
+  // step3.phone 을 제거한 사본을 client 컴포넌트로 넘긴다.
+  const requestForPartner: PlanRequest =
+    request.step3?.consentThirdParty === "on"
+      ? request
+      : {
+          ...request,
+          step3: request.step3
+            ? { ...request.step3, phone: undefined }
+            : undefined,
+        };
+
   return (
     <PlanProposalForm
       token={token}
       partnerName={partner.user.name}
       remainingMs={deadlineMs !== null ? deadlineMs - now : null}
-      request={request}
+      request={requestForPartner}
     />
   );
 }
