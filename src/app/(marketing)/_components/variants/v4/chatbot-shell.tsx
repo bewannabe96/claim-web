@@ -38,7 +38,18 @@ import { PromptSlot } from "./prompts/prompt-slot";
  * 없고, advance() 한 reducer 로 전체 흐름을 일관되게 관리. 슬롯의 입력 위젯
  * 들은 `prompts/` 하위에 분리해 PromptSlot 이 phase 별로 dispatch.
  */
-export function ChatbotShell({ priceTiers }: { priceTiers: PriceTier[] }) {
+export function ChatbotShell({
+  priceTiers,
+  googleAdsConversionTarget,
+}: {
+  priceTiers: PriceTier[];
+  /**
+   * Q1 (첫 응답) 클릭 시 Google Ads conversion `send_to` 대상.
+   * `AW-XXXXXXXXXX/<label>` 형식 — env 미설정 시 undefined → 발화 스킵.
+   * `(marketing)/_lib/ads-conversion.ts` 의 `fireLandingConversion` 이 사용.
+   */
+  googleAdsConversionTarget: string | undefined;
+}) {
   const [state, setState] = useState<ChatState>(() => initialChatState());
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [, startTransition] = useTransition();
@@ -66,9 +77,13 @@ export function ChatbotShell({ priceTiers }: { priceTiers: PriceTier[] }) {
 
   /* ─── 백그라운드 처리 트리거 ───────────────────────────────
    * Phase 1 → PROC1 (submitStep1 + autoSelectAndAdvance) → Phase 3
-   * Phase 3 끝 → PROC3 (finalizeRequest) → dispatched 페이지
+   * Phase 3 끝 → PROC3 (finalizeRequest) → DONE (같은 화면 유지)
    * 둘 다 phase 전이 즉시 실행. effect 안에서 startTransition 으로 server
    * action 호출 → 응답에 따라 다음 phase 로 setState.
+   *
+   * PROC3 는 `skipRedirect: true` 로 호출 → server action 의 redirect 를
+   * 건너뛰고 client 가 DONE 으로 전이해 완료 메시지 + "AI 분석기능 자세히 보기"
+   * 버튼을 슬롯에 노출. 기존 dispatched 페이지로의 navigate 는 없음.
    */
   useEffect(() => {
     if (state.phase === "PROC1") {
@@ -143,6 +158,7 @@ export function ChatbotShell({ priceTiers }: { priceTiers: PriceTier[] }) {
           state={state}
           setState={setState}
           priceTiers={priceTiers}
+          googleAdsConversionTarget={googleAdsConversionTarget}
         />
       </div>
     </main>
@@ -172,7 +188,7 @@ export type Phase =
   | "Q9" /* OTP code */
   | "Q10" /* consent (messaging) */
   | "PROC3" /* finalizeRequest */
-  | "DONE" /* redirected to /dispatched */
+  | "DONE" /* finalize 완료 — 같은 화면에 안내 메시지 + AI 분석 데모 링크 */
   | "ERROR"; /* 회복 불가 에러 - 재시작 안내 */
 
 export type LogEntry =
@@ -352,10 +368,10 @@ function runPhase1Submission(
  * consent: consentThirdParty="off" (챗봇은 받지 않음) / consentMessaging="on"
  * (Q10 chip 선택 시에만 도달).
  *
- * **navigation**: finalizeRequest 가 server action 안에서
- * `redirect("/plan-request/{id}/dispatched")` 를 throw → Next.js 가 client
- * navigation 자동 트리거. 따라서 여기서는 router 객체를 받지 않고 server action
- * 의 redirect 에 위임.
+ * **navigation 없음** — `skipRedirect: true` 옵션으로 호출하면 server action 이
+ * redirect 대신 `{ ok: true }` 를 반환. 같은 챗 화면에서 완료 안내 봇 메시지를
+ * push 하고 DONE phase 로 전이 → 슬롯이 "AI 분석기능 자세히 보기" 버튼 노출
+ * ([prompts/prompt-slot.tsx](./prompts/prompt-slot.tsx) 의 DONE case).
  */
 function runPhase3Finalize(
   state: ChatState,
@@ -393,11 +409,40 @@ function runPhase3Finalize(
     fd.append("consentThirdParty", "off");
     fd.append("consentMessaging", "on");
 
-    const result = await finalizeRequest(state.requestId!, undefined, fd);
+    const result = await finalizeRequest(state.requestId!, undefined, fd, {
+      skipRedirect: true,
+    });
 
-    // finalizeRequest 성공 시 redirect throw → 여기 도달 안 함. result 가 있으면 실패.
+    // skipRedirect: true 이므로 성공 시 `{ ok: true }` 반환. 같은 화면 유지 +
+    // 완료 메시지 push + AI 분석기능 자세히 보기 버튼 노출 (DONE phase 의 slot).
+    if (result?.ok) {
+      setState((s) => ({
+        ...s,
+        phase: "DONE",
+        log: [
+          ...s.log,
+          { role: "bot", text: "신청이 완료됐어요 🎉" },
+          {
+            role: "bot",
+            text: "여러 설계사들이 각각\n제안서를 준비하고 있어요.\n도착하면 카카오톡 알림으로 알려드릴게요.",
+          },
+          {
+            role: "bot",
+            text: "도착한 제안서는 저희 AI가\n보장 / 보험료 / 환급 기준으로 비교해\n결과를 보내드릴 거예요.\nAI 분석이 어떻게 진행되는지\n아래에서 미리 확인해보세요 👇",
+          },
+        ],
+      }));
+      return;
+    }
+
+    // skipRedirect: true 흐름에선 undefined 가 정상 path 가 아님 (성공 = ok:true,
+    // 실패 = errors). undefined 면 unexpected — ERROR 로 안전하게 분기.
     if (!result) {
-      setState((s) => ({ ...s, phase: "DONE" }));
+      setState((s) => ({
+        ...s,
+        phase: "ERROR",
+        errorMessage: "확인에 실패했어요.\n잠시 후 다시 시도해주세요.",
+      }));
       return;
     }
 

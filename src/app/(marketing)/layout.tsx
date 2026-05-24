@@ -9,8 +9,10 @@ import { PosthogBootstrap } from "@/components/analytics/posthog-bootstrap";
  * 광고 픽셀은 이 레이아웃에서만 주입 — admin/partner 내부 영역에는 광고 추적
  * 불필요. ID 는 env 로 주입 (prod/staging 만 설정). 미설정 환경 (dev) 에선
  * <Script> 자체가 렌더되지 않아 외부 픽셀 호출 0건. PageView 는 베이스
- * 스크립트가 로드 시 자동 firing. CTA 클릭 conversion 은
- * _components/landing-cta-button.tsx 가 책임.
+ * 스크립트가 로드 시 자동 firing. 클릭 conversion 은:
+ *   - v1 (`/demo`): `_components/landing-cta-button.tsx` (Meta `Lead`)
+ *   - v4 (현재 단독 운영, 챗봇): Q1 첫 응답 클릭 시
+ *     `_lib/ads-conversion.ts` 의 `fireLandingConversion` (Meta `SubmitApplication`)
  *
  * 행동 분석 (PostHog) 은 `<PosthogBootstrap />` 가 책임 — 도메인 코드와 분리된
  * 격리 경계는 [src/components/analytics/CLAUDE.md](src/components/analytics/CLAUDE.md) 참조.

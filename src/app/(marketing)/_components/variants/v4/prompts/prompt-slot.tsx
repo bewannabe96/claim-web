@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import {
 } from "@/features/plan-requests/schema";
 import type { Gender } from "@/types";
 
+import { fireLandingConversion } from "../../../../_lib/ads-conversion";
 import {
   appendUserAnswer,
   appendBotMessages,
@@ -43,10 +45,16 @@ export function PromptSlot({
   state,
   setState,
   priceTiers,
+  googleAdsConversionTarget,
 }: {
   state: ChatState;
   setState: React.Dispatch<React.SetStateAction<ChatState>>;
   priceTiers: PriceTier[];
+  /**
+   * Q1 의 두 옵션 (첫 인터랙션) 클릭 시 광고 conversion firing 에 사용.
+   * v4 챗봇 흐름엔 별도 CTA 가 없어 첫 응답을 conversion 지점으로 본다.
+   */
+  googleAdsConversionTarget: string | undefined;
 }) {
   const [otpPending, startOtpTransition] = useTransition();
 
@@ -54,13 +62,18 @@ export function PromptSlot({
     /* ─── Phase 1: 요청서 본문 ─────────────────────────────── */
 
     case "Q1":
+      // Q1 의 두 옵션은 챗봇 funnel 의 "첫 버튼" — 어느 쪽을 눌러도 사용자가
+      // 적극 의사로 흐름에 진입한 시점이라 광고 conversion 으로 마킹한다.
+      // setState 직전 동기 firing — soft nav 없이 같은 페이지에서 상태만 바뀌므로
+      // 이벤트 손실 없음. Q1 phase 는 답변 후 사라지므로 세션 중 재발화 X.
       return (
         <ChoiceCards
           options={[
             {
               label: "종합적으로 알아보고 있어요",
               value: "broad",
-              onSelect: () =>
+              onSelect: () => {
+                fireLandingConversion(googleAdsConversionTarget);
                 setState((s) =>
                   appendBotMessages(
                     appendUserAnswer(s, "종합적으로 알아보고 있어요", {
@@ -69,12 +82,14 @@ export function PromptSlot({
                     }),
                     ["월 보험료는 어느 정도 생각하세요?"],
                   ),
-                ),
+                );
+              },
             },
             {
               label: "대비하고 싶은 게 따로 있어요",
               value: "focused",
-              onSelect: () =>
+              onSelect: () => {
+                fireLandingConversion(googleAdsConversionTarget);
                 setState((s) =>
                   appendBotMessages(
                     appendUserAnswer(s, "대비하고 싶은 게 따로 있어요", {
@@ -83,7 +98,8 @@ export function PromptSlot({
                     }),
                     ["어떤 걸 대비하고 싶으세요?\n여러 개 선택할 수 있어요"],
                   ),
-                ),
+                );
+              },
             },
           ]}
         />
@@ -461,10 +477,25 @@ export function PromptSlot({
         />
       );
 
-    /* ─── PROC3 / DONE: chatbot-shell 이 처리. 슬롯 비움. ────────── */
+    /* ─── PROC3: chatbot-shell 이 server action 호출 중. 슬롯 비움. ─── */
     case "PROC3":
-    case "DONE":
       return null;
+
+    /* ─── DONE: 완료 안내 후 AI 분석 데모 라우트(/demo) 로 보내는 CTA. ───
+     * navigation 없는 챗봇 흐름이 끝나는 지점. 사용자는 입력 슬롯 자리에
+     * "AI 분석기능 자세히 보기" 버튼을 보고 클릭 시 v1 의 인터랙티브 스크롤
+     * 데모로 이동한다 (요청→제안→AI 비교 흐름). chatbot-shell 이 직전에
+     * push 한 bot 메시지가 버튼 위에 노출돼 흐름이 연결됨. */
+    case "DONE":
+      return (
+        <Button
+          render={<Link href="/demo" />}
+          nativeButton={false}
+          className="h-14 w-full rounded-full text-sm font-medium"
+        >
+          AI 분석기능 자세히 보기
+        </Button>
+      );
 
     /* ─── ERROR: 재시작 안내 ────────────────────────────────── */
     case "ERROR":

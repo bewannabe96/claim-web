@@ -17,21 +17,21 @@ import { ChatbotShell } from "./chatbot-shell";
  *     처리된다" 는 감지 없음
  *
  * 부모(server component) 가 boundary value 두 가지만 prefetch 해서 client 에
- * 내림: price tiers (보험료 chip), googleAdsConversionTarget (현재 v4 는
- * 자체 CTA 가 없어 사용 X — finalize 후 dispatched 페이지가 발화 책임).
- *
- * **공유 props 시그니처** — `{ googleAdsConversionTarget }` 는 LandingVariant
- * dispatcher 가 모든 변형에 동일하게 내려주므로 받기만 하고 v4 가 자체적으로
- * 사용하진 않는다.
+ * 내림: price tiers (보험료 chip), googleAdsConversionTarget (Q1 의 첫 응답
+ * 클릭이 광고 conversion firing — 챗봇은 자체 "전환 CTA" 가 없어 첫 인터랙션을
+ * conversion 지점으로 본다).
  */
 export async function VariantV4({
   googleAdsConversionTarget,
 }: {
   googleAdsConversionTarget: string | undefined;
 }) {
-  void googleAdsConversionTarget; // 현재 v4 는 자체 CTA 없음. dispatched 페이지가 conversion 발화.
-
   const priceTiers = await listPriceTiers();
 
-  return <ChatbotShell priceTiers={priceTiers} />;
+  return (
+    <ChatbotShell
+      priceTiers={priceTiers}
+      googleAdsConversionTarget={googleAdsConversionTarget}
+    />
+  );
 }
