@@ -60,10 +60,17 @@ export function SurrenderLossChart({
 
   // x축 도메인 — 제안서마다 만기(maturity_age)가 달라 곡선 길이가 제각각이다.
   // 한 시리즈만 보고 도메인을 잡으면 더 긴 제안서의 곡선이 x축을 넘어 그려진다.
-  // 모든 시리즈의 합집합으로 잡아 전부 담는다.
+  // maxAge 는 모든 제안서의 maturityAge 중 최댓값으로 잡아 가장 긴 만기까지 축을
+  // 늘린다. 분석 전 빈 카드는 fallback maturityAge=100 이라 축이 부풀어 보이니
+  // surrenderLoss 가 있는(= 실제 분석된) 제안서만 본다.
+  // minAge 는 실제 그려지는 데이터 점 중 가장 작은 나이 (보통 entryAge + 1).
+  const analyzedMaturityAges = proposals
+    .filter((p) => p.surrenderLoss.length > 0)
+    .map((p) => p.maturityAge);
   const domainAges = series.flatMap((s) => s.points).map((p) => p.age);
   const minAge = domainAges.length > 0 ? Math.min(...domainAges) : entryAge + 1;
-  const maxAge = domainAges.length > 0 ? Math.max(...domainAges) : 100;
+  const maxAge =
+    analyzedMaturityAges.length > 0 ? Math.max(...analyzedMaturityAges) : 100;
 
   const W = 320;
   const H = 220;
