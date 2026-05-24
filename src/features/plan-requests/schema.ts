@@ -307,6 +307,72 @@ export type FinalizeState =
   | undefined;
 
 /* ============================================================
+ * 어드민 — 가입자 대신 요청서 작성 (proxy)
+ * ============================================================
+ *
+ * 관리자가 가입자에게 정보를 받아 직접 입력해 즉시 dispatched 상태로 송부.
+ * 본인인증 (OTP) 은 생략 — 관리자가 attest 하는 모델. 검증 통과 시 한 트랜잭션에
+ * plan_request (status='dispatched') + medical_history + candidates + assignments 까지
+ * 생성하고, 가입자 흐름의 finalize 와 동일하게 partner 알림톡을 발송한다.
+ *
+ * Step1Schema (요청서 본문) + Step3 본인정보(이름 / RRN / 휴대폰) + 동의 두 필드를
+ * 합친 형태. consentMessaging 은 가입자 흐름과 동일하게 literal "on" 강제 — 알림톡
+ * 발송 채널이 살아있어야 결과 전달 가능. consentThirdParty 는 enum on/off (관리자
+ * 토글) — 보험사 phone 노출 게이트 (`partner/plan-request-assignments/[token]`) 가
+ * 이 값에 따라 분기됨.
+ *
+ * Step1Schema 와 같은 cross-field refine (budgetMax >= budgetMin) 을 유지하기 위해
+ * Step1Schema 의 base z.object 를 .merge 하지 않고 별도 z.object 로 작성 후 refine.
+ * 새 필드가 Step1Schema 에 추가되면 여기도 같이 갱신할 것. */
+
+export const AdminCreatePlanRequestSchema = z
+  .object({
+    occupation: z
+      .string()
+      .min(1, "직업을 입력해주세요.")
+      .max(50, "직업은 50자 이내로 입력해주세요."),
+    coverage: CoverageRequestSchema,
+    monthlyBudgetMin: z.coerce.number().int().min(0),
+    monthlyBudgetMax: z.coerce.number().int().min(0),
+    medicalHistory: z.array(MedicalHistoryEntrySchema).max(20),
+    additionalNotes: z
+      .string()
+      .max(1000, "추가 요청사항은 1000자 이내로 입력해주세요.")
+      .optional(),
+    name: z
+      .string()
+      .min(1, "이름을 입력해주세요.")
+      .max(20, "이름은 20자 이내로 입력해주세요."),
+    rrnFront: RRN_FRONT,
+    rrnBack1: RRN_BACK1,
+    phone: PHONE,
+    consentThirdParty: z.enum(["on", "off"]),
+    consentMessaging: z.literal("on", { message: "알림톡 수신 동의가 필요합니다." }),
+  })
+  .refine((v) => v.monthlyBudgetMax >= v.monthlyBudgetMin, {
+    message: "최대 보험료는 최소 보험료보다 커야 합니다.",
+    path: ["monthlyBudgetMax"],
+  })
+  .refine((v) => deriveRrn(v.rrnFront, v.rrnBack1) !== null, {
+    message: "올바른 생년월일이 아닙니다.",
+    path: ["rrnFront"],
+  });
+
+export type AdminCreatePlanRequestInput = z.infer<
+  typeof AdminCreatePlanRequestSchema
+>;
+
+export type AdminCreatePlanRequestState =
+  | { ok: true; requestId: string }
+  | {
+      ok?: false;
+      errors?: Partial<
+        Record<keyof AdminCreatePlanRequestInput | "_form", string[]>
+      >;
+    }
+  | undefined;
+
+/* ============================================================
  * 어드민 — 제출 마감 연장
  * ============================================================
  *

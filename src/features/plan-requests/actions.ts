@@ -32,6 +32,7 @@ import {
   sendAnalysisCompletedNotification,
 } from "./state-transition";
 import {
+  AdminCreatePlanRequestSchema,
   CoverageRequestSchema,
   ExtendDeadlineSchema,
   OtpSchema,
@@ -41,6 +42,7 @@ import {
   Step3Schema,
   coverageRequestToText,
   deriveRrn,
+  type AdminCreatePlanRequestState,
   type ExtendDeadlineResult,
   type FinalizeState,
   type MedicalHistoryEntry,
@@ -772,6 +774,237 @@ function formatBudgetRange(min: number, max: number): string {
   const fmt = (n: number) =>
     n >= 10000 ? `${Math.floor(n / 10000)}만` : `${n.toLocaleString("ko-KR")}원`;
   return `월 ${fmt(min)}~${fmt(max)}`;
+}
+
+/* ============================================================
+ * 어드민 — 가입자 대신 요청서 작성 (proxy create)
+ * ============================================================
+ *
+ * 관리자가 가입자에게 정보를 받아 직접 입력 → 본인인증(OTP) 생략 + 후보 자동 배정 +
+ * 즉시 dispatched 상태로 송부. 가입자 흐름의 (submitStep1 → 자동 candidates → finalize)
+ * 를 한 트랜잭션으로 합친 형태.
+ *
+ * 후보 산출은 가입자 흐름과 동일한 findAssignmentCandidates 를 호출하되 limit 을
+ * settings.selectLimit 로 둠 — 어드민은 카드에서 고르는 단계가 없으므로 candidateCount
+ * 만큼 후보를 만들 의미가 없다. 산출된 partner 들이 곧 picked 가 되어 selected=true
+ * 로 candidate row + assignment row 가 동시에 INSERT 됨.
+ *
+ * 알림 발송:
+ *   - 설계사 알림톡 (UI_0735): 가입자 finalize 와 동일하게 notifyPartnersOfNewAssignment
+ *   - 가입자 결과 알림톡: 미발송 — 분석 완료 후 어드민이 상세 페이지에서 수동 트리거
+ *     (sendRequestResultNotification) 하는 기존 정책과 동일
+ *   - 어드민 벨 알림: "어드민이 대신 작성" 카피로 emit — 자기 자신이 트리거했어도
+ *     audit/타임라인 일관성 유지
+ *
+ * 비교 with 가입자 finalize:
+ *   - OTP / Redis 키 처리 없음 (관리자 attest)
+ *   - candidate row 의 selected=true 가 모든 행에 적용 (선택 단계 없음)
+ *   - exposureCount + selectedCount 가 같은 partner set 에 동시 increment
+ *   - 가입자 결과 알림톡 trigger 없음 (위와 동일)
+ * ============================================================ */
+
+export async function createPlanRequestByAdmin(
+  _prev: AdminCreatePlanRequestState,
+  formData: FormData,
+): Promise<AdminCreatePlanRequestState> {
+  await requireAdminSession();
+
+  // 1) JSON 구조 필드 파싱 (병력 + coverage) — submitStep1 과 동일 정책.
+  const medicalHistoryRaw = formData.get("medicalHistory");
+  const medicalHistory = parseMedicalHistory(medicalHistoryRaw);
+  if (medicalHistory === "INVALID") {
+    return {
+      ok: false,
+      errors: { medicalHistory: ["병력 데이터가 올바르지 않습니다."] },
+    };
+  }
+  const coverageRaw = formData.get("coverage");
+  const coverage = parseJsonField(coverageRaw);
+  if (coverage === "INVALID") {
+    return {
+      ok: false,
+      errors: { coverage: ["보장 요청 데이터가 올바르지 않습니다."] },
+    };
+  }
+
+  // 2) 전체 입력 검증 — Step1 + Step3 필드 결합 + 동의.
+  const parsed = AdminCreatePlanRequestSchema.safeParse({
+    occupation: formData.get("occupation"),
+    coverage,
+    monthlyBudgetMin: formData.get("monthlyBudgetMin"),
+    monthlyBudgetMax: formData.get("monthlyBudgetMax"),
+    medicalHistory,
+    additionalNotes: formData.get("additionalNotes") || undefined,
+    name: formData.get("name"),
+    rrnFront: formData.get("rrnFront"),
+    rrnBack1: formData.get("rrnBack1"),
+    phone: formData.get("phone"),
+    consentThirdParty: formData.get("consentThirdParty"),
+    consentMessaging: formData.get("consentMessaging"),
+  });
+  if (!parsed.success) {
+    return { ok: false, errors: parsed.error.flatten().fieldErrors };
+  }
+
+  // 3) RRN → birthDate + gender. schema refine 이 valid 보장하지만 narrow 위해 재호출.
+  const rrn = deriveRrn(parsed.data.rrnFront, parsed.data.rrnBack1);
+  if (!rrn) {
+    return {
+      ok: false,
+      errors: { rrnFront: ["올바른 생년월일이 아닙니다."] },
+    };
+  }
+
+  // 4) 같은 번호로 진행 중인 요청 차단 — 가입자 흐름과 동일 정책.
+  if (await hasActiveRequestForPhone(parsed.data.phone)) {
+    return {
+      ok: false,
+      errors: { _form: ["같은 번호로 진행 중인 요청이 있습니다."] },
+    };
+  }
+
+  // 5) 가격 snapshot + 후보 산출. limit = selectLimit (선택 단계가 없으므로 candidateCount
+  //    가 아닌 selectLimit). 산출 결과가 곧 배정 대상.
+  const price = await getPriceForBudget(parsed.data.monthlyBudgetMin);
+  const settings = await getSettings();
+  const candidateCards = await findAssignmentCandidates(
+    settings.selectLimit,
+    price,
+  );
+  if (candidateCards.length === 0) {
+    return {
+      ok: false,
+      errors: {
+        _form: [
+          "배정 가능한 설계사가 없어요. 설계사 풀 / 잔액을 확인해주세요.",
+        ],
+      },
+    };
+  }
+
+  // 6) 알림톡 발송용 phone 조회 — PartnerCard 는 phone 미포함이라 별도 lookup.
+  //    선택된 partner ids 기준, name + phone 만.
+  const partnersWithContact = await prisma.partner.findMany({
+    where: { id: { in: candidateCards.map((c) => c.id) } },
+    select: {
+      id: true,
+      user: { select: { name: true, phone: true } },
+    },
+  });
+  const contactById = new Map(
+    partnersWithContact.map((p) => [p.id, p.user]),
+  );
+
+  // 7) 트랜잭션 전 assignment row pre-build → 알림톡 발송에서 동일 token 재사용
+  //    (DB 재조회 회피). finalize 와 동일 패턴.
+  const requestId = newId();
+  const now = new Date();
+  const deadline = new Date(
+    now.getTime() + settings.submissionDeadlineHours * 3600 * 1000,
+  );
+  const assignmentsToCreate = candidateCards.map((c, i) => {
+    const contact = contactById.get(c.id);
+    return {
+      id: newId(),
+      requestId,
+      partnerId: c.id,
+      token: newToken(),
+      status: "pending" as const,
+      createdAt: now,
+      candidateRank: i,
+      partnerName: contact?.name ?? null,
+      partnerPhone: contact?.phone ?? null,
+    };
+  });
+
+  // 8) 한 트랜잭션 — plan_request(dispatched) + medical_history + candidates(all selected=true)
+  //    + assignments + stats (exposure + selected 동시 increment).
+  await prisma.$transaction([
+    prisma.planRequest.create({
+      data: {
+        id: requestId,
+        occupation: parsed.data.occupation,
+        monthlyBudgetMin: parsed.data.monthlyBudgetMin,
+        monthlyBudgetMax: parsed.data.monthlyBudgetMax,
+        coverage: parsed.data.coverage,
+        additionalNotes: parsed.data.additionalNotes ?? null,
+        price,
+        // step3 본인정보
+        name: parsed.data.name,
+        phone: parsed.data.phone,
+        birthDate: rrn.birthDate,
+        gender: rrn.gender,
+        consentThirdParty: parsed.data.consentThirdParty === "on",
+        consentMessaging: true,
+        // 워크플로우 — 즉시 dispatched
+        status: "dispatched",
+        dispatchedAt: now,
+        deadlineAt: deadline,
+        resultToken: newToken(),
+      },
+    }),
+    prisma.planRequestMedicalHistory.createMany({
+      data: parsed.data.medicalHistory.map((h, i) => ({
+        id: newId(),
+        requestId,
+        diagnosis: h.diagnosis,
+        treatmentPeriod: h.treatmentPeriod,
+        treatmentStartDate: new Date(h.treatmentStartDate),
+        hospitalizationDays: h.hospitalizationDays,
+        outpatientVisits: h.outpatientVisits,
+        hadSurgery: h.hadSurgery,
+        position: i,
+      })),
+    }),
+    prisma.planRequestAssignmentCandidate.createMany({
+      data: assignmentsToCreate.map((a) => ({
+        requestId,
+        partnerId: a.partnerId,
+        candidateRank: a.candidateRank,
+        selected: true,
+      })),
+    }),
+    prisma.planRequestAssignment.createMany({
+      data: assignmentsToCreate.map((a) => ({
+        id: a.id,
+        requestId: a.requestId,
+        partnerId: a.partnerId,
+        token: a.token,
+        status: a.status,
+        createdAt: a.createdAt,
+      })),
+    }),
+    // exposureCount + selectedCount 모두 증가 — admin 흐름에선 후보=배정.
+    prisma.partnerAssignmentStats.updateMany({
+      where: { partnerId: { in: candidateCards.map((c) => c.id) } },
+      data: {
+        exposureCount: { increment: 1 },
+        selectedCount: { increment: 1 },
+      },
+    }),
+  ]);
+
+  // 9) 설계사 알림톡 — 가입자 finalize 와 동일 헬퍼. 실패는 swallow.
+  await notifyPartnersOfNewAssignment({
+    customerName: parsed.data.name,
+    monthlyBudgetMin: parsed.data.monthlyBudgetMin,
+    monthlyBudgetMax: parsed.data.monthlyBudgetMax,
+    coverage: parsed.data.coverage,
+    assignments: assignmentsToCreate,
+  });
+
+  // 10) 어드민 벨 알림 — 본인이 트리거했어도 audit 일관성 위해 emit. 카피는 가입자
+  //     자가 작성과 구분되도록 "어드민이 대신 작성" 명시.
+  await emitAdminNotification({
+    type: "plan_request.dispatched",
+    title: "어드민이 대신 작성한 요청이 송부됐어요",
+    body: `${parsed.data.name} 님의 보험 상담 요청을 설계사에게 송부했어요.`,
+    linkPath: `/admin/requests/${requestId}`,
+    entityId: requestId,
+  });
+
+  revalidatePath("/admin/requests");
+  return { ok: true, requestId };
 }
 
 /* ============================================================

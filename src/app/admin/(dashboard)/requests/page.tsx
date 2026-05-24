@@ -52,6 +52,25 @@ function ViewToggle({ showAll }: { showAll: boolean }) {
   );
 }
 
+/**
+ * 헤더 우측 CTA — 보기 토글 + 가입자 대신 요청서 작성 진입.
+ * proxy 요청서 작성은 어드민이 가입자에게 정보를 받아 직접 입력하는 흐름. 본인인증
+ * 생략 + 즉시 dispatched 까지 한 폼에서 완료 ([requests/new/page.tsx]).
+ */
+function HeaderActions({ showAll }: { showAll: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <ViewToggle showAll={showAll} />
+      <Link
+        href="/admin/requests/new"
+        className="inline-flex items-center gap-1 h-8 px-3 rounded-full text-xs font-medium bg-black text-white hover:bg-[#1a1a1a] transition-colors whitespace-nowrap"
+      >
+        + 새 요청서 작성
+      </Link>
+    </div>
+  );
+}
+
 export default async function AdminRequestsPage({
   searchParams,
 }: {
@@ -87,7 +106,7 @@ export default async function AdminRequestsPage({
       <PageHeader
         title="요청 모니터링"
         description={description}
-        action={<ViewToggle showAll={showAll} />}
+        action={<HeaderActions showAll={showAll} />}
       />
 
       {requests.length === 0 ? (

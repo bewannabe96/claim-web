@@ -65,7 +65,10 @@ admin/
 └─ (dashboard)/                  # route group — 모든 인증 영역
    ├─ layout.tsx                 # requireAdminSession + top bar + nav + 로그아웃 form
    ├─ page.tsx                   # 대시보드 홈
-   ├─ requests/...               # 요청 모니터링 (상세 페이지에서 분석 실패/정체도 인라인 재시도)
+   ├─ requests/...               # 요청 모니터링 + 가입자 대신 요청서 작성 (new/)
+   │  ├─ page.tsx                # 모니터링 리스트 + "+ 새 요청서 작성" CTA
+   │  ├─ new/page.tsx            # 가입자 대신 작성 (createPlanRequestByAdmin, OTP 생략 + 즉시 dispatched)
+   │  └─ [id]/page.tsx           # 상세 (분석 실패/정체 인라인 재시도, 결과 알림톡 수동 발송)
    ├─ analysis-failures/page.tsx # 미해결 분석 실패 모니터링 + 재시도
    ├─ partners/...               # 설계사 풀 관리 (가입 초청 발급 + 등록된 partner 편집)
    │  ├─ page.tsx                # 가입 대기 (invitation) + 등록 완료 (partner) 2-섹션 리스트
@@ -111,6 +114,29 @@ partner 는 어드민이 직접 INSERT 하지 않음. 다음 흐름:
 - 초청 정보 수정 (이름/휴대폰/partner 필드)
 - 토큰 재발급 (만료 임박 / token URL 유출 등 — token 회전 + expiresAt 갱신. 부수적으로 linkedAuthId / phoneVerifiedAt 도 NULL 리셋되지만 어차피 다음 진입이 덮어쓰므로 cleanliness 목적)
 - 초청 삭제 (미소비 invitation 만)
+
+### 가입자 대신 요청서 작성 (proxy)
+
+가입자가 직접 작성하기 어려운 경우 (전화 상담 등) 어드민이 정보를 받아 대신 입력해 즉시 설계사에게 송부.
+
+1. `/admin/requests` 에서 "+ 새 요청서 작성" → `/admin/requests/new`
+2. 가입자 식별 (이름/주민번호/휴대폰) + 요청서 본문 (직업/보장/예산/병력/추가요청) + 동의 두 항목을 한 폼에 입력
+3. `createPlanRequestByAdmin` 액션이 단일 트랜잭션으로:
+   - plan_request (status='dispatched' 즉시) + medical_history + candidates(all selected=true) + assignments + stats (exposureCount + selectedCount 동시 increment)
+   - `findAssignmentCandidates(selectLimit, price)` 로 후보 자동 산출 — 어드민은 카드 선택 단계 없음 (산출 = 배정)
+4. 트랜잭션 직후 설계사 알림톡 (UI_0735) 발송 — 가입자 finalize 와 동일 헬퍼
+5. 어드민 벨 알림 emit (카피 "어드민이 대신 작성한 요청") — 자기 트리거더라도 audit 일관성
+6. 완료 후 `/admin/requests/<id>` 상세로 redirect
+
+가입자 흐름과의 차이:
+- **본인인증(OTP) 생략** — 어드민이 attest. 가입자에게 코드 발송 안 함
+- **후보 선택 단계 없음** — 산출된 selectLimit 명이 모두 배정 (`candidateCount` 미사용)
+- **결과 알림톡** — 분석 완료 후 어드민이 수동 발송 (가입자 흐름과 동일 정책)
+- 같은 번호로 진행 중인 요청 차단 (`hasActiveRequestForPhone`) 은 동일하게 적용
+- `consentThirdParty` 기본 ON (어드민 attest, 끄면 partner 알림톡 화면에서 가입자 휴대폰 노출 차단)
+- DB 에 admin-created audit 컬럼은 없음 — 필요해지면 `createdByAdminId` 추가
+
+자세한 트랜잭션/알림 흐름은 [src/features/plan-requests/actions.ts](../../features/plan-requests/actions.ts) 의 `createPlanRequestByAdmin` JSDoc.
 
 ### 어드민 본인 설계사 등록 (겸직)
 
