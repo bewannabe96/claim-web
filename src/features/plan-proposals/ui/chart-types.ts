@@ -60,9 +60,18 @@ export type PlanProposalData = {
 
   /**
    * 분석 파이프라인 콜백 수신 여부 (proposal.analyzedAt 기반).
-   * false 면 차트/수치 필드는 fallback 값이고 UI 는 "분석 중" placeholder 로 그림.
+   * false 면 차트/수치 필드는 fallback 값이고 UI 는 "분석 중" placeholder 로 그림
+   * (단, `analysisSkipped` 가 true 면 "분석 불가" placeholder 로 분기).
    */
   analyzed: boolean;
+
+  /**
+   * 어드민이 "분석 건너뜀" 처리한 제안서 (proposal.analysisSkippedAt 기반). true 면
+   * 차트/수치는 영구히 fallback 이고, UI 는 "분석 불가" placeholder 로 그림 — "분석
+   * 중" (재시도 안내) 과 톤이 다르다. analyzed=true 와 동시에 true 일 수는 없음 —
+   * skip 가드가 analyzedAt IS NULL 일 때만 마킹.
+   */
+  analysisSkipped: boolean;
 
   /**
    * 가입자가 이미 이 제안서에서 "상담 진행하기" 를 눌렀는지

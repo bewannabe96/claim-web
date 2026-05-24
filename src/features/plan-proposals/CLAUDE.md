@@ -57,7 +57,8 @@ ui/
   - `queries.ts:mapPlanProposal` — 모든 PlanProposal read 가 자동으로 `parseAnalysisError` (zod safeParse) 통과시켜 도메인 타입 노출. parse 실패 row 는 undefined + 로그.
   - `queries.ts:listFailedAnalysisPlanProposals()` — `analyzedAt IS NULL AND analysisErrorAt IS NOT NULL`. 어드민 `/admin/analysis-failures` 페이지 단일 사용처.
 - 재시도: `actions.ts:retryPlanProposalAnalysis(proposalId)` — 어드민 전용 (`requireAdminSession`). 두 컬럼 null 초기화 (race-safe `WHERE analyzedAt IS NULL`) → `publishAnalysisJob` 재발행. webhook 이 첫 콜백처럼 멱등 처리.
-- 운영 흐름: 외부 시스템 (예: 상품 카탈로그) 수정 → 어드민이 `/admin/analysis-failures` 에서 "분석 재시도" → 성공 시 row 자연스럽게 사라짐. 분석 실패가 미해결인 동안 plan_request 는 `analyzing` 에 머무르지만, 마감시간이 지나면 cron 의 시간 마감이 미분석 제안서를 포함한 채 `completed` 로 강제 종결 — 즉 재시도는 마감 전에 처리해야 결과에 반영된다.
+- **건너뛰기**: `actions.ts:skipPlanProposalAnalysis(proposalId)` — 어드민 전용. 재시도로도 회복 안 되는 제안서를 결과 마감으로 진행시키는 escape hatch. 가드: `analyzedAt IS NULL AND analysisErrorAt IS NOT NULL` (성공한 케이스 / 응답조차 없는 정체 케이스 차단 — 정체는 retry 로 실패 응답 유도 후 skip). `proposal.analysisSkippedAt` 마킹 → `closePlanRequest` 호출. state-transition 의 analyzed count 가 `analyzedAt OR analysisSkippedAt` 둘을 동급 취급해 조기 마감 트리거. 가입자 결과 페이지는 해당 카드만 "분석 불가" placeholder 로 분기 (note + 상담 CTA 는 유지). UI: [admin/(dashboard)/_components/skip-analysis-button.tsx](../../app/admin/(dashboard)/_components/skip-analysis-button.tsx) — 두 단계 confirm 으로 비가역 가드.
+- 운영 흐름: 외부 시스템 (예: 상품 카탈로그) 수정 → 어드민이 `/admin/analysis-failures` 에서 "분석 재시도" → 성공 시 row 자연스럽게 사라짐. 회복 불가 판단 시 "분석 건너뛰기" → 가입자 결과 화면이 그 카드만 "분석 불가" 로 표시되고 나머지 제안서로 마감 진행. 분석 실패가 미해결인 동안 plan_request 는 `analyzing` 에 머무르지만, 마감시간이 지나면 cron 의 시간 마감이 미분석 제안서를 포함한 채 `completed` 로 강제 종결 — 즉 재시도/건너뛰기는 마감 전에 처리해야 결과에 반영된다.
 - 정체 (실패 콜백조차 없음) 재시도: `/admin/requests/[id]` 상세의 assignment 인라인 박스 (`AnalysisPendingBlock`) — `analyzedAt IS NULL AND analysisErrorAt IS NULL` 케이스용. 같은 `retryPlanProposalAnalysis` 액션 재사용 (가드는 `analyzedAt` 만이라 안전). 시간 임계값 없이 사람이 모니터링.
 
 ### 시나리오 선정 (`select-scenarios.ts`)

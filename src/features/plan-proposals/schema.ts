@@ -110,6 +110,12 @@ export type PlanProposal = {
    */
   analysisError?: AnalysisError;
   analysisErrorAt?: string;
+  /**
+   * 어드민이 분석 실패를 "건너뜀" 처리한 시각. 마킹된 제안서는 결과 화면에서
+   * "분석 불가" 안내로 표시되고, 조기 마감 (closePlanRequest) 에선 analyzedAt 과
+   * 동급으로 취급. 분석 실패 (analysisErrorAt) 가 있을 때만 set 가능.
+   */
+  analysisSkippedAt?: string;
 };
 
 /* ============================================================

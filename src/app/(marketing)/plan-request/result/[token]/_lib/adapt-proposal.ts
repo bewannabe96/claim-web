@@ -31,10 +31,17 @@ export function adaptPlanProposal(
 ): PlanProposalData {
   const { proposal, partner } = card;
   const analyzed = proposal.analyzedAt != null;
+  const analysisSkipped = proposal.analysisSkippedAt != null;
   const contactRequested = proposal.contactRequestedAt != null;
 
   if (!report) {
-    return makeFallback(proposal, partner, analyzed, contactRequested);
+    return makeFallback(
+      proposal,
+      partner,
+      analyzed,
+      analysisSkipped,
+      contactRequested,
+    );
   }
 
   const { headline, refund_table, coverage_payout } = report;
@@ -49,6 +56,7 @@ export function adaptPlanProposal(
       avatarUrl: partner.avatarUrl,
     },
     analyzed,
+    analysisSkipped,
     contactRequested,
     insurer: headline.insurer,
     maturityAge,
@@ -130,15 +138,18 @@ function coverageByCategory(
 }
 
 /**
- * 분석 리포트 없을 때 — 빈 카드. 호출자는 `analyzed` 플래그로 두 상태 구분:
- *   - analyzed=false → "분석 중" placeholder UI
- *   - analyzed=true  → "데이터를 불러올 수 없어요" (드물게 발생 — analyzedAt 있는데
- *     리포트가 없는 케이스. 스키마 버전 불일치 / 누락 등)
+ * 분석 리포트 없을 때 — 빈 카드. 호출자는 `analyzed` / `analysisSkipped` 플래그로
+ * 세 상태 구분:
+ *   - analysisSkipped=true → "분석 불가" placeholder (회복 불가 안내, 새로고침 X)
+ *   - analyzed=false       → "분석 중" placeholder (새로고침 안내)
+ *   - analyzed=true        → "데이터를 불러올 수 없어요" (드물게 발생 — analyzedAt
+ *     있는데 리포트가 없는 케이스. 스키마 버전 불일치 / 누락 등)
  */
 function makeFallback(
   proposal: PlanProposalCard["proposal"],
   partner: PlanProposalCard["partner"],
   analyzed: boolean,
+  analysisSkipped: boolean,
   contactRequested: boolean,
 ): PlanProposalData {
   return {
@@ -150,6 +161,7 @@ function makeFallback(
       avatarUrl: partner.avatarUrl,
     },
     analyzed,
+    analysisSkipped,
     contactRequested,
     insurer: "",
     maturityAge: 100,
