@@ -23,11 +23,12 @@ export const CURRENT_REPORT_VERSION = 5 as const;
  * ------------------------------------------------------------ */
 
 /**
- * 환급 타입 — 샘플엔 "no_refund" 만 관측. 향후 운영에서 다른 값 (예: "with_refund",
- * "partial_refund") 발견 시 enum 확장. catchall 로 두면 새 값이 silently 통과되어
- * 차트 분기를 깨뜨릴 수 있어 명시적 enum 유지.
+ * 환급 타입 — 운영에서 추가 값 (예: "partial_refund") 발견 시 enum 확장. catchall
+ * 로 두면 새 값이 silently 통과되어 차트 분기를 깨뜨릴 수 있어 명시적 enum 유지.
+ * 소비측 (`adapt-proposal.ts:hasRefundDuringPayment`) 은 `!== "no_refund"` 로 분기하므로
+ * 신규 값은 자동으로 "환급 있음" 으로 분류된다.
  */
-export const RefundTypeSchema = z.enum(["no_refund"]);
+export const RefundTypeSchema = z.enum(["no_refund", "with_refund"]);
 export type RefundType = z.infer<typeof RefundTypeSchema>;
 
 export const HeadlineSchema = z.object({
