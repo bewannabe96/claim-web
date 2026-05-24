@@ -106,17 +106,25 @@
     "MaxAgeSeconds": 600
   }]
   ```
-- **IAM 정책**: dedicated user 에 prefix 한정 권한만.
+- **IAM 정책**: dedicated user 에 prefix 한정 권한만. **두 prefix 모두 명시 필요** —
+  `proposals/*` (설계사 제출) + `externals/*` (가입자 챗봇 v4 첨부, [src/server/s3.ts](s3.ts) `EXTERNAL_PROPOSAL_KEY_PREFIX`).
   ```json
   {
     "Effect": "Allow",
     "Action": ["s3:PutObject", "s3:GetObject", "s3:HeadObject", "s3:DeleteObject"],
-    "Resource": "arn:aws:s3:::<bucket>/proposals/*"
+    "Resource": [
+      "arn:aws:s3:::<bucket>/proposals/*",
+      "arn:aws:s3:::<bucket>/externals/*"
+    ]
   }
   ```
-- **Key 패턴**: `proposals/{assignment_id}/{nanoid(16)}.pdf` — assignment 가 경로에 박혀 있어
+- **Key 패턴 (proposals)**: `proposals/{assignment_id}/{nanoid(16)}.pdf` — assignment 가 경로에 박혀 있어
   forgery 1차 방어 (`isPlanProposalKeyForAssignment`) 가능. submit 단계의 HEAD 가 2차 방어.
-- **Size 한도**: `PROPOSAL_PDF_MAX_BYTES` (default 10MB) — presigned PUT 으론 강제 못 함, HEAD-then-reject 방식.
+- **Key 패턴 (externals)**: `externals/{nanoid(16)}.{pdf|jpg|png|webp|heic|heif}` — plan_request
+  생성 전(랜딩 챗봇)에 발급되어 ID 바인딩 없음. 키 자체가 nanoid 라 추측 불가 + submit
+  단계 prefix/확장자 패턴 검증 (`isExternalProposalKey`) 이 forgery 차단.
+- **Size 한도**: `PROPOSAL_PDF_MAX_BYTES` (default 10MB) — proposals/externals 공통.
+  presigned PUT 으론 강제 못 함, HEAD-then-reject 방식.
 
 ## S3 버킷 설정 (서비스 컨텐츠 — 이미지/사진 등)
 

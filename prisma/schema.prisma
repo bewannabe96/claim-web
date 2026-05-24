@@ -54,6 +54,12 @@ model PlanRequest {
   coverage           Json
   additionalNotes    String? @map("additional_notes")
 
+  /// 가입자가 다른 곳에서 받아온 외부 설계안(PDF) 의 S3 키 배열. 챗봇 변형 v4 의
+  /// Q4_8 phase 에서 수집 — 최대 5건. 키 패턴은 `externals/{nanoid}.pdf` (S3_BUCKET_PROPOSALS
+  /// 버킷, externals/ prefix). 파일 자체는 presigned PUT 으로 브라우저가 직접 S3 에 업로드 —
+  /// 우리 서버는 키 메타데이터만 보관. 분석/비교 파이프라인에서 참조용.
+  externalProposalKeys String[] @default([]) @map("external_proposal_keys")
+
   // Step3: 본인 인증 (1:1 sparse — 인증 완료 시 채워짐)
   name               String?
   phone              String?

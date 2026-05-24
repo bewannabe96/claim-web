@@ -31,21 +31,25 @@
  * 현재 활성 변형 ID 목록. **순서가 modulo 결과를 결정**하므로 중간 삽입 금지 —
  * 항상 끝에 push 하거나, 실험 자체를 epoch 올려 리셋할 것.
  *
- * **현재 v1 / v2 비활성, v3 단독 운영** — 컴포넌트와 디렉토리 (`_components/variants/v1/`,
- * `_components/variants/v2/`) 는 보존되어 있고, dispatcher 에서만 빠져 있다. 다시
- * 켜려면:
- *   1. 아래 배열에 `"v1"` (또는 `"v2"`) 다시 추가
+ * **현재 v1 / v2 / v3 비활성, v4 단독 운영** — 컴포넌트와 디렉토리
+ * (`_components/variants/v1/`, `v2/`, `v3/`) 는 모두 보존되어 있고, dispatcher
+ * 에서만 빠져 있다. 다시 켜려면:
+ *   1. 아래 배열에 `"v1"` / `"v2"` / `"v3"` 추가
  *   2. [landing-variant.tsx](../app/(marketing)/_components/landing-variant.tsx)
- *      에 `import { VariantV1 }` + `case "v1"` 복구 (default fallback 도 함께)
+ *      의 switch 에 case 복구 (default fallback 도 함께)
  *   3. 옛 쿠키와 카운터를 깨끗하게 분리하고 싶으면 EXPERIMENT_EPOCH 올림.
  *
- * 비활성 중 이미 v1 / v2 쿠키를 들고 있는 사용자는 isValidVariant 가 false 처리
- * → 신규 배정 흐름을 다시 타고 v3 로 흘러간다 (modulo 가 v3 단일).
+ * 비활성 중 이미 v1 / v2 / v3 쿠키를 들고 있는 사용자는 isValidVariant 가 false
+ * 처리 → 신규 배정 흐름을 다시 타고 v4 로 흘러간다 (modulo 가 v4 단일).
  *
- * **v3** — 1뷰포트 정적 랜딩. 스크롤 없이 "요청 → 제안 → 비교" 3단계 + 정체성
- * 인용구 + 단일 CTA. 광고 클릭 직후 인지 부하 최소화 가설.
+ * **v4** — 챗봇 풀스크린 랜딩. 같은 화면에서 AI 어시스턴트 대화로 Step1 →
+ * 자동 후보 배정 → Step3 본인인증 → dispatched 까지 페이지 전환 0 회. v3 의
+ * 정적 CTA → 별도 요청서 페이지로 이동하는 funnel 의 무게감을 챗봇 톤으로
+ * 압축. "요청서 작성 단계 자체를 느끼지 않게" 라는 가설.
+ *
+ * **v3** — 1뷰포트 정적 랜딩 + 단일 CTA. 현재 비활성.
  */
-export const VARIANT_IDS = ["v3"] as const;
+export const VARIANT_IDS = ["v4"] as const;
 
 export type VariantId = (typeof VARIANT_IDS)[number];
 
