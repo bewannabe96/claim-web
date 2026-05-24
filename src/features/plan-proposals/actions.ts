@@ -379,14 +379,35 @@ async function notifyPartnerOfContactRequest(args: {
 /* ============================================================
  * 분석 재시도 — 어드민 전용
  *
- * 외부 파이프라인이 `status=failed` 를 보낸 proposal 에 대해 어드민이 수기 수정
- * (예: product_id_match 시 카탈로그 매핑 추가) 후 재발행. webhook 측에서 이미
- * `analysisError` 가 마킹되어 있고, 우리는:
- *   1. analyzedAt 이 차 있으면 거부 (이미 성공 — 외부에서 늦은 success 콜백이 와서
- *      덮어쓴 케이스).
- *   2. analysisError 두 컬럼 null 로 초기화 (race-safe: WHERE analyzedAt IS NULL).
+ * 두 가지 케이스를 같은 entry point 로 처리:
+ *   A. 실패/정체 케이스 — `analyzedAt IS NULL`. 외부 파이프라인이 실패 콜백을 보냈거나
+ *      (`analysisError` 마킹됨) 응답조차 없는 정체 상태. 어드민이 수기 수정
+ *      (예: product_id_match 시 카탈로그 매핑 추가) 후 재발행.
+ *   B. 분석 완료 케이스 — `analyzedAt IS NOT NULL`. 분석 리포트가 이미 저장돼 있지만
+ *      어드민이 (외부 파이프라인 업그레이드, 분석 결과 이상 발견 등의 이유로) 다시
+ *      분석을 요청. 기존 분석 리포트 row 는 삭제되고 새 콜백이 INSERT 한다.
+ *
+ * 가드:
+ *   - `analysisSkippedAt IS NOT NULL` → 거부. skip 은 어드민의 명시적 마감 결정이라
+ *     terminal — 되돌리려면 별도 액션이 필요 (현재는 미제공).
+ *
+ * 동작 (단일 트랜잭션):
+ *   1. proposal 의 `analyzedAt` / `analysisError` / `analysisErrorAt` 모두 null 초기화.
+ *      WHERE `analysisSkippedAt IS NULL` race 가드 — 동시에 skip 액션이 이기면 update
+ *      는 0 row 로 떨어져 리포트도 삭제 안 함.
+ *   2. 리셋이 성공한 경우에만 기존 `PlanProposalAnalysisReport` 삭제 (1:1 이라 deleteMany).
+ *      웹훅이 새 row INSERT 시 PK (proposalId) 충돌 방지.
  *   3. SQS 재발행 — 페이로드는 최초 submit 과 동일 (proposalId/planRequestId/s3Key).
  *      webhook 이 첫 콜백처럼 동일하게 처리.
+ *
+ * plan_request 상태: B 케이스에서 plan_request 가 이미 `completed` 라면 closePlanRequest
+ * 가 멱등 가드 (`status !== 'analyzing'` 이면 no-op) 라 상태가 되돌아가진 않는다.
+ * 새 분석 콜백이 도착하면 새 리포트가 결과 페이지에 자연스럽게 노출 (resultToken
+ * 동일). `contactRequestedAt` 등 가입자 액션 상태는 보존.
+ *
+ * race / stale 콜백: 리셋 직후 이전 분석의 stale `succeeded` 콜백이 도착하면 옛
+ * 리포트가 다시 저장될 수 있음 (기존 retry 에도 동일하게 있는 한계). 발생 시 어드민이
+ * 다시 재시도하면 됨.
  *
  * 실패 응답 (`ok: false`) 은 UI 에서 토스트/알럿으로 노출. publish 실패는 throw —
  * 호출부 (client component) 가 catch 해서 사용자에게 알림.
@@ -394,7 +415,7 @@ async function notifyPartnerOfContactRequest(args: {
 
 export type RetryAnalysisResult =
   | { ok: true }
-  | { ok: false; error: "not_found" | "already_analyzed" };
+  | { ok: false; error: "not_found" | "skipped" };
 
 export async function retryPlanProposalAnalysis(
   proposalId: string,
@@ -406,31 +427,43 @@ export async function retryPlanProposalAnalysis(
     select: {
       id: true,
       pdfS3Key: true,
-      analyzedAt: true,
       analysisSkippedAt: true,
-      assignment: { select: { requestId: true } },
+      assignment: {
+        select: {
+          requestId: true,
+          // resultToken 은 가입자 결과 페이지 revalidate 에 사용 — 분석 완료된
+          // 제안서 재분석 시 customer 측 캐시도 무효화하기 위해 path 특정 필요.
+          // resultToken 은 finalize 시점에 set 되므로 dispatched 이후엔 항상 존재.
+          request: { select: { resultToken: true } },
+        },
+      },
     },
   });
 
   if (!proposal) return { ok: false, error: "not_found" };
-  // "분석 완료" (analyzedAt) 와 "분석 건너뜀" (analysisSkippedAt) 은 이후 단계
-  // 관점에서 동일한 terminal 상태 — 둘 중 하나라도 set 이면 재시도 불가.
-  // error 라벨은 단순화를 위해 "already_analyzed" 로 공유 (UI 의 메시지는 두
-  // 케이스를 구분할 필요 없는 race 가드 성격이라 충분).
-  if (proposal.analyzedAt || proposal.analysisSkippedAt) {
-    return { ok: false, error: "already_analyzed" };
-  }
+  // skip 은 어드민의 명시적 마감 결정 — terminal. 되돌리려면 별도 액션이 필요.
+  if (proposal.analysisSkippedAt) return { ok: false, error: "skipped" };
 
-  // race-safe 초기화 — 동시에 webhook 의 success 콜백 또는 skip 액션이 처리
-  // 중이면 analyzedAt / analysisSkippedAt 이 채워지면서 이 update 가 0 row 가 되고,
-  // 그 경우 분석이 이미 종결됐단 뜻이라 재시도 자체가 무의미. 그래도 publish 는
-  // 멱등 (webhook 의 updateMany WHERE analyzedAt IS NULL AND analysisSkippedAt
-  // IS NULL 로 no-op) 이므로 그대로 진행.
-  await prisma.planProposal.updateMany({
-    where: { id: proposalId, analyzedAt: null, analysisSkippedAt: null },
-    // nullable Json 컬럼을 명시적으로 비우려면 sentinel `Prisma.JsonNull` 사용
-    // (raw `null` 은 "필드 자체를 건드리지 말라"는 의미라 컴파일 거부).
-    data: { analysisError: Prisma.JsonNull, analysisErrorAt: null },
+  await prisma.$transaction(async (tx) => {
+    // race-safe 리셋 — skip 액션이 동시에 이기면 update 는 0 row 가 되고, 그 경우
+    // 리포트도 건드리지 않아 일관된 상태 유지. nullable Json 컬럼을 명시적으로 비우려면
+    // sentinel `Prisma.JsonNull` (raw `null` 은 "필드 미수정" 의미라 컴파일 거부).
+    const updated = await tx.planProposal.updateMany({
+      where: { id: proposalId, analysisSkippedAt: null },
+      data: {
+        analyzedAt: null,
+        analysisError: Prisma.JsonNull,
+        analysisErrorAt: null,
+      },
+    });
+
+    // 리셋이 성공한 경우에만 기존 리포트 삭제. 웹훅이 INSERT 할 새 row 의 PK
+    // (proposalId) 충돌 방지. 1:1 관계라 deleteMany 로 멱등 (없으면 0 row 삭제).
+    if (updated.count === 1) {
+      await tx.planProposalAnalysisReport.deleteMany({
+        where: { proposalId },
+      });
+    }
   });
 
   await publishAnalysisJob({
@@ -441,6 +474,14 @@ export async function retryPlanProposalAnalysis(
 
   revalidatePath("/admin/analysis-failures");
   revalidatePath(`/admin/requests/${proposal.assignment.requestId}`);
+  // 가입자 결과 페이지 — 분석 완료된 제안서 재분석 케이스에서 캐시된 옛 리포트가
+  // 보이지 않도록 token 특정 path 무효화. resultToken null 케이스 (finalize 전) 는
+  // 결과 페이지 자체가 없어 의미 없으므로 가드.
+  if (proposal.assignment.request.resultToken) {
+    revalidatePath(
+      `/plan-request/result/${proposal.assignment.request.resultToken}`,
+    );
+  }
 
   return { ok: true };
 }

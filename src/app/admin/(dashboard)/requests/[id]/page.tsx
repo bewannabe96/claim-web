@@ -382,6 +382,9 @@ function AssignmentItem({
               filename={pdfBasename(proposal.pdfS3Key)}
             />
             <Spec label="한줄 요약" value={proposal.note} />
+            {proposal.analyzedAt && (
+              <AnalysisCompletedBlock proposalId={proposal.id} />
+            )}
             {!proposal.analyzedAt &&
               proposal.analysisSkippedAt && (
                 <AnalysisSkippedBlock
@@ -571,6 +574,29 @@ function AnalysisPendingBlock({ proposalId }: { proposalId: string }) {
         분석 응답을 기다리는 중이에요. 비정상적으로 오래 걸리면 재요청해주세요.
       </p>
       <RetryAnalysisButton proposalId={proposalId} size="sm" />
+    </div>
+  );
+}
+
+/**
+ * 정상 분석 완료된 proposal — 어드민이 결과 이상 발견 / 파이프라인 업그레이드 등의
+ * 사유로 다시 분석을 요청하는 escape hatch. 기존 `PlanProposalAnalysisReport` 가
+ * 삭제되고 새 콜백이 INSERT 해 교체되는 destructive 동작이라 두 단계 confirm 필수
+ * (`requireConfirm` prop). plan_request 가 이미 `completed` 면 closePlanRequest 멱등
+ * 가드로 상태가 되돌아가진 않고, 결과 페이지에는 새 리포트가 자연스럽게 노출된다.
+ */
+function AnalysisCompletedBlock({ proposalId }: { proposalId: string }) {
+  return (
+    <div className="mt-1 rounded-xl border border-[#efefef] bg-[#fafafa] px-3 py-2.5 flex items-center justify-between gap-3">
+      <p className="text-xs text-[#4b4b4b]">
+        기존 분석 결과를 삭제하고 새 분석으로 교체해요.
+      </p>
+      <RetryAnalysisButton
+        proposalId={proposalId}
+        size="sm"
+        requireConfirm
+        label="다시 분석"
+      />
     </div>
   );
 }
