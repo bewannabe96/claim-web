@@ -523,11 +523,18 @@ export async function sendOtp(
  * 알림 발송 (트랜잭션 직후):
  *   - 설계사 (2-3) 구현됨 — 선택된 각 설계사에게 일회용 token 링크 알림톡 (UI_0735).
  *   - 가입자 (1-1) TODO — 디스패치 확인 알림. 발송 매체/본문 정책 미정.
+ *
+ * `options.skipRedirect=true` 로 호출하면 마지막 redirect 를 생략하고 `{ ok: true }`
+ * 를 반환 — v4 챗봇이 dispatched 페이지로 navigate 하지 않고 같은 챗 화면에서
+ * 완료 메시지 + "AI 분석기능 자세히 보기" 버튼을 노출하기 위한 용도. 기본 흐름
+ * (`/plan-request/[id]/confirm` 의 useActionState) 은 옵션을 전달하지 않으므로
+ * 기존대로 redirect 발화.
  */
 export async function finalizeRequest(
   requestId: string,
   _prev: FinalizeState,
   formData: FormData,
+  options?: { skipRedirect?: boolean },
 ): Promise<FinalizeState> {
   // 1) 이름 + 주민번호 + 전화번호 + 동의 검증
   const parsed = Step3Schema.safeParse({
@@ -699,6 +706,10 @@ export async function finalizeRequest(
   // 본문엔 결과 페이지 링크 (resultToken) + 예상 도착 시간. 신규 알림톡 템플릿 검수 필요.
 
   revalidatePath("/admin/requests");
+  if (options?.skipRedirect) {
+    // v4 챗봇 흐름 — client 가 같은 화면에 완료 메시지 + AI 분석 안내 버튼을 직접 push.
+    return { ok: true };
+  }
   redirect(`/plan-request/${requestId}/dispatched`);
 }
 
