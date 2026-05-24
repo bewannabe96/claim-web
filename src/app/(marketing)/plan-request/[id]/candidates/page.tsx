@@ -7,6 +7,13 @@ import { submitStep2 } from "@/features/plan-requests/actions";
 import { getRequestById } from "@/features/plan-requests/queries";
 import { getSettings } from "@/server/settings";
 
+// [원본] 롤백 시 복원할 import — CandidatesSelector subtitle 빌드용:
+//   import {
+//     FOCUSED_CONCERN_LABEL,
+//     type CoverageRequest,
+//   } from "@/features/plan-requests/schema";
+//   import { CandidatesSelector } from "./_components/candidates-selector";
+
 /* ============================================================
  * [임시] 설계사 선택 단계 frontend skip — 후보 자동배정 후 즉시 다음 단계로 통과.
  *
@@ -23,14 +30,38 @@ import { getSettings } from "@/server/settings";
  * 내부에서 /plan-request/<id>/confirm 으로 redirect 하므로 이 컴포넌트는 정상
  * 흐름에서 아무것도 렌더하지 않는다.
  *
- * ▶ 롤백 방법 (선택 단계 복원):
- *   1. 이 파일을 PR #122 의 상태로 되돌린다 — CandidatesSelector 호출 형태.
- *      _components/candidates-selector.tsx 는 이번 변경에서 손대지 않았으므로
- *      그 파일 변경 없이 page.tsx 만 되돌리면 즉시 복귀.
- *   2. pickAssignedPartners / hashSeed 헬퍼와 submitStep2 / PartnerCard import 제거.
- *   3. metadata 를 "설계사 선택" 으로 복원.
+ * ============================================================
+ * ▶ 롤백 절차 (선택 단계 UI 복원, 인-파일 복원)
+ * ============================================================
+ *
+ * git history / revert 없이도 이 파일 안에 [원본] / [임시] 주석 블록이 정확히
+ * 짝지어 보존돼 있어 그대로 복원 가능. _components/candidates-selector.tsx 는
+ * 이번 변경에서 손대지 않았으므로 page.tsx 안에서만 작업하면 된다.
+ *
+ * 1. [원본] 블록 4곳을 활성화 (주석 해제):
+ *    A. 파일 상단 [원본] import 블록
+ *    B. metadata 위 [원본] metadata
+ *    C. CandidatesPage 안의 [원본] return (subtitle 계산 + CandidatesSelector)
+ *    D. 파일 하단 [원본] coverageBrief / formatBudget 헬퍼
+ *
+ * 2. [임시] 표시 영역 제거:
+ *    - 상단 PartnerCard / submitStep2 import
+ *    - 현재 metadata ("설계사 배정 중")
+ *    - CandidatesPage 함수 안 pickAssignedPartners(...) + FormData + submitStep2
+ *      직접 호출 + console.error fallback + notFound() 한 덩어리
+ *    - 파일 하단 [임시] 자동배정 헬퍼 블록 (pickAssignedPartners / hashSeed)
+ *
+ * 3. 검증:
+ *    - `pnpm tsc --noEmit` 0 errors / `pnpm lint` clean
+ *    - /plan-request/<id>/candidates 진입 시 카드 + 선택 토글 노출
+ *    - 카드 선택 후 CTA → /plan-request/<id>/confirm 이동
  * ============================================================ */
 
+// [원본] 롤백 시 복원할 metadata:
+//   export const metadata: Metadata = {
+//     title: "설계사 선택",
+//     description: "추천된 설계사 카드 중 제안서를 받을 분들을 선택해주세요.",
+//   };
 export const metadata: Metadata = {
   title: "설계사 배정 중",
   description: "요청서에 맞춰 설계사를 배정하고 있어요.",
@@ -48,13 +79,34 @@ export default async function CandidatesPage({
   const candidates = await getPartnerCardsByIds(req.candidatePartnerIds);
   const { selectLimit } = await getSettings();
 
+  // [원본] 롤백 시 복원 — 후보 전체 + selectLimit 을 그대로 내려 선택 UI 노출:
+  //
+  //   // 추천 근거가 된 매칭 신호 3개 — coverage · 직업 · 예산. coverage 를 맨 앞에
+  //   // 두어 "이 보장을 봐줄 수 있는 설계사" 라는 매칭 의미를 가입자가 인지하게 함.
+  //   const subtitle = [
+  //     coverageBrief(req.step1.coverage),
+  //     req.step1.occupation,
+  //     formatBudget(req.step1.monthlyBudgetMin, req.step1.monthlyBudgetMax),
+  //   ]
+  //     .filter(Boolean)
+  //     .join(" · ");
+  //
+  //   return (
+  //     <CandidatesSelector
+  //       requestId={id}
+  //       candidates={candidates}
+  //       selectLimit={selectLimit}
+  //       subtitle={subtitle}
+  //     />
+  //   );
+
   // [임시] 가입자가 직접 고르는 대신 요청서 id 기준 결정적 추출 — 같은 요청서면
   // 새로고침/뒤로가기로 재진입해도 동일 조합. candidates.length >= selectLimit 은
   // admin settings 의 candidateCount >= selectLimit 불변식 + step1 의 후보 산출이
   // 보장하므로 별도 가드 불필요.
   const picked = pickAssignedPartners(candidates, selectLimit, id);
 
-  // submitStep2 의 (requestId, _prev, formData) 시그니처 그대로 호출.
+  // [임시] submitStep2 의 (requestId, _prev, formData) 시그니처 그대로 호출.
   //   - _prev: Step2State 는 undefined 허용 — 함수 내부에서 미사용.
   //   - 정상 흐름이면 함수 안에서 redirect(`/plan-request/${id}/confirm`) 가
   //     NEXT_REDIRECT throw → 이 줄 이후엔 도달하지 않는다.
@@ -65,9 +117,9 @@ export default async function CandidatesPage({
   }
   const result = await submitStep2(id, undefined, formData);
 
-  // 여기 도달 = submitStep2 검증 실패. 정상 흐름에선 candidatePartnerIds 에서 그대로
-  // 뽑아 넘기므로 partnerId 매칭 / selectLimit 모두 통과한다. 도달했다면 데이터
-  // 정합성 문제 (예: candidate row 가 사라짐). notFound 로 폴백.
+  // [임시] 여기 도달 = submitStep2 검증 실패. 정상 흐름에선 candidatePartnerIds 에서
+  // 그대로 뽑아 넘기므로 partnerId 매칭 / selectLimit 모두 통과한다. 도달했다면
+  // 데이터 정합성 문제 (예: candidate row 가 사라짐). notFound 로 폴백.
   console.error("[candidates] submitStep2 did not redirect", {
     requestId: id,
     state: result,
@@ -75,9 +127,12 @@ export default async function CandidatesPage({
   notFound();
 }
 
+/* ============================================================
+ * [임시] 자동배정 헬퍼 — 선택 단계 frontend skip 용. 롤백 시 이 블록 전체 제거.
+ * ============================================================ */
+
 /**
- * [임시] 후보 배열에서 최대 count 명을 seed 기준으로 결정적 추출 (자동배정).
- * 선택 단계 frontend skip 용 — 롤백 시 이 함수와 hashSeed 를 함께 제거.
+ * 후보 배열에서 최대 count 명을 seed 기준으로 결정적 추출 (자동배정).
  *
  * 각 후보를 (seed + 후보 id) 해시값으로 정렬해 앞 count 개를 취한다. 같은
  * seed(요청서 id)면 새로고침해도 항상 같은 결과 — 자동배정이 고정돼 보이면서
@@ -95,7 +150,7 @@ function pickAssignedPartners(
     .map((entry) => entry.item);
 }
 
-/** [임시] 문자열 → 32bit 부호없는 해시 (FNV-1a). pickAssignedPartners 의 정렬 키. */
+/** 문자열 → 32bit 부호없는 해시 (FNV-1a). pickAssignedPartners 의 정렬 키. */
 function hashSeed(str: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
@@ -104,3 +159,19 @@ function hashSeed(str: string): number {
   }
   return h >>> 0;
 }
+
+/* ============================================================
+ * [원본] 롤백 시 복원 — CandidatesSelector subtitle 빌드용 헬퍼.
+ * ============================================================
+ *
+ *   function coverageBrief(coverage: CoverageRequest): string {
+ *     if (coverage.intent === "broad") return "종합 검토";
+ *     return coverage.concerns.map((id) => FOCUSED_CONCERN_LABEL[id]).join(", ");
+ *   }
+ *
+ *   function formatBudget(min: number, max: number): string {
+ *     const fmt = (n: number) =>
+ *       n >= 10000 ? `${Math.floor(n / 10000)}만` : `${n.toLocaleString("ko-KR")}원`;
+ *     return `월 ${fmt(min)}~${fmt(max)}`;
+ *   }
+ * ============================================================ */
