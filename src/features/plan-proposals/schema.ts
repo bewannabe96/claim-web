@@ -106,7 +106,9 @@ export type PlanProposal = {
   /**
    * 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 정보.
    * 성공 시점이 와도 명시적으로 비우지 않으므로, read 측은 `analyzedAt` 우선 분기.
-   * 재시도 (retryPlanProposalAnalysis) 시점에 두 필드 모두 초기화.
+   * 재시도 (retryPlanProposalAnalysis) 시점에 두 필드 모두 초기화 — `analyzedAt`
+   * 까지 함께 리셋되고 기존 분석 리포트 row 도 삭제됨 (이미 분석 완료된 제안서도
+   * 재분석 가능).
    */
   analysisError?: AnalysisError;
   analysisErrorAt?: string;

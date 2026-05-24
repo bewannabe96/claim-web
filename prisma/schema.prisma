@@ -545,6 +545,9 @@ model PlanProposal {
   /// (pending/expired assignment 가 하나라도 있으면 전이 안 함).
   /// SQS 메시지 metadata 에 plan_proposal.id + plan_request.id 를 실어보내고, 콜백이
   /// 그 두 id 로 직접 식별 + 마킹 (cross-validation 으로 페이로드 위조 차단).
+  /// 어드민이 `retryPlanProposalAnalysis` 로 재분석을 트리거하면 null 로 리셋되고
+  /// 기존 분석 리포트 row 가 삭제됨 (새 콜백이 INSERT 해 교체). plan_request 가 이미
+  /// completed 라도 closePlanRequest 멱등 가드로 상태는 되돌아가지 않음.
   analyzedAt  DateTime? @db.Timestamptz(6) @map("analyzed_at")
 
   /// 외부 분석 파이프라인이 returned `status=failed` 시 마지막 실패 payload.
