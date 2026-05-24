@@ -264,6 +264,8 @@ function CustomerContext({ request }: { request: PlanRequest }) {
   // 설계사가 보는 시점은 dispatched 이후라 step3 + gender 가 항상 존재. 방어적 fallback.
   const customerName = step3?.name ?? "이름 미상";
   const birthDate = step3?.birthDate;
+  // phone 은 서버 page.tsx 에서 "선택한 설계사에게 정보 제공" 동의 여부에 따라
+  // 이미 sanitize 됨 — 미동의 시 undefined. client 에서 추가 게이트 불필요.
   const phone = step3?.phone;
 
   return (

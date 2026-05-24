@@ -98,7 +98,9 @@ export default async function AdminRequestDetailPage({
           {request.step3 ? (
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4">
               <Field label="이름">{request.step3.name}</Field>
-              <Field label="휴대폰">{formatPhone(request.step3.phone)}</Field>
+              <Field label="휴대폰">
+                {request.step3.phone ? formatPhone(request.step3.phone) : "—"}
+              </Field>
               <Field label="제3자 정보 제공">
                 {request.step3.consentThirdParty === "on" ? "동의" : "—"}
               </Field>
