@@ -61,8 +61,16 @@ export function ProposalResultView({
 
   return (
     <div className="flex flex-col">
-      {/* Sticky chip 탭 — 아바타 + 이름. 분석 안 된 proposal 은 우측에 pulse dot. */}
-      <nav className="sticky top-0 z-10 bg-white border-b border-[#efefef] mt-6">
+      {/* Sticky chip 탭 — 아바타 + 이름. 분석 안 된 proposal 은 우측에 pulse dot.
+       *
+       * `top` 은 ancestor 가 `--proposal-sticky-top` CSS 변수로 override 가능 —
+       * 본인이 자체 sticky 헤더를 가진 컨테이너 (예: 어드민 layout 안 PreviewFrame)
+       * 에 embed 될 때 chip 이 그 헤더 뒤로 들어가지 않게 offset 을 주입한다.
+       * 미설정 시 viewport top (`0px`) 기본 — 가입자 marketing layout 의 동작. */}
+      <nav
+        className="sticky z-10 bg-white border-b border-[#efefef] mt-6"
+        style={{ top: "var(--proposal-sticky-top, 0px)" }}
+      >
         <ul className="px-6 py-3 flex items-center gap-2 overflow-x-auto">
           {proposals.map((p, i) => (
             <li key={p.id} className="shrink-0">
