@@ -7,6 +7,7 @@ proposals/
 ├─ schema.ts            # zod 입력 검증 + 도메인 PlanProposal/PlanRequestAssignment 타입
 ├─ queries.ts           # 'server-only' — PlanProposal/Assignment 조회 + 분석 리포트 read
 ├─ actions.ts           # 'use server' — presigned PUT 발급, 제출 (HEAD + SHA-256 + TX)
+├─ adapt-proposal.ts    # PlanProposalCard + AnalysisReportV5 → PlanProposalData (UI shape)
 ├─ analysis-schema.ts   # claim.plan_proposal_analysis_report (v5) zod schema
 ├─ category-labels.ts   # 분석 리포트 category id → 한글 라벨 + KNOWN_CATEGORIES
 ├─ select-scenarios.ts  # ROI 시계열 계산 + chip 시나리오 선정 (intersection/union)
@@ -17,22 +18,34 @@ proposals/
 
 ```
 ui/
-├─ chart-types.ts          # PlanProposalData / RoiPoint / ScenarioMeta 등 공유 데이터 shape
-├─ format-krw.ts           # 원 → "5,000만원" 표기 유틸
-├─ roi-chart.tsx           # 회수 배율 라인 차트 (시나리오 토글 + 커서)
-├─ surrender-loss-chart.tsx# 해지 시 월평균 부담 곡선
-├─ coverage-panel.tsx      # 시나리오 보장 상세 (총액 + 담보 breakdown)
-├─ partner-note-bubble.tsx # 설계사 한줄평 말풍선
-├─ proposal-metrics-card.tsx# 보험사 / 월 납입료 / 계약 구조 카드
-└─ proposal-tab-chip.tsx   # 제안서 전환 탭 칩 (아바타 + 이름)
+├─ chart-types.ts            # PlanProposalData / RoiPoint / ScenarioMeta 등 공유 데이터 shape
+├─ format-krw.ts             # 원 → "5,000만원" 표기 유틸
+├─ roi-chart.tsx             # 회수 배율 라인 차트 (시나리오 토글 + 커서)
+├─ surrender-loss-chart.tsx  # 해지 시 월평균 부담 곡선
+├─ coverage-panel.tsx        # 시나리오 보장 상세 (총액 + 담보 breakdown)
+├─ partner-note-bubble.tsx   # 설계사 한줄평 말풍선
+├─ proposal-metrics-card.tsx # 보험사 / 월 납입료 / 계약 구조 카드
+├─ proposal-tab-chip.tsx     # 제안서 전환 탭 칩 (아바타 + 이름)
+├─ scenario-modal.tsx        # 카테고리 검색 모달 (한글 자모/초성 substring)
+├─ scenario-picker-roi-chart.tsx  # RoiChart + recent chip + scenario-modal 결합
+└─ proposal-result-view.tsx  # chip 탭 + 활성 제안서 본문 (한줄평/메트릭/ROI/해지/attribution)
 ```
 
-**라우트 공유 + 의존성 방향**: 결과 페이지(`plan-request/result/[token]`)와 랜딩
-데모(`(marketing)/_components/proposal-comparison-demo`)가 **둘 다** 이 컴포넌트를
-소비한다. 결과 페이지는 `adapt-proposal.ts` 가 실 데이터를 `chart-types` shape 으로
-변환해 채우고, 랜딩은 `_lib/demo-proposals.ts` 가 mock 으로 채운다. 그래서 이
-`ui/` 모듈은 **어느 라우트에도 의존하면 안 된다** — import 는 `@/lib`,
-`@/features/*`, 그리고 `ui/` 내부 형제만. 방향: `랜딩 → ui ← 결과 페이지`.
+**라우트 공유 + 의존성 방향**: 다음 셋이 같은 `ui/` 모듈을 공유한다:
+
+| 호출자 | 데이터 source | UI 엔트리 |
+|---|---|---|
+| 가입자 결과 페이지 `/plan-request/result/[token]` | `adaptPlanProposal(card, report, age)` | `ProposalResultView` + 상담 CTA / 보관기간 푸터 slot |
+| 어드민 결과 페이지 `/admin/requests/[id]/result` (audit) | 동일 `adaptPlanProposal` | `ProposalResultView` (slot 미전달 — chrome 없음) |
+| 랜딩 데모 `(marketing)/_components/proposal-comparison-demo` | `_lib/demo-proposals.ts` mock | `RoiChart` 등 개별 컴포넌트 |
+
+`ProposalResultView` 의 `bottomActionFor` / `footer` slot 으로 가입자/어드민 chrome 차이를
+흡수 — 데이터 표시는 한 컴포넌트로 통합, 사이드이펙트 (조회 마커, 광고 conversion, 상담
+요청) 는 호출자 책임. 어드민 라우트가 호출하더라도 `'use client'` 컴포넌트가 admin 인증
+경계를 침범하지 않음 (인증은 `(dashboard)/layout.tsx` 의 `requireAdminSession` 이 책임).
+
+이 `ui/` 모듈은 **어느 라우트에도 의존하면 안 된다** — import 는 `@/lib`, `@/features/*`,
+그리고 `ui/` 내부 형제만. 방향: `랜딩 / 가입자 / 어드민 → ui ← 자기 자신`.
 
 ## 도메인 핵심
 
