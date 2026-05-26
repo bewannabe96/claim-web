@@ -47,11 +47,13 @@ export function PageHeader({
  * BackLink
  * ============================================================ */
 
-export function BackLink({
+export function BackLink<T extends string>({
   href,
   children,
 }: {
-  href: Route;
+  /** typedRoutes 검증. dynamic route 의 template literal (예: `/admin/requests/${id}`)
+   *  은 `Route<\`/admin/requests/${string}\`>` 로 좁혀지므로 제네릭으로 받는다. */
+  href: Route<T>;
   children: React.ReactNode;
 }) {
   return (

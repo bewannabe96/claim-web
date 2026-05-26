@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { BrandMark } from "@/components/brand-mark";
+import { adaptPlanProposal } from "@/features/plan-proposals/adapt-proposal";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import {
   getAnalysisReport,
@@ -18,7 +19,6 @@ import { ExpiredState } from "./_components/expired-state";
 import { RematchingState } from "./_components/rematching-state";
 import { ResultView } from "./_components/result-view";
 import { ResultViewedMarker } from "./_components/result-viewed-marker";
-import { adaptPlanProposal } from "./_lib/adapt-proposal";
 
 const MS_PER_DAY = 86_400_000;
 

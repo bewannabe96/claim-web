@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getPartnerCardsByIds } from "@/features/partners/queries";
@@ -251,11 +252,24 @@ export default async function AdminRequestDetailPage({
             }
           />
           <div className="flex flex-col gap-3">
+            {/* 어드민용 결과 보기 — 가입자 페이지와 같은 데이터/뷰를 어드민 chrome 으로 렌더.
+                보관기간 만료/조회마커/상담 CTA 없이 분석 본문을 그대로 노출. audit/분쟁 대응용. */}
+            <Link
+              href={`/admin/requests/${id}/result`}
+              className="flex items-center justify-between gap-3 rounded-xl border border-[#efefef] bg-white px-3 py-2.5 hover:bg-[#fafafa] transition-colors"
+            >
+              <span className="text-xs text-[#4b4b4b]">
+                어드민용 결과 보기{" "}
+                <span className="text-[#afafaf]">— 보관기간 무관, 마커/CTA 없음</span>
+              </span>
+              <span className="text-[11px] text-black font-medium">열기 →</span>
+            </Link>
+            {/* 가입자 POV 진입 URL — 보관기간 경과 시 ExpiredState 가 렌더되는 실제 가입자 화면. */}
             <a
               href={`/plan-request/result/${request.resultToken}`}
               target="_blank"
               rel="noopener noreferrer"
-              title="새 탭에서 열기 — 가입자 POV"
+              title="새 탭에서 열기 — 가입자 POV (보관기간 만료 시 ExpiredState)"
               className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs font-mono text-black break-all hover:bg-[#efefef] transition-colors"
             >
               /plan-request/result/{request.resultToken}
