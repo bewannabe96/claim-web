@@ -142,10 +142,17 @@ export default async function AdminResultPreviewPage({
  * `<main>` 으로 감싸 가입자 페이지의 `<main className="flex flex-col flex-1 ...">`
  * 위치와 동일하게 — `ProposalResultView` 의 fixed 하단 CTA / sticky chip 탭 좌표
  * 가정이 깨지지 않도록 white bg.
+ *
+ * `--proposal-sticky-top: 3.5rem` 으로 `ProposalResultView` chip 탭의 sticky 위치를
+ * admin layout 의 sticky top bar (`h-14` = 3.5rem, z-30) 바로 아래로 밀어준다.
+ * 변수 미설정이면 chip 이 viewport top-0 에 붙어 admin nav 뒤로 들어감 (z-10 < z-30).
  */
 function PreviewFrame({ children }: { children: React.ReactNode }) {
   return (
-    <main className="mx-auto w-full max-w-[480px] flex flex-col bg-white border-x border-[#e2e2e2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+    <main
+      className="mx-auto w-full max-w-[480px] flex flex-col bg-white border-x border-[#e2e2e2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]"
+      style={{ "--proposal-sticky-top": "3.5rem" } as React.CSSProperties}
+    >
       {children}
     </main>
   );
