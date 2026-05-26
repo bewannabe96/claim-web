@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 /* ============================================================
  * 연락 수단 선택 — 상담 진행하기 CTA 클릭 시 노출되는 바텀 시트.
  *
- * scenario-modal.tsx 와 동일 패턴 (모바일 bottom sheet / 데스크탑 centered modal,
+ * features/plan-proposals/ui/scenario-modal.tsx 와 동일 패턴 (모바일 bottom sheet / 데스크탑 centered modal,
  * ESC + body scroll lock, bg-black/40 백드롭, max-w-[480px] 패널). 두 옵션만
  * 노출하므로 검색/리스트 영역 없이 큰 버튼 두 개만 배치.
  * ============================================================ */

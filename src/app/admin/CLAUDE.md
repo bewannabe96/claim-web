@@ -68,7 +68,10 @@ admin/
    ├─ requests/...               # 요청 모니터링 + 가입자 대신 요청서 작성 (new/)
    │  ├─ page.tsx                # 모니터링 리스트 + "+ 새 요청서 작성" CTA
    │  ├─ new/page.tsx            # 가입자 대신 작성 (createPlanRequestByAdmin, OTP 생략 + 즉시 dispatched)
-   │  └─ [id]/page.tsx           # 상세 (분석 실패/정체 인라인 재시도, 결과 알림톡 수동 발송)
+   │  └─ [id]/...
+   │     ├─ page.tsx             # 상세 (분석 실패/정체 인라인 재시도, 결과 알림톡 수동 발송)
+   │     └─ result/page.tsx      # 어드민용 결과 페이지 (audit) — 가입자 페이지와 같은 ProposalResultView,
+   │                             #   chrome 없음. 보관기간 무관, ResultViewedMarker 미렌더.
    ├─ analysis-failures/page.tsx # 미해결 분석 실패 모니터링 + 재시도
    ├─ partners/...               # 설계사 풀 관리 (가입 초청 발급 + 등록된 partner 편집)
    │  ├─ page.tsx                # 가입 대기 (invitation) + 등록 완료 (partner) 2-섹션 리스트

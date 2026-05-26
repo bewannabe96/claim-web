@@ -14,6 +14,12 @@ import { formatKRW } from "@/features/plan-proposals/ui/format-krw";
  * 차트/카드 컴포넌트들이 mock fixture 의 `PlanProposalData` 형태에 강결합돼 있어
  * 어댑터로 변환만 한다.
  *
+ * 가입자 결과 페이지(`/plan-request/result/[token]`)와 어드민 결과 페이지
+ * (`/admin/requests/[id]/result`)가 둘 다 이 함수를 호출한다 — 두 경로 모두
+ * 같은 PlanProposalData shape 으로 공용 UI (`features/plan-proposals/ui/`) 를
+ * 렌더하기 위함. 라우트 chrome (CTA / 보관기간 푸터 / 마커) 은 호출자가 별도로
+ * 합성한다.
+ *
  * roi / coverage 의 키는 **분석 리포트의 category id** (e.g. "lung_cancer").
  * 결과 페이지의 RoiChart chip 영역과 ScenarioSection 의 카테고리가 동일 단위.
  *

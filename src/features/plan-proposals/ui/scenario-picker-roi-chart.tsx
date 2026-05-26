@@ -10,8 +10,7 @@ import {
 } from "@/features/plan-proposals/select-scenarios";
 import type { PlanProposalData } from "@/features/plan-proposals/ui/chart-types";
 import { RoiChart, type RoiChartChip } from "@/features/plan-proposals/ui/roi-chart";
-
-import { ScenarioModal } from "./scenario-modal";
+import { ScenarioModal } from "@/features/plan-proposals/ui/scenario-modal";
 
 /** 검색 (더보기) chip 의 special id — RoiChart 의 isMore flag 와 함께 사용. */
 const MORE_CHIP_ID = "__more__";
