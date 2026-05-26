@@ -18,31 +18,49 @@ proposals/
 
 ```
 ui/
-├─ chart-types.ts            # PlanProposalData / RoiPoint / ScenarioMeta 등 공유 데이터 shape
-├─ format-krw.ts             # 원 → "5,000만원" 표기 유틸
-├─ roi-chart.tsx             # 회수 배율 라인 차트 (시나리오 토글 + 커서)
-├─ surrender-loss-chart.tsx  # 해지 시 월평균 부담 곡선
-├─ coverage-panel.tsx        # 시나리오 보장 상세 (총액 + 담보 breakdown)
-├─ partner-note-bubble.tsx   # 설계사 한줄평 말풍선
-├─ proposal-metrics-card.tsx # 보험사 / 월 납입료 / 계약 구조 카드
-├─ proposal-tab-chip.tsx     # 제안서 전환 탭 칩 (아바타 + 이름)
-├─ scenario-modal.tsx        # 카테고리 검색 모달 (한글 자모/초성 substring)
+├─ chart-types.ts                 # PlanProposalData / RoiPoint / ScenarioMeta 등 공유 데이터 shape
+├─ format-krw.ts                  # 원 → "5,000만원" 표기 유틸
+├─ roi-chart.tsx                  # 회수 배율 라인 차트 (시나리오 토글 + 커서)
+├─ surrender-loss-chart.tsx       # 해지 시 월평균 부담 곡선
+├─ coverage-panel.tsx             # 시나리오 보장 상세 (총액 + 담보 breakdown)
+├─ partner-note-bubble.tsx        # 설계사 한줄평 말풍선
+├─ proposal-metrics-card.tsx      # 보험사 / 월 납입료 / 계약 구조 카드
+├─ proposal-tab-chip.tsx          # 제안서 전환 탭 칩 (아바타 + 이름)
+├─ scenario-modal.tsx             # 카테고리 검색 모달 (한글 자모/초성 substring)
 ├─ scenario-picker-roi-chart.tsx  # RoiChart + recent chip + scenario-modal 결합
-└─ proposal-result-view.tsx  # chip 탭 + 활성 제안서 본문 (한줄평/메트릭/ROI/해지/attribution)
+├─ proposal-result-view.tsx       # chip 탭 + 활성 제안서 본문 (slot: bottomActionFor / footer)
+├─ result-page-shell.tsx          # BrandMark + "제안서 N건 도착" 헤더 + AnalysisStatusBadge (chrome)
+├─ result-footer.tsx              # disclaimer + "결과는 N일간 유지돼요" — footer slot 공용
+├─ contact-cta-button.tsx         # 상담 진행하기 pill button — props 로 idle/요청완료/disabled 분기
+├─ contact-channel-sheet.tsx      # 상담 채널 선택 바텀 시트 (kakao / sms)
+├─ result-view.tsx                # 가입자 wrapper — state + sheet + 인터랙티브 CTA
+└─ preview-result-view.tsx        # read-only wrapper — disabled CTA 만 (state/sheet 없음, route-agnostic)
 ```
 
 **라우트 공유 + 의존성 방향**: 다음 셋이 같은 `ui/` 모듈을 공유한다:
 
 | 호출자 | 데이터 source | UI 엔트리 |
 |---|---|---|
-| 가입자 결과 페이지 `/plan-request/result/[token]` | `adaptPlanProposal(card, report, age)` | `ProposalResultView` + 상담 CTA / 보관기간 푸터 slot |
-| 어드민 결과 페이지 `/admin/requests/[id]/result` (audit) | 동일 `adaptPlanProposal` | `ProposalResultView` (slot 미전달 — chrome 없음) |
+| 가입자 결과 페이지 `/plan-request/result/[token]` | `adaptPlanProposal(card, report, age)` | `ResultPageShell` + `ResultView` |
+| 어드민 preview `/admin/requests/[id]/result` | 동일 `adaptPlanProposal` | 같은 shell + `PreviewResultView` (480px 프레임 안, `disabledNotice` 카피는 caller) |
 | 랜딩 데모 `(marketing)/_components/proposal-comparison-demo` | `_lib/demo-proposals.ts` mock | `RoiChart` 등 개별 컴포넌트 |
 
-`ProposalResultView` 의 `bottomActionFor` / `footer` slot 으로 가입자/어드민 chrome 차이를
-흡수 — 데이터 표시는 한 컴포넌트로 통합, 사이드이펙트 (조회 마커, 광고 conversion, 상담
-요청) 는 호출자 책임. 어드민 라우트가 호출하더라도 `'use client'` 컴포넌트가 admin 인증
-경계를 침범하지 않음 (인증은 `(dashboard)/layout.tsx` 의 `requireAdminSession` 이 책임).
+두 wrapper 모두 `ProposalResultView` 의 `bottomActionFor` + `footer` slot 패턴으로
+합성 — flag 분기 없음, 각 wrapper 가 단일 책임 (interactive vs read-only). 공유
+부품 (`ContactCtaButton`, `ResultFooter`) 는 props 만으로 모드를 표현.
+
+`PreviewResultView` 자체는 **route-agnostic** — "왜 disabled 인지" 의 카피는
+`disabledNotice` prop 으로 호출자가 전달. 어드민 컨텍스트 (`"어드민 preview — ..."`)
+는 admin 페이지의 상수 한 줄에만 묶이고 도메인 층 (이 디렉토리) 으로 새지 않음.
+다른 read-only 진입점 (지원도구 등) 이 생기면 자기 카피로 같은 wrapper 재사용 가능.
+
+사이드이펙트 (`ResultViewedMarker` / `requestPlanProposalContact`) 는 모두 가입자
+wrapper 와 그 호출자에 격리. `PreviewResultView` 트리에는 두 컴포넌트 모두 미포함
+이라 read-only 진입이 가입자측 카운터 / `resultViewedAt` / `contactRequestedAt` 을
+절대 오염하지 않음 — flag 가 아닌 트리 격리로 보장.
+
+어드민 라우트가 호출하더라도 `'use client'` 컴포넌트가 admin 인증 경계를 침범하지
+않음 (인증은 `(dashboard)/layout.tsx` 의 `requireAdminSession` 이 책임).
 
 이 `ui/` 모듈은 **어느 라우트에도 의존하면 안 된다** — import 는 `@/lib`, `@/features/*`,
 그리고 `ui/` 내부 형제만. 방향: `랜딩 / 가입자 / 어드민 → ui ← 자기 자신`.

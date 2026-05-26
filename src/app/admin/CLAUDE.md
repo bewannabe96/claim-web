@@ -70,8 +70,11 @@ admin/
    │  ├─ new/page.tsx            # 가입자 대신 작성 (createPlanRequestByAdmin, OTP 생략 + 즉시 dispatched)
    │  └─ [id]/...
    │     ├─ page.tsx             # 상세 (분석 실패/정체 인라인 재시도, 결과 알림톡 수동 발송)
-   │     └─ result/page.tsx      # 어드민용 결과 페이지 (audit) — 가입자 페이지와 같은 ProposalResultView,
-   │                             #   chrome 없음. 보관기간 무관, ResultViewedMarker 미렌더.
+   │     └─ result/page.tsx      # 결과 화면 preview — 가입자 chrome (BrandMark + 헤더 + 결과 본문)
+   │                             #   을 480px 프레임 안에서 그대로 mirror. 보관기간 무관,
+   │                             #   ResultViewedMarker 미렌더, 가입자 ResultView 대신 도메인의 read-only
+   │                             #   PreviewResultView 사용 (mutation 트리 자체 미포함, CTA disabled +
+   │                             #   안내). 어드민 컨텍스트 카피는 이 페이지의 상수 한 줄.
    ├─ analysis-failures/page.tsx # 미해결 분석 실패 모니터링 + 재시도
    ├─ partners/...               # 설계사 풀 관리 (가입 초청 발급 + 등록된 partner 편집)
    │  ├─ page.tsx                # 가입 대기 (invitation) + 등록 완료 (partner) 2-섹션 리스트

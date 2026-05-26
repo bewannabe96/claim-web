@@ -2,28 +2,29 @@
 
 import { useState, useTransition } from "react";
 
-import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
 import { requestPlanProposalContact } from "@/features/plan-proposals/actions";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import type { ContactChannel } from "@/features/plan-proposals/schema";
 import type { PlanProposalData } from "@/features/plan-proposals/ui/chart-types";
+import { ContactChannelSheet } from "@/features/plan-proposals/ui/contact-channel-sheet";
+import { ContactCtaButton } from "@/features/plan-proposals/ui/contact-cta-button";
 import { ProposalResultView } from "@/features/plan-proposals/ui/proposal-result-view";
-import { cn } from "@/lib/utils";
-
-import { ContactChannelSheet } from "./contact-channel-sheet";
+import { ResultFooter } from "@/features/plan-proposals/ui/result-footer";
 
 /**
- * 가입자 결과 페이지 chrome — 공용 ProposalResultView 를 감싸 가입자 전용 상호작용
- * (상담 요청 / 채널 시트 / 보관기간 안내) 만 담당.
+ * 가입자 결과 페이지 wrapper — 공용 `ProposalResultView` 데이터 표시 위에 가입자
+ * 전용 인터랙션 (상담 요청 / 채널 시트 / 보관기간 안내) 을 합성.
  *
- * 연락 요청 상태 (contactRequested): SSR 의 proposal.contactRequestedAt 기반으로
- * 초기화 후 client state 로 관리. "상담 진행하기" 클릭 → 바텀 시트에서 채널
- * (카카오톡 / 문자) 선택 → requestPlanProposalContact 액션을 호출. 액션이 멱등이라
- * 서버는 첫 호출만 카운터 +1, 클라는 응답과 무관하게 즉시 토글 (optimistic). 새로고침
- * / 새 탭에서 button 이 다시 활성되는 것은 SSR 의 contactRequestedAt 으로 가려짐.
+ * 호출자: `/plan-request/result/[token]` (가입자 단독). read-only 진입점 (예: 어드민
+ * preview) 은 사이드이펙트가 없는 별도 wrapper (`PreviewResultView`) — 같은
+ * `ProposalResultView` 를 공유하되 mutation 컴포넌트들 (이 파일의 useState/useTransition
+ * + ContactChannelSheet) 을 일절 끌어오지 않는다.
  *
- * 데이터 표시는 features/plan-proposals/ui/proposal-result-view 가 책임 — 어드민
- * 결과 페이지 (`/admin/requests/[id]/result`) 와 같은 컴포넌트.
+ * 연락 요청 상태 (`contactRequested`): SSR 의 `proposal.contactRequestedAt` 기반으로
+ * 초기화 후 client state 로 관리. "상담 진행하기" 클릭 → 바텀 시트에서 채널 선택 →
+ * `requestPlanProposalContact` 액션 호출. 액션이 멱등이라 서버는 첫 호출만 카운터
+ * +1, 클라는 응답과 무관하게 즉시 토글 (optimistic). 새로고침 / 새 탭에서 button 이
+ * 다시 활성되는 것은 SSR `contactRequestedAt` 으로 가려짐.
  */
 export function ResultView({
   resultToken,
@@ -95,21 +96,7 @@ export function ResultView({
             onClick={() => setSheetProposalId(active.id)}
           />
         )}
-        footer={
-          /*
-           * 페이지 푸터 — disclaimer 두 줄 + 결과 유지 기간. article 의 pb-32
-           * 안이라 fixed CTA 에 가려지지 않음. gap-4 로 disclaimer 와 보관기간 사이
-           * 명확히 분리, -mt-4 로 직전 attribution 카드와의 gap-16 을 살짝 좁힘.
-           */
-          <div className="flex flex-col gap-4 text-xs text-[#afafaf] text-center leading-relaxed -mt-4">
-            <p>
-              설계사가 보내준 제안서를 약관 기준으로 객관 비교했어요.
-              <br />
-              AI 가 분석한 자료라 약간의 오차가 있을 수 있어요.
-            </p>
-            <p>결과는 {resultRetentionDays}일간 유지돼요</p>
-          </div>
-        }
+        footer={<ResultFooter resultRetentionDays={resultRetentionDays} />}
       />
 
       <ContactChannelSheet
@@ -123,46 +110,5 @@ export function ResultView({
         }}
       />
     </>
-  );
-}
-
-/**
- * 상담 진행하기 버튼 — ProposalResultView 의 fixed 하단 영역에 합성되는 CTA.
- *  - 이미 상담 요청한 proposal: disabled + "상담 요청을 보냈어요"
- *  - 아닐 때: 검정 pill button + "<설계사명> 설계사와 상담 진행하기" (이름만 NoTrack).
- */
-function ContactCtaButton({
-  proposal,
-  contactRequested,
-  onClick,
-}: {
-  proposal: PlanProposalData;
-  contactRequested: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={contactRequested}
-      className={cn(
-        "w-full h-14 rounded-full text-base font-medium transition-colors",
-        contactRequested
-          ? "bg-[#efefef] text-[#4b4b4b] cursor-default"
-          : "bg-black text-white hover:bg-[#1a1a1a]",
-      )}
-    >
-      {contactRequested ? (
-        "상담 요청을 보냈어요"
-      ) : (
-        <>
-          {/* 파트너명만 분석 제외 — 버튼 click 자체 ("상담 진행하기 button 클릭") 는
-              funnel 핵심 conversion 이라 button 전체 마스킹은 X. PostHog autocapture
-              의 element_text 집계 시 ph-no-capture 자식 텍스트는 제외됨. */}
-          <span className={NO_TRACK_CLASS}>{proposal.partner.name}</span> 설계사와
-          상담 진행하기
-        </>
-      )}
-    </button>
   );
 }
