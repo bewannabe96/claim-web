@@ -252,15 +252,18 @@ export default async function AdminRequestDetailPage({
             }
           />
           <div className="flex flex-col gap-3">
-            {/* 어드민용 결과 보기 — 가입자 페이지와 같은 데이터/뷰를 어드민 chrome 으로 렌더.
-                보관기간 만료/조회마커/상담 CTA 없이 분석 본문을 그대로 노출. audit/분쟁 대응용. */}
+            {/* 결과 화면 preview — 가입자가 보는 chrome 그대로(BrandMark + 헤더 + ResultView)를
+                480px 프레임 안에서 mirror. 보관기간/열람 마커 없이, 상담 CTA 는 disabled. audit
+                및 분쟁 대응용. 가입자 mutation (resultViewedAt / contactRequestedAt) 은 오염 X. */}
             <Link
               href={`/admin/requests/${id}/result`}
               className="flex items-center justify-between gap-3 rounded-xl border border-[#efefef] bg-white px-3 py-2.5 hover:bg-[#fafafa] transition-colors"
             >
               <span className="text-xs text-[#4b4b4b]">
-                어드민용 결과 보기{" "}
-                <span className="text-[#afafaf]">— 보관기간 무관, 마커/CTA 없음</span>
+                결과 화면 preview{" "}
+                <span className="text-[#afafaf]">
+                  — 가입자 화면 mirror, 보관기간/마커 무관, CTA disabled
+                </span>
               </span>
               <span className="text-[11px] text-black font-medium">열기 →</span>
             </Link>

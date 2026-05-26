@@ -1,0 +1,72 @@
+"use client";
+
+import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
+import type { PlanProposalData } from "@/features/plan-proposals/ui/chart-types";
+import { cn } from "@/lib/utils";
+
+/**
+ * 상담 진행하기 CTA — `ProposalResultView` 의 `bottomActionFor` slot 에 합성되는
+ * pill button.
+ *
+ * 호출자가 props 만으로 모드를 결정:
+ *   - 가입자 인터랙티브: `onClick` 전달, `contactRequested=false` → 검정 pill, 클릭 가능
+ *   - 가입자 요청 완료: `contactRequested=true` → 회색 disabled + "상담 요청을 보냈어요"
+ *   - 어드민 preview:    `previewNotice` 전달 → 회색 disabled + 버튼 위 인라인 안내.
+ *                       `contactRequested` 도 그대로 반영 — 가입자가 이미 요청한 상태면
+ *                       "상담 요청을 보냈어요" 그대로 미러.
+ *
+ * `previewNotice` 가 있으면 `onClick` 은 무시됨 (preview 우선).
+ *
+ * 파트너명 span 만 `NO_TRACK_CLASS` 로 분석 제외 — 가입자↔설계사 매칭 식별 누출 방지.
+ * 버튼 click 자체 (funnel 핵심 conversion) 는 추적 유지.
+ */
+export function ContactCtaButton({
+  proposal,
+  contactRequested,
+  onClick,
+  previewNotice,
+}: {
+  proposal: PlanProposalData;
+  /** SSR `proposal.contactRequested` + (인터랙티브 모드에서) 클라이언트 optimistic state. */
+  contactRequested: boolean;
+  /** 가입자 인터랙티브 모드에서만 전달. `previewNotice` 와 동시 전달 시 preview 우선. */
+  onClick?: () => void;
+  /** 전달되면 disabled + 버튼 위 작은 인라인 안내. 어드민 preview 진입점. */
+  previewNotice?: string;
+}) {
+  const isPreview = previewNotice != null;
+  const disabled = isPreview || contactRequested;
+
+  const button = (
+    <button
+      type="button"
+      onClick={isPreview ? undefined : onClick}
+      disabled={disabled}
+      className={cn(
+        "w-full h-14 rounded-full text-base font-medium transition-colors",
+        disabled
+          ? "bg-[#efefef] text-[#4b4b4b] cursor-default"
+          : "bg-black text-white hover:bg-[#1a1a1a]",
+      )}
+    >
+      {contactRequested ? (
+        "상담 요청을 보냈어요"
+      ) : (
+        <>
+          <span className={NO_TRACK_CLASS}>{proposal.partner.name}</span> 설계사와
+          상담 진행하기
+        </>
+      )}
+    </button>
+  );
+
+  if (isPreview) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <p className="text-center text-[10px] text-[#afafaf]">{previewNotice}</p>
+        {button}
+      </div>
+    );
+  }
+  return button;
+}

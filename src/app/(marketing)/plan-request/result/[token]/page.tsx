@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
-import { BrandMark } from "@/components/brand-mark";
 import { adaptPlanProposal } from "@/features/plan-proposals/adapt-proposal";
 import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import {
@@ -10,6 +9,8 @@ import {
   listPlanProposalCardsForRequest,
   type PlanProposalCard,
 } from "@/features/plan-proposals/queries";
+import { ResultPageShell } from "@/features/plan-proposals/ui/result-page-shell";
+import { ResultView } from "@/features/plan-proposals/ui/result-view";
 import { getRequestByResultToken } from "@/features/plan-requests/queries";
 import { computeAge } from "@/lib/age";
 import { nowMs } from "@/lib/wall-clock";
@@ -17,7 +18,6 @@ import { getSettings } from "@/server/settings";
 
 import { ExpiredState } from "./_components/expired-state";
 import { RematchingState } from "./_components/rematching-state";
-import { ResultView } from "./_components/result-view";
 import { ResultViewedMarker } from "./_components/result-viewed-marker";
 
 const MS_PER_DAY = 86_400_000;
@@ -123,50 +123,21 @@ export default async function ResultPage({
     );
   }
 
-  // 분석 진행 현황 — 분석 안 된 proposal 이 있으면 progress 배지, 모두 완료면 "결과 준비됨".
-  // 이 지점부터 proposals.length > 0 보장 (위 early return).
-  // skip 처리된 제안서는 더 이상 진행되지 않으므로 "분석 완료" 와 동급으로 묶어
-  // 진행률에 포함 — 그렇지 않으면 영원히 "X/N 진행 중" 으로 남는다.
-  const analyzedCount = proposals.filter(
-    (p) => p.analyzed || p.analysisSkipped,
-  ).length;
-  const allAnalyzed = analyzedCount === proposals.length;
-
   return (
     <main className="flex flex-col flex-1 bg-white">
       <ResultViewedMarker token={token} />
-      <div className="px-6 pt-10">
-        <BrandMark />
-        <header className="mt-6 flex flex-col gap-2">
-          <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">
-            제안서{" "}
-            <span className="text-black">{proposals.length}건</span>
-            이 도착했어요
-          </h1>
-          {req.selectedPartnerIds.length > proposals.length && (
-            <p className="text-sm text-[#4b4b4b]">
-              선택하신 {req.selectedPartnerIds.length}명 중{" "}
-              <span className="font-semibold text-black">
-                {proposals.length}명
-              </span>
-              이 제안서를 보내주셨어요
-            </p>
-          )}
-          <AnalysisStatusBadge
-            analyzed={analyzedCount}
-            total={proposals.length}
-            allDone={allAnalyzed}
-          />
-        </header>
-      </div>
-
-      <ResultView
-        resultToken={token}
+      <ResultPageShell
         proposals={proposals}
-        reportsById={reportsById}
-        scenarioPriority={settings.scenarioPriority}
-        resultRetentionDays={settings.resultRetentionDays}
-      />
+        selectedPartnerCount={req.selectedPartnerIds.length}
+      >
+        <ResultView
+          resultToken={token}
+          proposals={proposals}
+          reportsById={reportsById}
+          scenarioPriority={settings.scenarioPriority}
+          resultRetentionDays={settings.resultRetentionDays}
+        />
+      </ResultPageShell>
     </main>
   );
 }
@@ -180,37 +151,4 @@ async function loadReportForCard(
   card: PlanProposalCard,
 ): Promise<AnalysisReportV5 | null> {
   return getAnalysisReport(card.proposal.id);
-}
-
-/**
- * 분석 진행 상태 배지 — 헤더 아래 작은 inline.
- *   - 모두 완료: 검정 dot + "결과 준비됨"
- *   - 진행 중:   pulse dot + "분석 진행 중 X/N 완료" + "새로고침 안내"
- */
-function AnalysisStatusBadge({
-  analyzed,
-  total,
-  allDone,
-}: {
-  analyzed: number;
-  total: number;
-  allDone: boolean;
-}) {
-  if (allDone) {
-    return (
-      <div className="inline-flex items-center gap-1.5 text-xs text-[#4b4b4b]">
-        <span className="w-1.5 h-1.5 rounded-full bg-black" aria-hidden />
-        결과 준비됨
-      </div>
-    );
-  }
-  return (
-    <div className="inline-flex items-center gap-1.5 text-xs text-[#4b4b4b]">
-      <span
-        className="w-1.5 h-1.5 rounded-full bg-[#4b4b4b] animate-pulse"
-        aria-hidden
-      />
-      분석 진행 중 · {analyzed}/{total} 완료 (새로고침 시 갱신)
-    </div>
-  );
 }

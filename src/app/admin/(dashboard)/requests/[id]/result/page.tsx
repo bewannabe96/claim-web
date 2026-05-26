@@ -7,7 +7,8 @@ import {
   listPlanProposalCardsForRequest,
   type PlanProposalCard,
 } from "@/features/plan-proposals/queries";
-import { ProposalResultView } from "@/features/plan-proposals/ui/proposal-result-view";
+import { AdminPreviewResultView } from "@/features/plan-proposals/ui/admin-preview-result-view";
+import { ResultPageShell } from "@/features/plan-proposals/ui/result-page-shell";
 import { getRequestById } from "@/features/plan-requests/queries";
 import { RequestStatusBadge } from "@/features/plan-requests/ui/status-badge";
 import { computeAge } from "@/lib/age";
@@ -15,36 +16,30 @@ import { nowMs } from "@/lib/wall-clock";
 import { getSettings } from "@/server/settings";
 
 import { formatDateTime } from "../../../_lib/format";
-import {
-  BackLink,
-  Card,
-  CardHeader,
-  Empty,
-  PageHeader,
-} from "../../../_components/page-shell";
+import { BackLink, Card, CardHeader, Empty } from "../../../_components/page-shell";
 
 /**
- * 어드민 결과 페이지 (audit) — 가입자 결과 페이지 (`/plan-request/result/[token]`)
- * 와 같은 데이터를 같은 공용 view (`features/plan-proposals/ui/proposal-result-view`)
- * 로 렌더하되, 어드민 chrome (back link + 메타데이터 헤더) 만 합성.
+ * 어드민 결과 페이지 — 가입자 결과 페이지 (`/plan-request/result/[token]`) 의
+ * **preview**. 가입자가 보는 chrome (BrandMark + "제안서 N건 도착했어요" 헤더 +
+ * AnalysisStatusBadge + 결과 본문) 를 그대로 mirror 하되, 가입자측 제약과 부수효과
+ * 를 제거.
  *
  * 가입자 페이지와의 차이:
  *   - **만료 무관** — `resultRetentionDays` 경과해도 그대로 노출. audit/분쟁 대응 목적.
- *   - **조회 마커 없음** — `ResultViewedMarker` 미렌더 → `plan_request.resultViewedAt` 오염 X.
- *   - **상담 진행 CTA / 보관기간 푸터 없음** — `bottomActionFor` / `footer` slot 미전달.
- *   - **메타데이터 헤더** — 송부/마감/열람 시각 + status badge + resultToken 노출.
+ *   - **ResultViewedMarker 미렌더** — `plan_request.resultViewedAt` 오염 X.
+ *   - **상담 진행하기 CTA disabled** — 가입자 wrapper (`ResultView`) 대신 preview
+ *     wrapper (`AdminPreviewResultView`) 사용. mutation 컴포넌트들 (state /
+ *     `ContactChannelSheet` / `requestPlanProposalContact` 호출) 자체가 트리에 없음.
+ *     CTA 는 회색 disabled + "어드민 preview" 인라인 안내.
  *
- * 데이터 흐름 (가입자 페이지와 동일):
- *   id → plan_request (admin id로 조회) → submitted assignments + proposals + partners
- *      ↓
- *   proposal.id → claim.plan_proposal_analysis_report (1:1)
- *      ↓
- *   adaptPlanProposal(card, report, customerAge) → PlanProposalData shape
+ * 레이아웃: 어드민 layout (1280px) 안에 상단 admin bar 한 줄 + 그 아래 480px 모바일
+ * 프레임. 프레임 안은 marketing layout (= 가입자가 보는 환경) 과 동일한 480px width.
+ * 프레임은 phone mockup 톤으로 좌우 border + soft shadow.
  *
- * 결과 페이지 토큰 (`resultToken`) 발급 전 단계 (송부 전) 의 요청은 노출할 본문이 없어
- * `Empty` 카드로 안내.
+ * 데이터 흐름은 가입자 페이지와 완전히 동일 — adaptPlanProposal(card, report, age).
+ * resultToken 발급 전 (송부 전) 의 요청은 본문 자체가 없어 `Empty` 카드로 안내.
  */
-export default async function AdminResultPage({
+export default async function AdminResultPreviewPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -53,24 +48,15 @@ export default async function AdminResultPage({
   const request = await getRequestById(id);
   if (!request) notFound();
 
-  // 가입자 결과 페이지와 동일한 settings 를 전달 — chip 초기 순서가 어드민
-  // priority 정책을 따라가야 "가입자가 보는 그대로 검수" 라는 audit 의도와 정합.
+  // 가입자 결과 페이지와 같은 settings — chip 초기 순서가 어드민 priority 정책을
+  // 따라가야 "가입자가 보는 그대로 preview" 라는 의도와 정합.
   const settings = await getSettings();
-
-  const headerDescription = [
-    `생성 ${formatDateTime(request.createdAt)}`,
-    request.dispatchedAt && `송부 ${formatDateTime(request.dispatchedAt)}`,
-    request.deadlineAt && `마감 ${formatDateTime(request.deadlineAt)}`,
-    request.resultViewedAt && `열람 ${formatDateTime(request.resultViewedAt)}`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
 
   // resultToken 발급 전 (송부/마감 이전) — 본문에 보여줄 분석 결과 자체가 없음.
   if (!request.resultToken) {
     return (
       <div className="flex flex-col gap-6">
-        <ShellHeader id={id} status={request.status} description={headerDescription} />
+        <AdminBar id={id} request={request} />
         <Card>
           <CardHeader title="결과 본문" />
           <Empty>아직 결과가 생성되지 않은 요청이에요.</Empty>
@@ -109,93 +95,114 @@ export default async function AdminResultPage({
     adaptPlanProposal(card, reportsById[card.proposal.id] ?? null, customerAge),
   );
 
-  // 분석 진행 카운트는 정상 완료 + skip 처리 두 케이스를 합산 (가입자 페이지와 동일).
-  const analyzedCount = proposals.filter(
-    (p) => p.analyzed || p.analysisSkipped,
-  ).length;
-  const allAnalyzed = analyzedCount === proposals.length;
-
   return (
     <div className="flex flex-col gap-6">
-      <ShellHeader id={id} status={request.status} description={headerDescription} />
+      <AdminBar id={id} request={request} />
 
-      {/* 메타 카드 — resultToken / 분석 진행률 / 본인 정보 (가입자 POV 진입 URL 포함). */}
-      <Card>
-        <CardHeader
-          title="요청 메타"
-          meta={
-            <span className="tabular-nums">
-              분석{" "}
-              <span className="font-semibold text-black">{analyzedCount}</span>
-              <span className="text-[#afafaf]">/{proposals.length}</span>
-              {allAnalyzed && (
-                <span className="ml-2 text-[#4b4b4b]">(완료)</span>
-              )}
-            </span>
-          }
-        />
-        <div className="flex flex-col gap-3">
-          <a
-            href={`/plan-request/result/${request.resultToken}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="새 탭에서 열기 — 가입자 POV (보관기간 만료 시 ExpiredState 노출)"
-            className="block px-3 py-2 rounded-lg bg-[#fafafa] text-xs font-mono text-black break-all hover:bg-[#efefef] transition-colors"
-          >
-            /plan-request/result/{request.resultToken}
-          </a>
-          {request.step3 && (
-            <p className="text-xs text-[#4b4b4b]">
-              <span className="text-[#afafaf]">본인</span>{" "}
-              <span className="font-medium text-black">{request.step3.name}</span>{" "}
-              <span className="text-[#afafaf]">·</span>{" "}
-              <span className="text-black">만 {customerAge}세</span>
-            </p>
-          )}
-        </div>
-      </Card>
-
-      {/* 분석 본문 — 가입자 페이지와 같은 ProposalResultView. bottomAction / footer slot
-          미전달이라 상담 CTA / 보관기간 문구 없음. 만료 여부와 무관하게 데이터 그대로 노출. */}
       {proposals.length === 0 ? (
+        /* assignments/proposals 가 비어 가입자 화면이 RematchingState 로 가는 케이스.
+           preview 도 그 분기 대신 admin-friendly empty 카드로 — RematchingState 는
+           자체 <main> + BrandMark 를 렌더하는 status screen 이라 480px 프레임 안
+           컴포지션이 어색해진다. audit 의도라면 "비어 있다" 사실만 확인되면 충분. */
         <Card>
           <CardHeader title="결과 본문" />
-          <Empty>아직 제출된 제안서가 없어요.</Empty>
+          <Empty>제출된 제안서가 없어요 (가입자 화면은 RematchingState).</Empty>
         </Card>
       ) : (
-        <Card padding="none" className="overflow-hidden">
-          <ProposalResultView
+        <PreviewFrame>
+          <ResultPageShell
             proposals={proposals}
-            reports={Object.values(reportsById)}
-            scenarioPriority={settings.scenarioPriority}
-          />
-        </Card>
+            selectedPartnerCount={request.selectedPartnerIds.length}
+          >
+            <AdminPreviewResultView
+              proposals={proposals}
+              reportsById={reportsById}
+              scenarioPriority={settings.scenarioPriority}
+              resultRetentionDays={settings.resultRetentionDays}
+            />
+          </ResultPageShell>
+        </PreviewFrame>
       )}
     </div>
   );
 }
 
-function ShellHeader({
+/**
+ * 가입자 화면을 박아 넣는 480px phone-frame. marketing layout 의 mobile
+ * container 톤 (좌우 border + soft shadow) 그대로 따라가서 admin canvas 안에서
+ * 가입자가 보는 viewport 가 한눈에 분리되어 보이도록.
+ *
+ * `<main>` 으로 감싸 가입자 페이지의 `<main className="flex flex-col flex-1 ...">`
+ * 위치와 동일하게 — `ProposalResultView` 의 fixed 하단 CTA / sticky chip 탭 좌표
+ * 가정이 깨지지 않도록 white bg.
+ */
+function PreviewFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="mx-auto w-full max-w-[480px] flex flex-col bg-white border-x border-[#e2e2e2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+      {children}
+    </main>
+  );
+}
+
+/**
+ * Admin chrome — back link + 요청 ID + status + 송부/마감/열람 시각 + 가입자 POV URL.
+ * preview 의 phone-frame 바깥, 정상적인 admin 가로폭(1280px) 안에서 한 단위 카드로
+ * 압축. preview 의 audit context (이 요청은 어떤 상태였고 가입자가 언제 봤는지) 가
+ * 한 줄에 잡혀야 "가입자 화면 미러" 와 분리되어 읽힌다.
+ */
+function AdminBar({
   id,
-  status,
-  description,
+  request,
 }: {
   id: string;
-  status: Parameters<typeof RequestStatusBadge>[0]["status"];
-  description: string;
+  request: NonNullable<Awaited<ReturnType<typeof getRequestById>>>;
 }) {
   return (
     <div>
       <BackLink href={`/admin/requests/${id}`}>요청 상세</BackLink>
-      <PageHeader
-        title={
-          <span className="inline-flex items-center gap-3 tabular-nums">
-            {id}
-            <RequestStatusBadge status={status} />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[#4b4b4b] tabular-nums">
+        <span className="inline-flex items-center gap-2">
+          <span className="font-bold text-black">{id}</span>
+          <RequestStatusBadge status={request.status} />
+        </span>
+        <span className="text-[#afafaf]">·</span>
+        <span>
+          <span className="text-[#afafaf]">생성</span>{" "}
+          {formatDateTime(request.createdAt)}
+        </span>
+        {request.dispatchedAt && (
+          <span>
+            <span className="text-[#afafaf]">송부</span>{" "}
+            {formatDateTime(request.dispatchedAt)}
           </span>
-        }
-        description={description}
-      />
+        )}
+        {request.deadlineAt && (
+          <span>
+            <span className="text-[#afafaf]">마감</span>{" "}
+            {formatDateTime(request.deadlineAt)}
+          </span>
+        )}
+        {request.resultViewedAt && (
+          <span>
+            <span className="text-[#afafaf]">열람</span>{" "}
+            {formatDateTime(request.resultViewedAt)}
+          </span>
+        )}
+        {request.resultToken && (
+          <>
+            <span className="text-[#afafaf]">·</span>
+            <a
+              href={`/plan-request/result/${request.resultToken}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="새 탭에서 열기 — 가입자 POV (보관기간 만료 시 ExpiredState)"
+              className="font-mono text-black underline decoration-[#e2e2e2] underline-offset-2 hover:decoration-black"
+            >
+              가입자 POV ↗
+            </a>
+          </>
+        )}
+      </div>
     </div>
   );
 }
