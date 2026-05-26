@@ -15,10 +15,10 @@ import { ResultFooter } from "@/features/plan-proposals/ui/result-footer";
  * 가입자 결과 페이지 wrapper — 공용 `ProposalResultView` 데이터 표시 위에 가입자
  * 전용 인터랙션 (상담 요청 / 채널 시트 / 보관기간 안내) 을 합성.
  *
- * 호출자: `/plan-request/result/[token]` (가입자 단독). 어드민 preview 는 사이드이펙트
- * 가 없는 별도 wrapper (`AdminPreviewResultView`) — 같은 `ProposalResultView` 를
- * 공유하되 mutation 컴포넌트들 (이 파일의 useState/useTransition + ContactChannelSheet)
- * 을 일절 끌어오지 않는다.
+ * 호출자: `/plan-request/result/[token]` (가입자 단독). read-only 진입점 (예: 어드민
+ * preview) 은 사이드이펙트가 없는 별도 wrapper (`PreviewResultView`) — 같은
+ * `ProposalResultView` 를 공유하되 mutation 컴포넌트들 (이 파일의 useState/useTransition
+ * + ContactChannelSheet) 을 일절 끌어오지 않는다.
  *
  * 연락 요청 상태 (`contactRequested`): SSR 의 `proposal.contactRequestedAt` 기반으로
  * 초기화 후 client state 로 관리. "상담 진행하기" 클릭 → 바텀 시트에서 채널 선택 →

@@ -7,7 +7,7 @@ import {
   listPlanProposalCardsForRequest,
   type PlanProposalCard,
 } from "@/features/plan-proposals/queries";
-import { AdminPreviewResultView } from "@/features/plan-proposals/ui/admin-preview-result-view";
+import { PreviewResultView } from "@/features/plan-proposals/ui/preview-result-view";
 import { ResultPageShell } from "@/features/plan-proposals/ui/result-page-shell";
 import { getRequestById } from "@/features/plan-requests/queries";
 import { RequestStatusBadge } from "@/features/plan-requests/ui/status-badge";
@@ -27,10 +27,10 @@ import { BackLink, Card, CardHeader, Empty } from "../../../_components/page-she
  * 가입자 페이지와의 차이:
  *   - **만료 무관** — `resultRetentionDays` 경과해도 그대로 노출. audit/분쟁 대응 목적.
  *   - **ResultViewedMarker 미렌더** — `plan_request.resultViewedAt` 오염 X.
- *   - **상담 진행하기 CTA disabled** — 가입자 wrapper (`ResultView`) 대신 preview
- *     wrapper (`AdminPreviewResultView`) 사용. mutation 컴포넌트들 (state /
+ *   - **상담 진행하기 CTA disabled** — 가입자 wrapper (`ResultView`) 대신 read-only
+ *     wrapper (`PreviewResultView`) 사용. mutation 컴포넌트들 (state /
  *     `ContactChannelSheet` / `requestPlanProposalContact` 호출) 자체가 트리에 없음.
- *     CTA 는 회색 disabled + "어드민 preview" 인라인 안내.
+ *     CTA 는 회색 disabled + 어드민 컨텍스트 카피 (`PREVIEW_DISABLED_NOTICE`) 인라인 안내.
  *
  * 레이아웃: 어드민 layout (1280px) 안에 상단 admin bar 한 줄 + 그 아래 480px 모바일
  * 프레임. 프레임 안은 marketing layout (= 가입자가 보는 환경) 과 동일한 480px width.
@@ -39,6 +39,12 @@ import { BackLink, Card, CardHeader, Empty } from "../../../_components/page-she
  * 데이터 흐름은 가입자 페이지와 완전히 동일 — adaptPlanProposal(card, report, age).
  * resultToken 발급 전 (송부 전) 의 요청은 본문 자체가 없어 `Empty` 카드로 안내.
  */
+
+/** CTA 위 인라인 안내 — read-only wrapper 자체는 route-agnostic 이라 카피가
+ *  caller 의 책임. 어드민 컨텍스트는 여기 한 줄에만 묶임. */
+const PREVIEW_DISABLED_NOTICE =
+  "어드민 preview — 가입자 액션은 시뮬레이션되지 않아요";
+
 export default async function AdminResultPreviewPage({
   params,
 }: {
@@ -114,11 +120,12 @@ export default async function AdminResultPreviewPage({
             proposals={proposals}
             selectedPartnerCount={request.selectedPartnerIds.length}
           >
-            <AdminPreviewResultView
+            <PreviewResultView
               proposals={proposals}
               reportsById={reportsById}
               scenarioPriority={settings.scenarioPriority}
               resultRetentionDays={settings.resultRetentionDays}
+              disabledNotice={PREVIEW_DISABLED_NOTICE}
             />
           </ResultPageShell>
         </PreviewFrame>

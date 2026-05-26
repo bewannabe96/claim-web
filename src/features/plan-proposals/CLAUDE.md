@@ -31,10 +31,10 @@ ui/
 ├─ proposal-result-view.tsx       # chip 탭 + 활성 제안서 본문 (slot: bottomActionFor / footer)
 ├─ result-page-shell.tsx          # BrandMark + "제안서 N건 도착" 헤더 + AnalysisStatusBadge (chrome)
 ├─ result-footer.tsx              # disclaimer + "결과는 N일간 유지돼요" — footer slot 공용
-├─ contact-cta-button.tsx         # 상담 진행하기 pill button — props 로 idle/요청완료/preview 분기
+├─ contact-cta-button.tsx         # 상담 진행하기 pill button — props 로 idle/요청완료/disabled 분기
 ├─ contact-channel-sheet.tsx      # 상담 채널 선택 바텀 시트 (kakao / sms)
 ├─ result-view.tsx                # 가입자 wrapper — state + sheet + 인터랙티브 CTA
-└─ admin-preview-result-view.tsx  # 어드민 preview wrapper — disabled CTA 만 (state/sheet 없음)
+└─ preview-result-view.tsx        # read-only wrapper — disabled CTA 만 (state/sheet 없음, route-agnostic)
 ```
 
 **라우트 공유 + 의존성 방향**: 다음 셋이 같은 `ui/` 모듈을 공유한다:
@@ -42,17 +42,22 @@ ui/
 | 호출자 | 데이터 source | UI 엔트리 |
 |---|---|---|
 | 가입자 결과 페이지 `/plan-request/result/[token]` | `adaptPlanProposal(card, report, age)` | `ResultPageShell` + `ResultView` |
-| 어드민 preview `/admin/requests/[id]/result` | 동일 `adaptPlanProposal` | 같은 shell + `AdminPreviewResultView` (480px 프레임 안) |
+| 어드민 preview `/admin/requests/[id]/result` | 동일 `adaptPlanProposal` | 같은 shell + `PreviewResultView` (480px 프레임 안, `disabledNotice` 카피는 caller) |
 | 랜딩 데모 `(marketing)/_components/proposal-comparison-demo` | `_lib/demo-proposals.ts` mock | `RoiChart` 등 개별 컴포넌트 |
 
-가입자/어드민 wrapper 모두 `ProposalResultView` 의 `bottomActionFor` + `footer`
-slot 패턴으로 합성 — flag 분기 없음, 각 wrapper 가 단일 책임 (interactive vs preview).
-공유 부품 (`ContactCtaButton`, `ResultFooter`) 는 props 만으로 모드를 표현.
+두 wrapper 모두 `ProposalResultView` 의 `bottomActionFor` + `footer` slot 패턴으로
+합성 — flag 분기 없음, 각 wrapper 가 단일 책임 (interactive vs read-only). 공유
+부품 (`ContactCtaButton`, `ResultFooter`) 는 props 만으로 모드를 표현.
+
+`PreviewResultView` 자체는 **route-agnostic** — "왜 disabled 인지" 의 카피는
+`disabledNotice` prop 으로 호출자가 전달. 어드민 컨텍스트 (`"어드민 preview — ..."`)
+는 admin 페이지의 상수 한 줄에만 묶이고 도메인 층 (이 디렉토리) 으로 새지 않음.
+다른 read-only 진입점 (지원도구 등) 이 생기면 자기 카피로 같은 wrapper 재사용 가능.
 
 사이드이펙트 (`ResultViewedMarker` / `requestPlanProposalContact`) 는 모두 가입자
-wrapper 와 그 호출자에 격리. 어드민 preview 트리에는 두 컴포넌트 모두 미포함이라
-preview 진입이 가입자측 카운터 / `resultViewedAt` / `contactRequestedAt` 을 절대
-오염하지 않음 — flag 가 아닌 트리 격리로 보장.
+wrapper 와 그 호출자에 격리. `PreviewResultView` 트리에는 두 컴포넌트 모두 미포함
+이라 read-only 진입이 가입자측 카운터 / `resultViewedAt` / `contactRequestedAt` 을
+절대 오염하지 않음 — flag 가 아닌 트리 격리로 보장.
 
 어드민 라우트가 호출하더라도 `'use client'` 컴포넌트가 admin 인증 경계를 침범하지
 않음 (인증은 `(dashboard)/layout.tsx` 의 `requireAdminSession` 이 책임).

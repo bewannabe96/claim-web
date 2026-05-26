@@ -1,8 +1,8 @@
 /**
  * 결과 페이지 article 끝 disclaimer + 결과 유지 기간 안내.
  *
- * `ProposalResultView` 의 `footer` slot 에 가입자 (`ResultView`) / 어드민 preview
- * (`AdminPreviewResultView`) 가 동일하게 주입. 가입자 화면을 정확히 mirror 한다는
+ * `ProposalResultView` 의 `footer` slot 에 가입자 (`ResultView`) / read-only
+ * (`PreviewResultView`) wrapper 가 동일하게 주입. 가입자 화면을 정확히 mirror 한다는
  * preview 의도가 깨지지 않도록 한 컴포넌트로 통합.
  *
  * 레이아웃: `article` 의 `pb-32` 안이라 fixed CTA 에 가려지지 않음. `gap-4` 로
