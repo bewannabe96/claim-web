@@ -5,9 +5,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import {
-  AnalysisReportV5Schema,
-  CURRENT_REPORT_VERSION,
-} from "@/features/plan-proposals/analysis-schema";
+  getAnalysisEntry,
+  SUPPORTED_ANALYSIS_VERSIONS,
+} from "@/features/plan-proposals/analysis";
 import { AnalysisErrorSchema } from "@/features/plan-proposals/schema";
 import { closePlanRequest } from "@/features/plan-requests/state-transition";
 import { prisma } from "@/server/db/prisma";
@@ -22,7 +22,9 @@ import { prisma } from "@/server/db/prisma";
  *   {
  *     request_id: string,                 // 메시지 correlation ID (random UUID, log 용)
  *     status: "succeeded" | "failed",
- *     result: AnalysisReportV5 | null,    // succeeded 시 필수
+ *     result: { schema_version: number, ...reportBody } | null,
+ *                                          // succeeded 시 필수. 본문 형태는 registry
+ *                                          // entry (analysis/v{N}/) 의 parseReport 가 검증.
  *     error:  AnalysisError | null,       // failed 시 필수
  *                                          // { group, type, message, detail? }
  *     metadata: {
@@ -56,17 +58,23 @@ import { prisma } from "@/server/db/prisma";
 
 /**
  * 페이로드의 `result` 는 저장될 report 본문 + `schema_version` 마커.
- * `schema_version` 은 별도 컬럼으로 저장되므로 본문 zod 와 분리해서 여기서만 검증.
+ * 본문 형태 검증은 `schema_version` 으로 registry entry 를 lookup 해서
+ * entry.parseReport 가 책임 — 다버전 (v5/v6 ...) row 공존 가능.
+ *
+ * 여기선 봉투 형태 (`schema_version: number` 가 있고 number) 만 강제. 본문
+ * 필드들은 passthrough 로 통과시켜 handler 안에서 registry 가 좁힌다.
  */
-const ResultSchema = AnalysisReportV5Schema.extend({
-  schema_version: z.literal(CURRENT_REPORT_VERSION),
-});
+const ResultEnvelopeSchema = z
+  .object({
+    schema_version: z.number().int().positive(),
+  })
+  .passthrough();
 
 const PayloadSchema = z
   .object({
     request_id: z.string().min(1),
     status: z.enum(["succeeded", "failed"]),
-    result: ResultSchema.nullable(),
+    result: ResultEnvelopeSchema.nullable(),
     /**
      * failed 시 필수. `{ group, type, message, detail? }` — features/proposals/schema.ts
      * 의 `AnalysisErrorSchema` 와 동일 컨트랙트. group 은 우리 도메인 enum 으로 고정 —
@@ -182,6 +190,46 @@ export async function POST(req: Request) {
   }
 
   // status === "succeeded" + result is non-null (refine 가 보장).
+  // schema_version → registry entry → 본문 zod 검증. 미지원 버전은 400 거절
+  // (silent ignore 하면 잔액 누락 같은 무음 손상 → 운영 모니터링 어려움).
+  const { schema_version, ...reportBody } = result!;
+  const entry = getAnalysisEntry(schema_version);
+  if (!entry) {
+    console.warn(
+      "[webhook/analysis] unsupported schema_version (registry miss)",
+      {
+        request_id,
+        proposal_id,
+        plan_request_id,
+        schema_version,
+        supported: SUPPORTED_ANALYSIS_VERSIONS,
+      },
+    );
+    return Response.json(
+      {
+        error: "unsupported schema_version",
+        schema_version,
+        supported: SUPPORTED_ANALYSIS_VERSIONS,
+      },
+      { status: 400 },
+    );
+  }
+  try {
+    entry.parseReport(reportBody);
+  } catch (err) {
+    console.warn("[webhook/analysis] report body validation failed", {
+      request_id,
+      proposal_id,
+      plan_request_id,
+      schema_version,
+      err,
+    });
+    return Response.json(
+      { error: "invalid report body", schema_version },
+      { status: 400 },
+    );
+  }
+
   // 첫 콜백만 INSERT — proposal.analyzedAt + report 를 한 트랜잭션에 묶어 race 시
   // proposal.updateMany WHERE analyzedAt IS NULL 이 정확히 한 호출에서만 1 row
   // 갱신, 그 호출만 report.create 까지 수행.
@@ -204,13 +252,12 @@ export async function POST(req: Request) {
     });
 
     if (updated.count === 1) {
-      // schema_version 은 컬럼으로 분리, 본문 (report) 엔 안 들어감.
-      const { schema_version, ...reportBody } = result!;
+      // schema_version 은 별도 컬럼, 본문 (report) 엔 안 들어감.
       await tx.planProposalAnalysisReport.create({
         data: {
           proposalId: proposal_id,
           schemaVersion: schema_version,
-          report: reportBody,
+          report: reportBody as Prisma.InputJsonValue,
           durationMs: duration_ms,
         },
       });

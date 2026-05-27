@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 import {
-  type PlanProposalData,
+  type ChartProposalView,
   type RoiPoint,
   type ScenarioMeta,
 } from "./chart-types";
@@ -36,7 +36,8 @@ export function RoiChart({
   onScenarioChange,
   activeId,
 }: {
-  proposals: PlanProposalData[];
+  /** 비교 곡선 풀 — 같은 schema 버전의 카드들만 들어옴 (cross-version 합성은 안 함). */
+  proposals: ChartProposalView[];
   /** chip 렌더 순서 그대로 노출. trailing 자리에 `isMore: true` 끼우면 모달 트리거. */
   scenarios: RoiChartChip[];
   /** controlled — 부모가 현재 활성 시나리오 id 관리. */

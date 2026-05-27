@@ -4,19 +4,14 @@ import { z } from "zod";
  * 분석 리포트 (claim.plan_proposal_analysis_report) — schema v5
  *
  * 외부 분석 파이프라인 (eightytwo_judge) 가 콜백으로 보내는 결과의 형태.
- * 우리 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 INSERT, queries.ts 의 wrapper 가 read.
+ * 우리 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 INSERT, queries.ts 의
+ * getRawAnalysisReport 가 raw 로 read, registry 의 V5_ENTRY.parseReport 가
+ * 이 파일의 zod 로 검증.
  *
- * 운영 패턴: 매 schema 진화 시 row 교체 (현재 DB 에 v5 row 만 존재).
- * queries.ts 의 wrapper 가 CURRENT_REPORT_VERSION 으로 필터 고정 → 호출자는
- * 항상 "현재 지원 버전" 만 봄. 외부가 v6 로 진화하면:
- *   1. 웹훅이 새 콜백을 받아 schemaVersion=6 로 INSERT
- *   2. 이 파일을 v6 형태로 갱신, CURRENT_REPORT_VERSION = 6
- *   3. parse() 가 실패하던 케이스가 다시 통과
- *
- * 양쪽 팀이 양쪽 코드를 동시 수정하는 운영 모델.
+ * 이 폴더 (`analysis/v5/`) 는 freeze — 새 버전이 나오면 `analysis/v6/` 새 폴더를
+ * 만들고 registry 에 한 줄 추가. 옛 v5 row 는 그대로 v5 본문으로 렌더된다.
+ * 자세한 운영 모델은 [docs/analysis-versioning.md](../../../../docs/analysis-versioning.md).
  * ============================================================ */
-
-export const CURRENT_REPORT_VERSION = 5 as const;
 
 /* ------------------------------------------------------------
  * headline — 계약 메타
@@ -25,7 +20,7 @@ export const CURRENT_REPORT_VERSION = 5 as const;
 /**
  * 환급 타입 — 운영에서 추가 값 (예: "partial_refund") 발견 시 enum 확장. catchall
  * 로 두면 새 값이 silently 통과되어 차트 분기를 깨뜨릴 수 있어 명시적 enum 유지.
- * 소비측 (`adapt-proposal.ts:hasRefundDuringPayment`) 은 `!== "no_refund"` 로 분기하므로
+ * 소비측 (`adapt.ts:hasRefundDuringPayment`) 은 `!== "no_refund"` 로 분기하므로
  * 신규 값은 자동으로 "환급 있음" 으로 분류된다.
  */
 export const RefundTypeSchema = z.enum(["no_refund", "with_refund"]);
@@ -145,7 +140,8 @@ export type CoveragePayout = z.infer<typeof CoveragePayoutSchema>;
  * 웹훅이 페이로드의 `result.schema_version` 을 떼서 컬럼에 저장하고, 본문만 여기로.
  *
  * 인바운드 페이로드 검증 (schema_version 포함) 은 웹훅 라우트에서
- * `.extend({ schema_version: z.literal(CURRENT_REPORT_VERSION) })` 로 처리.
+ * registry 의 SUPPORTED_ANALYSIS_VERSIONS 와 `.extend({ schema_version: z.literal(N) })`
+ * 조합으로 처리.
  */
 export const AnalysisReportV5Schema = z.object({
   headline: HeadlineSchema,

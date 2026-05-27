@@ -1,55 +1,88 @@
-import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
 import type { PlanProposalCard } from "@/features/plan-proposals/queries";
-import { computeRoiSeries } from "@/features/plan-proposals/select-scenarios";
 import type {
   CoverageItem,
-  PlanProposalData,
   RoiPoint,
+  SurrenderLossPoint,
 } from "@/features/plan-proposals/ui/chart-types";
 import { formatKRW } from "@/features/plan-proposals/ui/format-krw";
 
+import { computeRoiSeries } from "./select-scenarios";
+import { type AnalysisReportV5 } from "./schema";
+
 /* ============================================================
- * 실 데이터 (PlanProposal + Partner + 분석 리포트) → 결과 페이지 mock shape.
+ * V5 ViewData — 분석 본문 컴포넌트가 쓰는 모양.
  *
- * 차트/카드 컴포넌트들이 mock fixture 의 `PlanProposalData` 형태에 강결합돼 있어
- * 어댑터로 변환만 한다.
+ * 카드 메타 (partner / analyzed / contactRequested / note) 는 별도 `CardMeta` 가
+ * 책임 — 그쪽은 shell 단독 의존이고 버전 무관. 여기는 V5 리포트 derived 분석
+ * 결과만 담음. 새 버전이 생기면 `analysis/v6/adapt.ts` 가 다른 모양 ViewData
+ * 를 export.
  *
- * 가입자 결과 페이지(`/plan-request/result/[token]`)와 어드민 결과 페이지
- * (`/admin/requests/[id]/result`)가 둘 다 이 함수를 호출한다 — 두 경로 모두
- * 같은 PlanProposalData shape 으로 공용 UI (`features/plan-proposals/ui/`) 를
- * 렌더하기 위함. 라우트 chrome (CTA / 보관기간 푸터 / 마커) 은 호출자가 별도로
- * 합성한다.
- *
- * roi / coverage 의 키는 **분석 리포트의 category id** (e.g. "lung_cancer").
- * 결과 페이지의 RoiChart chip 영역과 ScenarioSection 의 카테고리가 동일 단위.
- *
- * roi 시계열 계산은 features/proposals/select-scenarios.ts 의 computeRoiSeries
- * 가 책임 (월보험료 + 납기 → 누적 보험료 → 보장액/누적 = ROI).
- *
- * `coverage` 는 category_groups + coverages 에서 derive — RoiChart 의
- * CoveragePanel 이 활성 시나리오의 담보 breakdown 표시에 사용.
+ * 차트 컴포넌트들이 cross-card 비교 (ROI 멀티라인, surrender 멀티라인) 를
+ * 위해 peers (V5ViewData[]) 를 통째 받으므로, 각 ViewData 는 chart 가 라벨/
+ * lookup 에 필요로 하는 식별자 (id, partner.name, partner.avatarUrl) 를 함께
+ * 담는다 — chart 가 cardMeta 까지 조인 lookup 하지 않도록.
  * ============================================================ */
 
-export function adaptPlanProposal(
+export type V5AnalysisViewData = {
+  /** PlanProposal.id — peers 배열 내 active lookup 키. */
+  id: string;
+
+  /** 차트가 곡선 라벨 (aria-label / 강조 곡선 식별) 에 사용. */
+  partner: {
+    name: string;
+    avatarUrl: string | null;
+  };
+
+  // 계약 컨텍스트
+  insurer: string;
+  maturityAge: number;
+
+  // 핵심 수치
+  monthlyPremium: number;
+  paymentYears: number;
+
+  // 구조 플래그
+  hasRefundDuringPayment: boolean;
+  hasRenewableRider: boolean;
+  /** 갱신형 담보가 있을 때 보험료 재산정 주기 (년). hasRenewableRider true 일 때만 의미. */
+  renewalIntervalYears?: number;
+
+  // ROI — 시나리오별(category id 키) 누적 회수 배율 시계열
+  roi: Record<string, RoiPoint[]>;
+
+  // 해지 시 손실 시계열
+  surrenderLoss: SurrenderLossPoint[];
+
+  // 보장 영역별(category id 키) 담보 항목
+  coverage: Record<string, CoverageItem[]>;
+
+  /**
+   * 카테고리별 payout 메타 — 시나리오 chip 풀 (intersection / union) 계산.
+   * coverage_count == 0 인 카테고리는 모달에서 disabled, intersection 에서 제외.
+   */
+  categoryPayouts: Array<{
+    category: string;
+    coverageCount: number;
+    totalInsured: number;
+  }>;
+};
+
+/**
+ * PlanProposalCard + parsed V5 report + 가입자 나이 → V5AnalysisViewData.
+ *
+ * shell 이 analyzed 카드일 때만 renderAnalysisBody → V5_ENTRY.ActiveBody 로 dispatch
+ * 하므로, 이 함수는 항상 실제 report 가 있는 경우에만 호출된다 — fallback (옛
+ * makeFallback) 로직이 사라짐. 분석 미완료 카드의 placeholder 는 shell 책임.
+ *
+ * `roi` / `coverage` 의 키는 분석 리포트의 category id (e.g. "lung_cancer").
+ * 결과 페이지의 chip 영역과 동일 단위.
+ */
+export function adaptV5(
   card: PlanProposalCard,
-  report: AnalysisReportV5 | null,
+  report: AnalysisReportV5,
   customerAge: number,
-): PlanProposalData {
+): V5AnalysisViewData {
   const { proposal, partner } = card;
-  const analyzed = proposal.analyzedAt != null;
-  const analysisSkipped = proposal.analysisSkippedAt != null;
-  const contactRequested = proposal.contactRequestedAt != null;
-
-  if (!report) {
-    return makeFallback(
-      proposal,
-      partner,
-      analyzed,
-      analysisSkipped,
-      contactRequested,
-    );
-  }
-
   const { headline, refund_table, coverage_payout } = report;
   const maturityAge = headline.maturity_age;
 
@@ -57,13 +90,8 @@ export function adaptPlanProposal(
     id: proposal.id,
     partner: {
       name: partner.name,
-      yearsOfExperience: partner.yearsOfExperience,
-      trustMetric: partner.trustMetric,
       avatarUrl: partner.avatarUrl,
     },
-    analyzed,
-    analysisSkipped,
-    contactRequested,
     insurer: headline.insurer,
     maturityAge,
     monthlyPremium: headline.total_actual_premium,
@@ -81,7 +109,11 @@ export function adaptPlanProposal(
       // 의미 있는 가입~만기 구간만 그려지게 clip.
       .filter((p) => p.age <= maturityAge),
     coverage: coverageByCategory(coverage_payout),
-    note: proposal.note,
+    categoryPayouts: coverage_payout.category_payouts.map((p) => ({
+      category: p.category,
+      coverageCount: p.coverage_count,
+      totalInsured: p.total_insured_amount,
+    })),
   };
 }
 
@@ -141,43 +173,4 @@ function coverageByCategory(
       }));
   }
   return result;
-}
-
-/**
- * 분석 리포트 없을 때 — 빈 카드. 호출자는 `analyzed` / `analysisSkipped` 플래그로
- * 세 상태 구분:
- *   - analysisSkipped=true → "분석 불가" placeholder (회복 불가 안내, 새로고침 X)
- *   - analyzed=false       → "분석 중" placeholder (새로고침 안내)
- *   - analyzed=true        → "데이터를 불러올 수 없어요" (드물게 발생 — analyzedAt
- *     있는데 리포트가 없는 케이스. 스키마 버전 불일치 / 누락 등)
- */
-function makeFallback(
-  proposal: PlanProposalCard["proposal"],
-  partner: PlanProposalCard["partner"],
-  analyzed: boolean,
-  analysisSkipped: boolean,
-  contactRequested: boolean,
-): PlanProposalData {
-  return {
-    id: proposal.id,
-    partner: {
-      name: partner.name,
-      yearsOfExperience: partner.yearsOfExperience,
-      trustMetric: partner.trustMetric,
-      avatarUrl: partner.avatarUrl,
-    },
-    analyzed,
-    analysisSkipped,
-    contactRequested,
-    insurer: "",
-    maturityAge: 100,
-    monthlyPremium: 0,
-    paymentYears: 0,
-    hasRefundDuringPayment: false,
-    hasRenewableRider: false,
-    roi: {},
-    surrenderLoss: [],
-    coverage: {},
-    note: proposal.note,
-  };
 }

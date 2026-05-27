@@ -6,7 +6,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { ProposalTabChip } from "@/features/plan-proposals/ui/proposal-tab-chip";
 import { cn } from "@/lib/utils";
 
-import { DEMO_PROPOSALS } from "../_lib/demo-proposals";
+import { DEMO_CARDS } from "../_lib/demo-proposals";
 import { LandingCtaButton } from "./landing-cta-button";
 import { ProposalComparisonDemo } from "./proposal-comparison-demo";
 import { TrustChipList } from "./trust-chip";
@@ -38,7 +38,7 @@ export function HeroExperience({
   // 헤더가 상단에 고정됐는가 — 고정 시 구절 추적 + 헤드라인 축소.
   const [stuck, setStuck] = useState(false);
   // 선택된 설계사 — sticky pill-group 이 관장, 데모로 내려준다.
-  const [activeId, setActiveId] = useState(DEMO_PROPOSALS[0].id);
+  const [activeId, setActiveId] = useState(DEMO_CARDS[0].meta.id);
   // 첫 진입 시 pill-group 아래 (2nd pill 기준) 에 "탭해서 비교" 툴팁 노출.
   // 첫 탭 후 영구 해제.
   const [showPillTooltip, setShowPillTooltip] = useState(true);
@@ -51,7 +51,7 @@ export function HeroExperience({
   const pillStripRef = useRef<HTMLDivElement | null>(null);
 
   const active =
-    DEMO_PROPOSALS.find((p) => p.id === activeId) ?? DEMO_PROPOSALS[0];
+    DEMO_CARDS.find((c) => c.meta.id === activeId) ?? DEMO_CARDS[0];
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -155,13 +155,13 @@ export function HeroExperience({
             ref={pillStripRef}
             className="-mx-1 flex gap-2 overflow-x-auto px-1"
           >
-            {DEMO_PROPOSALS.map((p) => (
+            {DEMO_CARDS.map((c) => (
               <ProposalTabChip
-                key={p.id}
-                proposal={p}
-                selected={p.id === active.id}
+                key={c.meta.id}
+                card={c.meta}
+                selected={c.meta.id === active.meta.id}
                 onSelect={() => {
-                  setActiveId(p.id);
+                  setActiveId(c.meta.id);
                   setShowPillTooltip(false);
                 }}
               />
@@ -200,7 +200,7 @@ export function HeroExperience({
         * 가깝게 붙여 첫 뷰포트 안에 zone 1 entrance 까지 확보. */}
       <div className="-mx-2 mt-4">
         <ProposalComparisonDemo
-          active={active}
+          activeCard={active}
           googleAdsConversionTarget={googleAdsConversionTarget}
           onActiveZoneChange={setActiveZone}
         />

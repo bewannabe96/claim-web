@@ -1,38 +1,31 @@
 import type { ReactNode } from "react";
 
 import { BrandMark } from "@/components/brand-mark";
-
-import type { PlanProposalData } from "./chart-types";
+import type { CardMeta } from "@/features/plan-proposals/card-meta";
 
 /**
  * 결과 페이지 marketing chrome — BrandMark + "제안서 N건이 도착했어요" 헤더 +
  * 분석 진행 배지. 본문 (ResultView) 은 호출자가 children 으로 주입.
  *
- * 라우트 공유 (의존성 방향: 호출자 → shell):
- *   - 가입자: `/plan-request/result/[token]` — 가입자 진입 단일 chrome.
- *   - 어드민 preview: `/admin/requests/[id]/result` — admin bar 아래 480px 프레임
- *     안에서 동일 chrome 을 재렌더해 "가입자가 보는 그대로" 를 미러링.
- *
- * 본 컴포넌트는 `<main>` / 컨테이너 width 를 직접 잡지 않음 — 가입자 페이지는
- * marketing layout (480px container) 안에, 어드민 preview 는 자체 480px 프레임
- * 안에 children 으로 박힘.
+ * `CardMeta[]` 만 받음 — 분석 리포트 버전 무관. 가입자 / 어드민 preview 양쪽이
+ * 같은 shell 을 공유.
  */
 export function ResultPageShell({
-  proposals,
+  cards,
   selectedPartnerCount,
   children,
 }: {
-  proposals: PlanProposalData[];
+  cards: CardMeta[];
   /** plan_request.selectedPartnerIds.length — 미회수 설계사 수 안내문 분기에 사용. */
   selectedPartnerCount: number;
   children: ReactNode;
 }) {
   // 분석 진행 카운트는 정상 완료 + skip 처리 두 케이스를 합산 — closePlanRequest 의
   // 조기 마감 조건 (`analyzedAt OR analysisSkippedAt`) 과 동일 의미.
-  const analyzedCount = proposals.filter(
-    (p) => p.analyzed || p.analysisSkipped,
+  const analyzedCount = cards.filter(
+    (c) => c.analyzed || c.analysisSkipped,
   ).length;
-  const allAnalyzed = analyzedCount === proposals.length;
+  const allAnalyzed = analyzedCount === cards.length;
 
   return (
     <>
@@ -40,22 +33,19 @@ export function ResultPageShell({
         <BrandMark />
         <header className="mt-6 flex flex-col gap-2">
           <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">
-            제안서{" "}
-            <span className="text-black">{proposals.length}건</span>
-            이 도착했어요
+            제안서 <span className="text-black">{cards.length}건</span>이
+            도착했어요
           </h1>
-          {selectedPartnerCount > proposals.length && (
+          {selectedPartnerCount > cards.length && (
             <p className="text-sm text-[#4b4b4b]">
               선택하신 {selectedPartnerCount}명 중{" "}
-              <span className="font-semibold text-black">
-                {proposals.length}명
-              </span>
+              <span className="font-semibold text-black">{cards.length}명</span>
               이 제안서를 보내주셨어요
             </p>
           )}
           <AnalysisStatusBadge
             analyzed={analyzedCount}
-            total={proposals.length}
+            total={cards.length}
             allDone={allAnalyzed}
           />
         </header>

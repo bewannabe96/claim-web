@@ -9,11 +9,7 @@ import { getPartnerCardsByIds } from "@/features/partners/queries";
 import type { PartnerCard } from "@/features/partners/schema";
 import { prisma } from "@/server/db/prisma";
 
-import {
-  AnalysisReportV5Schema,
-  CURRENT_REPORT_VERSION,
-  type AnalysisReportV5,
-} from "./analysis-schema";
+import type { RawAnalysisReport } from "./analysis/types";
 import {
   AnalysisErrorSchema,
   type AnalysisError,
@@ -159,25 +155,25 @@ export async function listPlanProposalCardsForRequest(
 }
 
 /* ============================================================
- * 분석 리포트 (claim.plan_proposal_analysis_report) — read
+ * 분석 리포트 (claim.plan_proposal_analysis_report) — raw read
  *
- * 저장 책임은 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 보유. 여기선 read 만.
- * 호출자는 항상 parsed `AnalysisReportV5` 만 봄.
+ * 저장 책임은 웹훅 (/api/webhooks/eightytwo-judge-analysis) 이 보유. 여기선 raw 만.
+ * 버전 필터링 / zod parse / adapt 는 호출자가 `analysis/index.tsx` 의
+ * `buildAnalysisRenderer` 를 거치도록 — 다버전 (v5/v6 ...) row 공존 가능.
  *
- * 버전 정책: `WHERE schemaVersion = CURRENT_REPORT_VERSION` 로 고정 — 호출자는
- * 버전 신경 안 씀. v6 도입 시 새 row 가 v6 로 들어오고, analysis-schema.ts 의
- * zod + CURRENT_REPORT_VERSION 갱신하면 자연스럽게 새 버전 통과.
+ * 자세한 다버전 운영 모델은 [docs/analysis-versioning.md](../../../docs/analysis-versioning.md).
  * ============================================================ */
 
-export async function getAnalysisReport(
+export async function getRawAnalysisReport(
   proposalId: string,
-): Promise<AnalysisReportV5 | null> {
+): Promise<RawAnalysisReport | null> {
   const row = await prisma.planProposalAnalysisReport.findUnique({
     where: { proposalId },
     select: { report: true, schemaVersion: true },
   });
-  if (!row || row.schemaVersion !== CURRENT_REPORT_VERSION) return null;
-  return AnalysisReportV5Schema.parse(row.report);
+  return row
+    ? { schemaVersion: row.schemaVersion, report: row.report }
+    : null;
 }
 
 /* ============================================================

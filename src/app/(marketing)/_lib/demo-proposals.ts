@@ -1,6 +1,7 @@
+import type { V5AnalysisViewData } from "@/features/plan-proposals/analysis/v5";
+import type { CardMeta } from "@/features/plan-proposals/card-meta";
 import {
   type CoverageItem,
-  type PlanProposalData,
   type RoiPoint,
   type ScenarioMeta,
 } from "@/features/plan-proposals/ui/chart-types";
@@ -9,10 +10,13 @@ import { formatKRW } from "@/features/plan-proposals/ui/format-krw";
 /**
  * 랜딩페이지 "제안서 비교" 데모용 mock 데이터.
  *
- * 결과 페이지(result/[token])와 동일한 PlanProposalData / ScenarioMeta shape 으로
- * 채워, 데모가 features/plan-proposals/ui 의 실제 차트·카드 컴포넌트를 그대로
- * 재사용한다. 결과 페이지는 adapt-proposal 이 실 데이터로 채우는 자리를 여기선
- * mock 으로 채우는 차이뿐.
+ * 한 `DemoCard` = V5 분석 ViewData + 데모용 partner 메타 — 실 결과 페이지에서
+ * `PlanProposalCard + 분석 리포트 → buildAnalysisRenderer({cardMetas, ...})` 로
+ * 빌드되는 것과 같은 의미를 데모용으로 직접 hardcode 한 것.
+ *
+ * 새 버전이 나와서 V5 모듈을 freeze 한 뒤에도 이 데모는 V5 그대로 — 랜딩이
+ * "현재 화면" 을 보여주는 게 아니라 "AI 비교 가치 자체" 를 보여주는 demonstrative
+ * 자료라 버전을 따라갈 필요 없음. 필요해지면 그때 최신 버전으로 갱신.
  *
  * 어느 제안서도 모든 시나리오에서 1등이 아니게 설계 — "직접 비교할 가치"가 생긴다.
  */
@@ -31,9 +35,12 @@ type CoverageSeed = { label: string; insuredAmount: number };
 
 type ProposalSeed = {
   id: string;
+  // partner
   partnerName: string;
   yearsOfExperience: number;
   trustMetric: string;
+  note: string;
+  // proposal view
   insurer: string;
   monthlyPremium: number;
   paymentYears: number;
@@ -41,7 +48,6 @@ type ProposalSeed = {
   hasRefundDuringPayment: boolean;
   hasRenewableRider: boolean;
   renewalIntervalYears?: number;
-  note: string;
   /** 시나리오 id → 담보 항목 seed. */
   coverage: Record<string, CoverageSeed[]>;
 };
@@ -52,13 +58,13 @@ const SEEDS: ProposalSeed[] = [
     partnerName: "도라에몽",
     yearsOfExperience: 11,
     trustMetric: "최근 1년 가입설계 제안 240건",
+    note: "보장은 넓게 가져가면서 보험료는 합리적으로 맞췄어요. 비갱신형이라 보험료가 끝까지 그대로예요.",
     insurer: "4차원손해보험",
     monthlyPremium: 78_000,
     paymentYears: 20,
     maturityAge: 90,
     hasRefundDuringPayment: false,
     hasRenewableRider: false,
-    note: "보장은 넓게 가져가면서 보험료는 합리적으로 맞췄어요. 비갱신형이라 보험료가 끝까지 그대로예요.",
     coverage: {
       cancer: [
         { label: "암 진단비", insuredAmount: 28_000_000 },
@@ -80,6 +86,7 @@ const SEEDS: ProposalSeed[] = [
     partnerName: "세일러문",
     yearsOfExperience: 8,
     trustMetric: "재가입 고객 비율 상위 10%",
+    note: "암 보장을 가장 두텁게 설계했어요. 100세까지 보장되고, 납입 중 해지해도 일부는 돌려받아요.",
     insurer: "달빛생명",
     monthlyPremium: 94_000,
     paymentYears: 20,
@@ -87,7 +94,6 @@ const SEEDS: ProposalSeed[] = [
     hasRefundDuringPayment: true,
     hasRenewableRider: true,
     renewalIntervalYears: 10,
-    note: "암 보장을 가장 두텁게 설계했어요. 100세까지 보장되고, 납입 중 해지해도 일부는 돌려받아요.",
     coverage: {
       cancer: [
         { label: "암 진단비", insuredAmount: 60_000_000 },
@@ -106,13 +112,13 @@ const SEEDS: ProposalSeed[] = [
     partnerName: "짱구",
     yearsOfExperience: 15,
     trustMetric: "평균 상담 응답 12분",
+    note: "월 보험료 부담을 가장 낮춘 안이에요. 뇌혈관·심장 쪽 보장을 특히 신경 썼습니다.",
     insurer: "액션가면보험",
     monthlyPremium: 62_000,
     paymentYears: 30,
     maturityAge: 90,
     hasRefundDuringPayment: false,
     hasRenewableRider: false,
-    note: "월 보험료 부담을 가장 낮춘 안이에요. 뇌혈관·심장 쪽 보장을 특히 신경 썼습니다.",
     coverage: {
       cancer: [{ label: "암 진단비", insuredAmount: 20_000_000 }],
       brain: [
@@ -133,10 +139,7 @@ const SEEDS: ProposalSeed[] = [
  * roi(나이) = 보장 총액 ÷ 그 나이까지 낸 누적 보험료. 납입 종료 후엔 분모가
  * 고정돼 곡선이 평평해진다.
  *
- * 소수 2자리로만 양자화 — result/[token] 의 computeRoiSeries 와 동일. 0.01
- * 간격이라 곡선이 매끄럽다. 정수/소수 1자리로 거칠게 반올림하면 연차 변화가
- * 반올림 단위보다 작아지는 감소 후반 구간이 같은 값으로 뭉쳐 계단(자글자글)이
- * 생긴다. 커서 "N배" 라벨의 읽기 좋은 반올림은 RoiChart 가 표시 시점에 담당.
+ * 소수 2자리로만 양자화 — `analysis/v5/select-scenarios.ts:computeRoiSeries` 와 동일.
  */
 function buildRoiSeries(seed: ProposalSeed, payout: number): RoiPoint[] {
   const points: RoiPoint[] = [];
@@ -161,7 +164,16 @@ function toCoverageItems(seeds: CoverageSeed[]): CoverageItem[] {
   }));
 }
 
-export const DEMO_PROPOSALS: PlanProposalData[] = SEEDS.map((seed) => {
+/**
+ * 한 데모 카드 = 분석 ViewData (V5 모양) + 데모용 CardMeta. 실 결과 페이지에서
+ * `buildAnalysisRenderer` 가 만들어주는 (cardMeta, viewData) 페어와 동등한 의미.
+ */
+export type DemoCard = {
+  meta: CardMeta;
+  view: V5AnalysisViewData;
+};
+
+function buildDemoCard(seed: ProposalSeed): DemoCard {
   const coverage: Record<string, CoverageItem[]> = {};
   const roi: Record<string, RoiPoint[]> = {};
   for (const scenario of DEMO_SCENARIOS) {
@@ -170,17 +182,10 @@ export const DEMO_PROPOSALS: PlanProposalData[] = SEEDS.map((seed) => {
     const payout = items.reduce((sum, c) => sum + c.insuredAmount, 0);
     roi[scenario.id] = buildRoiSeries(seed, payout);
   }
-  return {
+
+  const view: V5AnalysisViewData = {
     id: seed.id,
-    partner: {
-      name: seed.partnerName,
-      yearsOfExperience: seed.yearsOfExperience,
-      trustMetric: seed.trustMetric,
-      avatarUrl: null,
-    },
-    analyzed: true,
-    analysisSkipped: false,
-    contactRequested: false,
+    partner: { name: seed.partnerName, avatarUrl: null },
     insurer: seed.insurer,
     maturityAge: seed.maturityAge,
     monthlyPremium: seed.monthlyPremium,
@@ -191,6 +196,33 @@ export const DEMO_PROPOSALS: PlanProposalData[] = SEEDS.map((seed) => {
     roi,
     surrenderLoss: [],
     coverage,
-    note: seed.note,
+    // 데모는 chip 을 hardcode 하지만 V5AnalysisViewData satisfy 위해 채워둠.
+    categoryPayouts: DEMO_SCENARIOS.map((s) => {
+      const items = seed.coverage[s.id] ?? [];
+      return {
+        category: s.id,
+        coverageCount: items.length,
+        totalInsured: items.reduce((sum, c) => sum + c.insuredAmount, 0),
+      };
+    }),
   };
-});
+
+  const meta: CardMeta = {
+    id: seed.id,
+    partner: {
+      name: seed.partnerName,
+      yearsOfExperience: seed.yearsOfExperience,
+      trustMetric: seed.trustMetric,
+      avatarUrl: null,
+    },
+    note: seed.note,
+    analyzed: true,
+    analysisSkipped: false,
+    contactRequested: false,
+    schemaVersion: 5,
+  };
+
+  return { meta, view };
+}
+
+export const DEMO_CARDS: DemoCard[] = SEEDS.map(buildDemoCard);

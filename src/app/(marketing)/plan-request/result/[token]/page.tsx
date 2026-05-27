@@ -2,12 +2,10 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
-import { adaptPlanProposal } from "@/features/plan-proposals/adapt-proposal";
-import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
+import { buildAnalysisRenderer } from "@/features/plan-proposals/analysis";
 import {
-  getAnalysisReport,
+  getRawAnalysisReport,
   listPlanProposalCardsForRequest,
-  type PlanProposalCard,
 } from "@/features/plan-proposals/queries";
 import { ResultPageShell } from "@/features/plan-proposals/ui/result-page-shell";
 import { ResultView } from "@/features/plan-proposals/ui/result-view";
@@ -33,18 +31,19 @@ export const metadata: Metadata = {
  *
  * 분기:
  *   - 0건  → RematchingState (재매칭 안내)
- *   - 1건  → 단일 view (chip 탭 없음)
- *   - 2+건 → 본 흐름 (chip 탭으로 제안서 전환)
+ *   - 1건+ → 본 흐름 (chip 탭으로 카드 전환)
  *
  * 데이터 흐름:
  *   token → plan_request → submitted assignments + proposals + partners
  *        ↓
- *   각 proposal.id → claim.plan_proposal_analysis_report (1:1, Prisma 모델)
+ *   각 proposal.id → claim.plan_proposal_analysis_report (raw row + schemaVersion)
  *        ↓
- *   adaptPlanProposal(card, report) → 결과 페이지 컴포넌트가 기대하는 shape
+ *   buildAnalysisRenderer(cards, rawReports, ...) →
+ *     cardMetas (shell 용) + renderAnalysisBody (registry dispatch 클로저)
  *
- * 분석 미완료 proposal 은 report=null 로 들어가서 카드가 "분석 중" placeholder
- * 로 렌더 (adapt-proposal 의 makeFallback + analyzed=false).
+ * 분석 미완료 / 미지원 버전 / parse 실패 등은 buildAnalysisRenderer 가 graceful
+ * 처리 (해당 카드 본문만 placeholder, 다른 카드는 정상). 자세한 다버전 정책은
+ * [docs/analysis-versioning.md](../../../../../../../docs/analysis-versioning.md).
  */
 export default async function ResultPage({
   params,
@@ -68,8 +67,6 @@ export default async function ResultPage({
       settings.resultRetentionDays * MS_PER_DAY;
 
   // ExpiredState 는 StatusScreen 기반 — 자체 <main> landmark + BrandMark 를 렌더.
-  // page 의 <main> 으로 감싸면 <main> 중첩 (HTML 위반) — fragment 로만 감싸
-  // 열람 마킹 (ResultViewedMarker) 만 동봉한다.
   if (isExpired) {
     return (
       <>
@@ -81,19 +78,6 @@ export default async function ResultPage({
 
   // 실 데이터 — submitted proposal + 작성 설계사 카드.
   const cards = await listPlanProposalCardsForRequest(req.id);
-
-  // 각 proposal 의 분석 리포트 — proposal.id 1:1. 분석 미완료면 null (placeholder UI).
-  const reportEntries = await Promise.all(
-    cards.map(async (card) => {
-      const report = await loadReportForCard(card);
-      return [card.proposal.id, report] as const;
-    }),
-  );
-  const reportsById: Record<string, AnalysisReportV5> = Object.fromEntries(
-    reportEntries.filter(
-      (e): e is readonly [string, AnalysisReportV5] => e[1] !== null,
-    ),
-  );
 
   // 가입자 만 나이 (KST 기준). result_token 발급 = finalize 통과 = birthDate 채워짐
   // 이 invariant. step3 / birthDate 가 비어있다면 데이터 무결성 오류.
@@ -107,14 +91,21 @@ export default async function ResultPage({
     );
   }
 
-  // 실 데이터 → 결과 페이지 컴포넌트가 기대하는 PlanProposalData shape 으로 변환.
-  const proposals = cards.map((card) =>
-    adaptPlanProposal(card, reportsById[card.proposal.id] ?? null, customerAge),
+  // 각 proposal 의 raw 분석 리포트 (버전 + body) — registry 가 카드별로 parse/adapt.
+  const rawReports = await Promise.all(
+    cards.map((card) => getRawAnalysisReport(card.proposal.id)),
   );
+
+  const { cardMetas, renderAnalysisBody } = buildAnalysisRenderer({
+    cards,
+    rawReports,
+    customerAge,
+    scenarioPriority: settings.scenarioPriority,
+  });
 
   // RematchingState 도 StatusScreen 기반 — 자체 <main> landmark 를 렌더하므로
   // page 의 <main> 밖, fragment 로만 감싸 반환 (중첩 <main> 회피).
-  if (proposals.length === 0) {
+  if (cardMetas.length === 0) {
     return (
       <>
         <ResultViewedMarker token={token} />
@@ -127,28 +118,16 @@ export default async function ResultPage({
     <main className="flex flex-col flex-1 bg-white">
       <ResultViewedMarker token={token} />
       <ResultPageShell
-        proposals={proposals}
+        cards={cardMetas}
         selectedPartnerCount={req.selectedPartnerIds.length}
       >
         <ResultView
           resultToken={token}
-          proposals={proposals}
-          reportsById={reportsById}
-          scenarioPriority={settings.scenarioPriority}
+          cards={cardMetas}
+          renderAnalysisBody={renderAnalysisBody}
           resultRetentionDays={settings.resultRetentionDays}
         />
       </ResultPageShell>
     </main>
   );
-}
-
-/**
- * 한 proposal card 의 분석 리포트 lookup. proposal.id 1:1 join.
- * 리포트가 아직 생성되지 않았으면 (웹훅 콜백 전) `getAnalysisReport` 가 null 반환
- * — UI 는 빈 상태로 graceful 렌더.
- */
-async function loadReportForCard(
-  card: PlanProposalCard,
-): Promise<AnalysisReportV5 | null> {
-  return getAnalysisReport(card.proposal.id);
 }

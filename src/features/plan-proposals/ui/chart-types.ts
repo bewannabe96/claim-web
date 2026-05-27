@@ -1,9 +1,13 @@
 /**
- * plan-proposals 도메인의 차트/카드 UI 가 공유하는 데이터 shape.
+ * plan-proposals 도메인의 차트/카드 atomic 컴포넌트가 받는 prop 시그니처 —
+ * 모든 버전의 ViewData 가 satisfy 해야 하는 구조적 인터페이스.
  *
- * 결과 페이지(result/[token])는 adapt-proposal.ts 가 실 데이터(PlanProposal +
- * 분석 리포트)를 이 shape 으로 변환해 채우고, 랜딩 데모는 mock 으로 채운다.
- * 차트 컴포넌트의 prop 시그니처가 이 타입에 강결합돼 있어 별도 type 모듈로 분리.
+ * 옛 단일 `PlanProposalData` 타입은 폐기 — 카드 메타 (partner/analyzed/note/
+ * contactRequested) 는 별도 `CardMeta` 가 책임, 분석 결과는 버전별 ViewData
+ * (예: `analysis/v5/adapt.ts` 의 `V5AnalysisViewData`) 가 책임. 차트는 그 ViewData
+ * 가 satisfy 하는 *구조적* 부분집합만 prop 으로 받음 (`ChartProposalView`,
+ * `ProposalMetrics`). 따라서 어떤 버전 AnalysisBody 가 합성하든 동일 차트를
+ * 재사용한다.
  */
 
 /* ============================================================
@@ -46,63 +50,50 @@ export type CoverageItem = {
 };
 
 /**
- * 결과 페이지 한 제안서 카드의 전체 shape. adapt-proposal 이 채움.
+ * 시나리오 모달의 한 row — `ScenarioModal` 이 받는 슬림 prop. 어느 버전이든
+ * 자기 `select-scenarios` 가 ViewData 에서 이 모양을 derive 해서 모달에 넘김.
+ *
+ *   - coverageCount: 0 이면 그 row disabled (해당 시나리오를 보장 안 함).
  */
-export type PlanProposalData = {
+export type ScenarioPickerEntry = {
+  category: string;
+  coverageCount: number;
+};
+
+/* ============================================================
+ * Multi-proposal 차트 (RoiChart / SurrenderLossChart) 가 받는 구조적 prop.
+ *
+ * 한 카드의 표시에 필요한 최소 필드만. 각 버전의 ViewData 가 이 모양을 satisfy
+ * 하도록 만들면 차트는 그대로 동작.
+ * ============================================================ */
+export type ChartProposalView = {
+  /** peers 배열 내 active 식별 / 곡선 키. */
   id: string;
-  partner: {
-    name: string;
-    yearsOfExperience: number;
-    trustMetric: string;
-    /** 프로필 사진 public URL. 미등록 partner 는 null (이니셜 fallback). */
-    avatarUrl: string | null;
-  };
-
-  /**
-   * 분석 파이프라인 콜백 수신 여부 (proposal.analyzedAt 기반).
-   * false 면 차트/수치 필드는 fallback 값이고 UI 는 "분석 중" placeholder 로 그림
-   * (단, `analysisSkipped` 가 true 면 "분석 불가" placeholder 로 분기).
-   */
-  analyzed: boolean;
-
-  /**
-   * 어드민이 "분석 건너뜀" 처리한 제안서 (proposal.analysisSkippedAt 기반). true 면
-   * 차트/수치는 영구히 fallback 이고, UI 는 "분석 불가" placeholder 로 그림 — "분석
-   * 중" (재시도 안내) 과 톤이 다르다. analyzed=true 와 동시에 true 일 수는 없음 —
-   * skip 가드가 analyzedAt IS NULL 일 때만 마킹.
-   */
-  analysisSkipped: boolean;
-
-  /**
-   * 가입자가 이미 이 제안서에서 "상담 진행하기" 를 눌렀는지
-   * (proposal.contactRequestedAt 기반).
-   * SSR 초기 state 로 사용 — 새로고침 / 새 탭에서 button 이 다시 활성되는 것 방지.
-   */
-  contactRequested: boolean;
-
-  // 계약 컨텍스트
-  insurer: string;
+  /** 강조 곡선 aria-label 등에 사용. */
+  partner: { name: string };
+  /** x 축 도메인 (만기까지). */
   maturityAge: number;
+  /** 시나리오별 ROI 시계열 — chip 활성 시 lookup. */
+  roi: Record<string, RoiPoint[]>;
+  /** 해지 시 손실 곡선. */
+  surrenderLoss: SurrenderLossPoint[];
+  /** 시나리오별 담보 breakdown — CoveragePanel 에 노출. */
+  coverage: Record<string, CoverageItem[]>;
+};
 
-  // 핵심 수치
+/* ============================================================
+ * ProposalMetricsCard 가 받는 슬림 prop — 핵심 수치 + 계약 구조 메트릭.
+ *
+ * 보험사 / 매월 납입료 / 납기 / 만기 / 환급 / 갱신 정책. 어느 버전 ViewData 든
+ * 이 모양을 satisfy 하면 같은 카드 컴포넌트 재사용.
+ * ============================================================ */
+export type ProposalMetrics = {
+  insurer: string;
   monthlyPremium: number;
   paymentYears: number;
-
-  // 구조 플래그
+  maturityAge: number;
   hasRefundDuringPayment: boolean;
   hasRenewableRider: boolean;
   /** 갱신형 담보가 있을 때 보험료 재산정 주기 (년). hasRenewableRider true 일 때만 의미. */
   renewalIntervalYears?: number;
-
-  // ROI — 시나리오별(category id 키) 누적 회수 배율 시계열
-  roi: Record<string, RoiPoint[]>;
-
-  // 해지 시 손실 시계열
-  surrenderLoss: SurrenderLossPoint[];
-
-  // 보장 영역별(category id 키) 담보 항목
-  coverage: Record<string, CoverageItem[]>;
-
-  // 설계사 한줄평
-  note: string;
 };

@@ -1,7 +1,6 @@
 "use client";
 
 import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
-import type { PlanProposalData } from "@/features/plan-proposals/ui/chart-types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -20,13 +19,14 @@ import { cn } from "@/lib/utils";
  * 버튼 click 자체 (funnel 핵심 conversion) 는 추적 유지.
  */
 export function ContactCtaButton({
-  proposal,
+  partnerName,
   contactRequested,
   onClick,
   disabledNotice,
 }: {
-  proposal: PlanProposalData;
-  /** SSR `proposal.contactRequested` + (인터랙티브 모드에서) 클라이언트 optimistic state. */
+  /** 활성 카드의 설계사 이름. CardMeta.partner.name. */
+  partnerName: string;
+  /** SSR `card.contactRequested` + (인터랙티브 모드에서) 클라이언트 optimistic state. */
   contactRequested: boolean;
   /** 인터랙티브 모드에서만 전달. `disabledNotice` 와 동시 전달 시 disabled 우선. */
   onClick?: () => void;
@@ -52,7 +52,7 @@ export function ContactCtaButton({
         "상담 요청을 보냈어요"
       ) : (
         <>
-          <span className={NO_TRACK_CLASS}>{proposal.partner.name}</span> 설계사와
+          <span className={NO_TRACK_CLASS}>{partnerName}</span> 설계사와
           상담 진행하기
         </>
       )}
