@@ -2,6 +2,8 @@
 
 > 모든 라우트의 URL / 역할 / 접근 권한 / DB 소스 / PRD 매핑 일람.
 > 새 페이지 추가·삭제 시 이 표 갱신.
+>
+> **PRD 매핑은 v1 ([prd-v1.md](./prd-v1.md)) 기준** — 본 카탈로그는 현재 라이브 라우트를 다룬다. v2 ([prd-v2.md](./prd-v2.md)) 의 신규 라우트 (`/compare`, `/admin/term-indexing-queue` 등) 는 phase 별 구현 시 본 표에 row 추가.
 
 ## 범례
 

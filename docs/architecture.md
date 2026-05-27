@@ -4,6 +4,8 @@
 > 이 프로젝트(보험 가입자 ↔ 설계사 매칭 MVP)에 적용할 표준 패턴을 정리합니다.
 >
 > **도메인 엔티티 이름 / 어휘 / 명명 컨벤션은 [domain-glossary.md](domain-glossary.md) 참조** — 본 문서는 아키텍처 패턴, glossary 는 도메인 사전.
+>
+> **제품 PRD**: [prd-v1.md](prd-v1.md) (현재 라이브 — 단방향 매칭 funnel) / [prd-v2.md](prd-v2.md) (진화 방향 — comparison workbench). 본 아키텍처 문서는 현재 코드 상태 (= v1) 를 다룬다. v2 도입 시 새 DAL 게이트 (`requireCustomerSession()`), 신규 엔티티 (`GuestWorkspace`, `TermIndexingRequest`), origin 별 분석 파이프라인 dispatch 등이 추가될 예정이며, 구현 phase 진입 시 본 문서 갱신.
 
 ---
 

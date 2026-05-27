@@ -4,7 +4,9 @@
 >
 > 시장 근거는 [docs/market-research.md](./market-research.md) 참조. 본 문서는 그 위에서 도출된 제품 가설과 spec.
 >
-> 상태: v1 — 가설·hero 도구 spec 초안. MVP scope, 카테고리 우선순위, 계산 가정 출처 등은 open question으로 표시.
+> 문서 상태: 초안 v1 — 가설·hero 도구 spec 초안. MVP scope, 카테고리 우선순위, 계산 가정 출처 등은 open question으로 표시.
+>
+> **제품 PRD 매핑**: 본 문서의 "tool-led entry" 가설 (§2) 은 [prd-v2.md](./prd-v2.md) 에서 본격 실행된다. 현재 라이브 제품은 [prd-v1.md](./prd-v1.md) 의 단방향 매칭 funnel 단계 — 본 가설의 §4 funnel "[제안서 비교 화면]" 까지에 해당.
 
 ---
 

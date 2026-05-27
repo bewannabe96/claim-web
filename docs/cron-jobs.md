@@ -4,7 +4,7 @@
 >
 > - 작성일: 2026-05-19
 > - 상태: 분석 완료, **구현 1건** (작업 #1)
-> - 관련 문서: [prd.md](./prd.md), [architecture.md](./architecture.md)
+> - 관련 문서: [prd-v1.md](./prd-v1.md) (현재 라이브), [prd-v2.md](./prd-v2.md) (진화 방향), [architecture.md](./architecture.md)
 
 ---
 
