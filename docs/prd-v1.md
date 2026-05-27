@@ -1,12 +1,13 @@
-# CLAIM — MVP PRD
+# CLAIM — v1 PRD (MVP, 현재 라이브)
 
 > **설계사가 제안하고, AI 가 비교하고, 당신은 선택합니다.**
 >
 > CLAIM 은 가입자가 한 번의 요청을 남기면 검증된 여러 설계사로부터 제안서를 받고, AI 가 약관 기준으로 객관 비교한 결과를 한 자리에서 확인할 수 있게 하는 보험 매칭 서비스. 추천에 어떠한 금전적 이해관계도 없는 중립 매칭을 보장한다.
 
 - 작성일: 2026-05-05 (결과 화면 디자인 확정: 2026-05-17)
-- 상태: MVP 범위 확정, 결과 화면 구현 완료 (시나리오 chip + ROI log 차트 + 보장 패널 + 질병 검색 모달)
-- 관련 문서: [architecture.md](./architecture.md), [pages.md](./pages.md)
+- 상태: **v1 = 현재 라이브.** MVP 범위 확정, 결과 화면 구현 완료 (시나리오 chip + ROI log 차트 + 보장 패널 + 질병 검색 모달)
+- 다음 진화: [prd-v2.md](./prd-v2.md) — 비교 도구를 workbench 로 격상 (외부 업로드 + 자유 출입). v1 의 단방향 funnel 은 v2 출시 후에도 deprecated 상태로 한동안 공존.
+- 관련 문서: [architecture.md](./architecture.md), [pages.md](./pages.md), [product-hypothesis.md](./product-hypothesis.md), [domain-glossary.md](./domain-glossary.md)
 
 ## 0. 브랜드 & 서비스 정체
 

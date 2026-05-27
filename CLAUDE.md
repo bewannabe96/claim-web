@@ -2,6 +2,8 @@
 
 보험 가입자 ↔ 설계사 매칭 + 제안서 수신 MVP. Next.js 16 + React 19 + App Router 기반.
 
+> **제품 PRD**: [docs/prd-v1.md](docs/prd-v1.md) — 현재 라이브 (단방향 매칭 funnel). [docs/prd-v2.md](docs/prd-v2.md) — 진화 방향 (comparison workbench). 제품 의도·범위 파악이 필요할 때 이쪽부터.
+
 ## ⚠️ 작업 시작 전 반드시 읽을 것
 
 이 프로젝트의 Next.js는 학습 데이터(14/15)와 **API/컨벤션/파일 구조가 다릅니다.** 코드 작성 전에:

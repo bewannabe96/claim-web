@@ -2,6 +2,8 @@
 
 이 문서는 프로젝트의 **도메인 엔티티 이름 / 어휘 / 명명 컨벤션** 의 단일 진실 공급원이다. 새 코드 / 문서 / 알림 문구를 작성할 때 여기 정의된 이름과 어휘를 따른다.
 
+> **PRD 컨텍스트**: 본 사전은 **v1 ([prd-v1.md](./prd-v1.md)) 에서 라이브인 엔티티/어휘** 의 캐노니컬 정의를 담는다. v2 ([prd-v2.md](./prd-v2.md)) 의 신규 엔티티 (`GuestWorkspace`, `TermIndexingRequest`, `PlanProposal.origin`, `PlanProposalAnalysisReport.mode/analyzerVersion`, "workbench" / "어림 분석" 어휘) 는 phase 별 구현 시점에 본 문서에 정착시킨다. 그 전까지는 prd-v2.md §6, §7 을 참조.
+
 ---
 
 ## 1. 핵심 엔티티 사전
