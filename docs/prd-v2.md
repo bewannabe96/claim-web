@@ -418,6 +418,3 @@ v2 의 전체 surface 가 크므로 phase 로 나눠 launch:
 | `PartnerCreditBalance/Ledger` 차감 | 변경 없음. 풀 수신 path 만 차감 발생 |
 | `AppSettings.resultRetentionDays` | 풀 수신 path 의 token expiry 에만 적용 |
 
----
-
-**다음 단계**: Phase A 의 schema migration RFC + DAL `requireCustomerSession()` 추가 PR.
