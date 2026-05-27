@@ -170,18 +170,19 @@
 - **인증**: HMAC-SHA256. `ANALYSIS_WEBHOOK_SECRET` env 의 secret 으로 raw body 를 HMAC → `X-Signature: sha256=<hex>` 헤더. 우리 라우트가 동일 계산 후 `timingSafeEqual` 비교.
 - **페이로드**:
   ```
-  { request_id, status: "succeeded"|"failed", result: AnalysisReportV5|null,
+  { request_id, status: "succeeded"|"failed",
+    result: { schema_version: number, ...reportBody } | null,
     error: AnalysisError|null,            // { group, type, message, detail? }
     metadata: { proposal_id, plan_request_id }, duration_ms }
   ```
-  `metadata.*` 는 우리가 SQS metadata 로 실어 보낸 값이 그대로 passthrough. `request_id` 는 발행 시 생성한 UUID 가 echo 되어 옴 (correlation/log 용, DB 식별엔 사용 안 함). `error.group` 은 `input_error | product_id_match | internal_error` enum 고정 — 미정의 group 은 zod 단계에서 reject (DB 진입 차단).
+  `metadata.*` 는 우리가 SQS metadata 로 실어 보낸 값이 그대로 passthrough. `request_id` 는 발행 시 생성한 UUID 가 echo 되어 옴 (correlation/log 용, DB 식별엔 사용 안 함). `error.group` 은 `input_error | product_id_match | internal_error` enum 고정 — 미정의 group 은 zod 단계에서 reject (DB 진입 차단). `result.schema_version` 은 registry (`features/plan-proposals/analysis/registry.ts`) 가 lookup → 해당 entry 의 `parseReport` 가 본문 형태 검증 → 미지원 버전 / 검증 실패는 400 반환 (자세히는 [docs/analysis-versioning.md](../../docs/analysis-versioning.md)).
 - **동작**:
   - `failed` → `plan_proposal.analysisError + analysisErrorAt` 마킹 (WHERE id + assignment.requestId 매치 + `analyzedAt IS NULL` — 성공 분석이 들어와 있으면 덮어쓰기 금지, race-safe). `analyzedAt` 은 건드리지 않음 → plan_request 전이 안 일어남. 마킹 성공 시 `/admin/analysis-failures` + `/admin/requests/[id]` revalidate. 어드민이 외부 시스템 수정 후 `retryPlanProposalAnalysis` 액션으로 재발행 (`features/plan-proposals/actions.ts`).
   - `succeeded` → 트랜잭션 안에서:
     1. `plan_proposal.analyzedAt = now()` (WHERE id + assignment.requestId(=plan_request_id) 매치 + analyzedAt IS NULL → 첫 콜백만 기록, 페이로드 위조 차단, race-free).
     2. `updated.count===1` 이면 `plan_proposal_analysis_report` INSERT (proposalId 1:1, schemaVersion=result.schema_version, report=result 본문, durationMs).
     트랜잭션 후 `closePlanRequest(plan_request_id)` 호출 — 마감 판정 단일 진입점 ([features/plan-requests/state-transition.ts](../features/plan-requests/state-transition.ts)). 제출된 제안서가 전부 analyzed 면 (조기 마감) `plan_request.status='analyzing' → 'completed'`. 아직 분석 대기 중인 제안서가 있으면 no-op — 마감시간이 지나면 cron (`assignment-deadline-expiry`) 의 **시간 마감**이 분석 미완 여부와 무관하게 강제 종결한다.
-- **저장 책임**: 이 웹훅이 분석 리포트 + 분석 실패 마킹의 단일 writer. read 는 [features/plan-proposals/queries.ts](../features/plan-proposals/queries.ts) 의 `getAnalysisReport(proposalId)` / `listFailedAnalysisPlanProposals()`.
+- **저장 책임**: 이 웹훅이 분석 리포트 + 분석 실패 마킹의 단일 writer. read 는 [features/plan-proposals/queries.ts](../features/plan-proposals/queries.ts) 의 `getRawAnalysisReport(proposalId)` (raw + schemaVersion 반환, parse 는 registry) / `listFailedAnalysisPlanProposals()`.
 - **재시도 안전**: 정상 처리든 no-op 이든 200 반환. updateMany WHERE 절 + transaction 으로 첫 콜백만 INSERT 보장 (race-free). 발신측 중복 이벤트도 멱등. failed → succeeded 전환도 안전 (succeeded 가 analyzedAt 채우면 이후 failed 는 WHERE 조건으로 no-op).
 
 ## DB 컨벤션

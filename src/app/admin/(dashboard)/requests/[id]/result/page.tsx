@@ -1,11 +1,9 @@
 import { notFound } from "next/navigation";
 
-import { adaptPlanProposal } from "@/features/plan-proposals/adapt-proposal";
-import type { AnalysisReportV5 } from "@/features/plan-proposals/analysis-schema";
+import { buildAnalysisRenderer } from "@/features/plan-proposals/analysis";
 import {
-  getAnalysisReport,
+  getRawAnalysisReport,
   listPlanProposalCardsForRequest,
-  type PlanProposalCard,
 } from "@/features/plan-proposals/queries";
 import { PreviewResultView } from "@/features/plan-proposals/ui/preview-result-view";
 import { ResultPageShell } from "@/features/plan-proposals/ui/result-page-shell";
@@ -28,16 +26,12 @@ import { BackLink, Card, CardHeader, Empty } from "../../../_components/page-she
  *   - **만료 무관** — `resultRetentionDays` 경과해도 그대로 노출. audit/분쟁 대응 목적.
  *   - **ResultViewedMarker 미렌더** — `plan_request.resultViewedAt` 오염 X.
  *   - **상담 진행하기 CTA disabled** — 가입자 wrapper (`ResultView`) 대신 read-only
- *     wrapper (`PreviewResultView`) 사용. mutation 컴포넌트들 (state /
- *     `ContactChannelSheet` / `requestPlanProposalContact` 호출) 자체가 트리에 없음.
- *     CTA 는 회색 disabled + 어드민 컨텍스트 카피 (`PREVIEW_DISABLED_NOTICE`) 인라인 안내.
+ *     wrapper (`PreviewResultView`) 사용. mutation 컴포넌트들이 트리에 없음.
  *
- * 레이아웃: 어드민 layout (1280px) 안에 상단 admin bar 한 줄 + 그 아래 480px 모바일
- * 프레임. 프레임 안은 marketing layout (= 가입자가 보는 환경) 과 동일한 480px width.
- * 프레임은 phone mockup 톤으로 좌우 border + soft shadow.
- *
- * 데이터 흐름은 가입자 페이지와 완전히 동일 — adaptPlanProposal(card, report, age).
- * resultToken 발급 전 (송부 전) 의 요청은 본문 자체가 없어 `Empty` 카드로 안내.
+ * 분석 본문은 `buildAnalysisRenderer` 가 카드별로 schemaVersion → registry entry
+ * dispatch. 한 plan_request 안에 다른 버전 카드가 섞여도 각자 자기 버전 본문으로
+ * 렌더 — audit 정직성 보존. 자세한 다버전 정책은
+ * [docs/analysis-versioning.md](../../../../../../../docs/analysis-versioning.md).
  */
 
 /** CTA 위 인라인 안내 — read-only wrapper 자체는 route-agnostic 이라 카피가
@@ -73,19 +67,6 @@ export default async function AdminResultPreviewPage({
 
   const cards = await listPlanProposalCardsForRequest(request.id);
 
-  // 가입자 페이지와 동일 — 각 proposal 의 분석 리포트 lookup. 분석 미완료면 null.
-  const reportEntries = await Promise.all(
-    cards.map(async (card) => {
-      const report = await loadReportForCard(card);
-      return [card.proposal.id, report] as const;
-    }),
-  );
-  const reportsById: Record<string, AnalysisReportV5> = Object.fromEntries(
-    reportEntries.filter(
-      (e): e is readonly [string, AnalysisReportV5] => e[1] !== null,
-    ),
-  );
-
   // resultToken 발급 = finalize 통과 = birthDate 채워짐. 아니면 데이터 무결성 오류.
   const birthDate = request.step3?.birthDate;
   const customerAge = birthDate
@@ -97,15 +78,23 @@ export default async function AdminResultPreviewPage({
     );
   }
 
-  const proposals = cards.map((card) =>
-    adaptPlanProposal(card, reportsById[card.proposal.id] ?? null, customerAge),
+  // 가입자 페이지와 동일 — raw 리포트 lookup, registry dispatch.
+  const rawReports = await Promise.all(
+    cards.map((card) => getRawAnalysisReport(card.proposal.id)),
   );
+
+  const { cardMetas, renderAnalysisBody } = buildAnalysisRenderer({
+    cards,
+    rawReports,
+    customerAge,
+    scenarioPriority: settings.scenarioPriority,
+  });
 
   return (
     <div className="flex flex-col gap-6">
       <AdminBar id={id} request={request} />
 
-      {proposals.length === 0 ? (
+      {cardMetas.length === 0 ? (
         /* assignments/proposals 가 비어 가입자 화면이 RematchingState 로 가는 케이스.
            preview 도 그 분기 대신 admin-friendly empty 카드로 — RematchingState 는
            자체 <main> + BrandMark 를 렌더하는 status screen 이라 480px 프레임 안
@@ -117,13 +106,12 @@ export default async function AdminResultPreviewPage({
       ) : (
         <PreviewFrame>
           <ResultPageShell
-            proposals={proposals}
+            cards={cardMetas}
             selectedPartnerCount={request.selectedPartnerIds.length}
           >
             <PreviewResultView
-              proposals={proposals}
-              reportsById={reportsById}
-              scenarioPriority={settings.scenarioPriority}
+              cards={cardMetas}
+              renderAnalysisBody={renderAnalysisBody}
               resultRetentionDays={settings.resultRetentionDays}
               disabledNotice={PREVIEW_DISABLED_NOTICE}
             />
@@ -138,10 +126,6 @@ export default async function AdminResultPreviewPage({
  * 가입자 화면을 박아 넣는 480px phone-frame. marketing layout 의 mobile
  * container 톤 (좌우 border + soft shadow) 그대로 따라가서 admin canvas 안에서
  * 가입자가 보는 viewport 가 한눈에 분리되어 보이도록.
- *
- * `<main>` 으로 감싸 가입자 페이지의 `<main className="flex flex-col flex-1 ...">`
- * 위치와 동일하게 — `ProposalResultView` 의 fixed 하단 CTA / sticky chip 탭 좌표
- * 가정이 깨지지 않도록 white bg.
  *
  * `--proposal-sticky-top: 3.5rem` 으로 `ProposalResultView` chip 탭의 sticky 위치를
  * admin layout 의 sticky top bar (`h-14` = 3.5rem, z-30) 바로 아래로 밀어준다.
@@ -219,15 +203,4 @@ function AdminBar({
       </div>
     </div>
   );
-}
-
-/**
- * 한 proposal card 의 분석 리포트 lookup. proposal.id 1:1 join.
- * 가입자 페이지와 동일 — 리포트 미생성 시 `getAnalysisReport` 가 null 반환,
- * adaptPlanProposal 의 makeFallback 으로 placeholder 카드 렌더.
- */
-async function loadReportForCard(
-  card: PlanProposalCard,
-): Promise<AnalysisReportV5 | null> {
-  return getAnalysisReport(card.proposal.id);
 }

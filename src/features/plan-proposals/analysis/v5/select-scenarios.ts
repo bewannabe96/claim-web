@@ -1,21 +1,20 @@
-import {
-  type AnalysisReportV5,
-  type CategoryPayout,
-} from "./analysis-schema";
-import { compareCategoryByLabel } from "./category-labels";
+import { compareCategoryByLabel } from "@/features/plan-proposals/category-labels";
+import type { ScenarioPickerEntry } from "@/features/plan-proposals/ui/chart-types";
+
+import type { V5AnalysisViewData } from "./adapt";
+import { type AnalysisReportV5 } from "./schema";
 
 /* ============================================================
- * 회수 배율 (ROI) 시계열 — 사용자 정의 공식.
+ * 회수 배율 (ROI) 시계열 — adapt.ts 내부에서만 사용.
  *
  *   누적 보험료(age) = monthlyPremium × 12 × min(age - startAge, paymentYears)
  *   ROI(age) = totalInsuredAmount(category) / 누적 보험료(age)
  *
  * 의미: "이 나이에 시나리오(질병) 가 발병하면 그동안 낸 보험료의 몇 배를
- * 보장으로 돌려받나". 어릴수록 누적이 적어 ROI 폭발적 (분모 작음), 만기 가까
- * 워질수록 작아지고, 납기 종료 후엔 분모 고정 → 평탄.
+ * 보장으로 돌려받나". 어릴수록 누적이 적어 ROI 폭발적, 만기 가까워질수록 작아짐,
+ * 납기 종료 후엔 분모 고정 → 평탄.
  *
- * 차트 첫 점이 (startAge, 0) 으로 박혀 곡선이 부자연스러워지는 걸 피하려
- * startAge + 1 부터 시작 (분모 ≥ 12 × monthlyPremium 보장).
+ * startAge + 1 부터 시작 (분모 ≥ 12 × monthlyPremium 보장, 곡선 자연스러움).
  * ============================================================ */
 
 export type RoiPoint = { age: number; roi: number };
@@ -47,58 +46,61 @@ function round2(n: number): number {
 }
 
 /* ============================================================
- * 시나리오 선택 — chip 영역 + 검색 모달 계산. 순수 함수, 서버/클라 양쪽 OK.
+ * 시나리오 풀 계산 — chip 영역 + 검색 모달이 사용.
+ *
+ * V5AnalysisViewData[] 를 받음 (옛 raw report 아님) — ViewData 가 이미 categoryPayouts
+ * 를 derive 해서 들고 있으므로 select-scenarios 는 그것만 보면 됨. raw report 의존성
+ * 이 사라져 클라이언트 번들에 zod schema 가 끌려오지 않는다.
+ *
+ * 순수 함수, 서버/클라 양쪽 OK.
  * ============================================================ */
 
-/** 시나리오 한 항목 — 모달 행에 표시할 최소 정보. */
-export type ScenarioCard = {
-  category: string;
-  payout: CategoryPayout;
-};
-
 /**
- * 여러 proposals 의 카테고리 union — 검색 모달의 풀.
+ * 여러 peers 의 카테고리 union — 검색 모달의 풀.
  *
- * 한 카테고리가 여러 report 에 나타나면 첫 발견 report 의 payout 을 그 카테고리의
- * 대표값으로. (UX 측면: 같은 카테고리는 같은 라벨이라 어느 report 의 payout 이든
- * 표시 의미는 동일.) 결과는 한글 라벨 가나다순.
+ * 한 카테고리가 여러 카드에 나타나면 첫 발견 카드의 coverageCount 를 그 카테고리의
+ * 대표값으로. (UX 측면: 같은 카테고리는 같은 라벨이라 어느 카드의 메타든 표시 의미는
+ * 동일.) 결과는 한글 라벨 가나다순.
  */
 export function unionCategoryScenarios(
-  reports: readonly AnalysisReportV5[],
-): ScenarioCard[] {
+  peers: readonly V5AnalysisViewData[],
+): ScenarioPickerEntry[] {
   const seen = new Set<string>();
-  const cards: ScenarioCard[] = [];
-  for (const report of reports) {
-    for (const payout of report.coverage_payout.category_payouts) {
+  const cards: ScenarioPickerEntry[] = [];
+  for (const peer of peers) {
+    for (const payout of peer.categoryPayouts) {
       if (seen.has(payout.category)) continue;
       seen.add(payout.category);
-      cards.push({ category: payout.category, payout });
+      cards.push({
+        category: payout.category,
+        coverageCount: payout.coverageCount,
+      });
     }
   }
   return cards.sort((a, b) => compareCategoryByLabel(a.category, b.category));
 }
 
 /**
- * 모든 reports 가 공통으로 "보장" 하는 카테고리들의 교집합 → admin priority 등재
+ * 모든 peers 가 공통으로 "보장" 하는 카테고리들의 교집합 → admin priority 등재
  * 순서를 우선 적용해 상위 N 개. 결과 페이지의 chip 초기값 (recent 가 비었을 때).
  *
- *  - "보장됨" 기준: 각 report 의 category_payouts 중 coverage_count > 0
+ *  - "보장됨" 기준: coverageCount > 0
  *  - priority 등재 카테고리: priority 의 명시된 순서대로
  *  - 미등재 fallback: 가나다순으로 채움 (등재만으로 N 개 못 채울 때)
- *  - reports 가 비면 [] 반환
+ *  - peers 가 비면 [] 반환
  */
 export function intersectionTopCategories(
-  reports: readonly AnalysisReportV5[],
+  peers: readonly V5AnalysisViewData[],
   priority: readonly string[],
   n: number,
 ): string[] {
-  if (reports.length === 0) return [];
+  if (peers.length === 0) return [];
 
-  const coveredSets = reports.map(
-    (r) =>
+  const coveredSets = peers.map(
+    (peer) =>
       new Set(
-        r.coverage_payout.category_payouts
-          .filter((p) => p.coverage_count > 0)
+        peer.categoryPayouts
+          .filter((p) => p.coverageCount > 0)
           .map((p) => p.category),
       ),
   );

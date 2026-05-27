@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { labelForCategory } from "@/features/plan-proposals/category-labels";
-import type { ScenarioCard } from "@/features/plan-proposals/select-scenarios";
+import type { ScenarioPickerEntry } from "@/features/plan-proposals/ui/chart-types";
 import { cn } from "@/lib/utils";
 
 /* ============================================================
@@ -25,7 +25,7 @@ export function ScenarioModal({
 }: {
   open: boolean;
   onClose: () => void;
-  cards: ScenarioCard[];
+  cards: ScenarioPickerEntry[];
   /** 행 클릭 시 호출 (있을 때). 호출 후 모달은 호출자가 close. */
   onSelect?: (category: string) => void;
   title?: string;
@@ -101,7 +101,7 @@ export function ScenarioModal({
           ) : (
             <ul className="divide-y divide-[#efefef]">
               {filtered.map((card) => {
-                const covered = card.payout.coverage_count > 0;
+                const covered = card.coverageCount > 0;
                 return (
                   <li key={card.category}>
                     <button
@@ -198,9 +198,9 @@ function isChosungOnly(text: string): boolean {
 }
 
 function filterByQuery(
-  cards: ScenarioCard[],
+  cards: ScenarioPickerEntry[],
   rawQuery: string,
-): ScenarioCard[] {
+): ScenarioPickerEntry[] {
   const q = rawQuery.trim();
   if (!q) return cards;
 
