@@ -7,12 +7,15 @@ import { pickAssignedPartners } from "@/features/plan-requests/auto-assignment";
 import { getRequestById } from "@/features/plan-requests/queries";
 import { getSettings } from "@/server/settings";
 
-// [원본] 롤백 시 복원할 import — CandidatesSelector subtitle 빌드용:
+// [원본] 롤백 시 복원할 import — CandidatesSelector subtitle 빌드 + onSubmit outcome 타입:
 //   import {
 //     FOCUSED_CONCERN_LABEL,
 //     type CoverageRequest,
 //   } from "@/features/plan-requests/schema";
-//   import { CandidatesSelector } from "./_components/candidates-selector";
+//   import {
+//     CandidatesSelector,
+//     type Step2SubmitOutcome,
+//   } from "./_components/candidates-selector";
 
 /* ============================================================
  * [임시] 설계사 선택 단계 frontend skip — 후보 자동배정 후 즉시 다음 단계로 통과.
@@ -91,12 +94,32 @@ export default async function CandidatesPage({
   //     .filter(Boolean)
   //     .join(" · ");
   //
+  //   // PRD v2 §5.4 의 selector refactor 후 시그니처 — onSubmit prop 필수, requestId
+  //   // 는 selector 외부로 빠짐. v2 풀 path 와 동일 컴포넌트라 호출 형태도 일관.
+  //   async function handleSelectSubmit(
+  //     partnerIds: string[],
+  //   ): Promise<Step2SubmitOutcome> {
+  //     "use server";
+  //     const fd = new FormData();
+  //     for (const pid of partnerIds) fd.append("partnerIds", pid);
+  //     const result = await submitStep2(id, undefined, fd);
+  //     // 정상 흐름: submitStep2 안에서 /plan-request/${id}/confirm 으로 NEXT_REDIRECT
+  //     // throw → 여기 도달 안 함. 도달했다면 검증 실패.
+  //     return {
+  //       ok: false,
+  //       errorMessage:
+  //         result?.errors?._form?.[0] ??
+  //         result?.errors?.partnerIds?.[0] ??
+  //         "선택 처리에 실패했습니다. 다시 시도해주세요.",
+  //     };
+  //   }
+  //
   //   return (
   //     <CandidatesSelector
-  //       requestId={id}
   //       candidates={candidates}
   //       selectLimit={selectLimit}
   //       subtitle={subtitle}
+  //       onSubmit={handleSelectSubmit}
   //     />
   //   );
 

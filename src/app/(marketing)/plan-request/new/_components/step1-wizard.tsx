@@ -5,11 +5,11 @@ import { useEffect, useState, useTransition } from "react";
 
 import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
 import { BrandMark } from "@/components/brand-mark";
+import { StickyBottomBar } from "@/components/sticky-bottom-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBudgetRange } from "@/features/plan-request-pricing/format";
 import type { PriceTier } from "@/features/plan-request-pricing/schema";
-import { submitStep1 } from "@/features/plan-requests/actions";
 import {
   FOCUSED_CONCERN_IDS,
   FOCUSED_CONCERN_LABEL,
@@ -90,7 +90,38 @@ const PHASES: Record<PhaseKey, { title: string }> = {
 /** 매칭 로딩 화면 최소 노출 시간 (ms). */
 const MIN_MATCHING_MS = 2800;
 
-export function Step1Wizard({ priceTiers }: { priceTiers: PriceTier[] }) {
+/**
+ * Wizard submit 의 종결 — finalize 책임을 호출자에게 위임하기 위한 contract.
+ *
+ * v1 실 라우트: submitStep1 server action 호출 + 성공 시 `/plan-request/{id}/candidates`.
+ * v2 mock / 풀 path: in-memory 또는 회원 컨텍스트의 finalize + dispatched 페이지로 직진.
+ *
+ * wizard 는 UI / 상태 / 매칭 로딩 화면만 책임지고, 어떤 action 으로 어디로 가는지는
+ * caller 가 결정 (PRD v2 §5.4 — wizard 재사용 전략).
+ */
+export type Step1SubmitOutcome =
+  | { ok: true; nextHref: string }
+  | { ok: false; errorMessage: string };
+
+export function Step1Wizard({
+  priceTiers,
+  onSubmit,
+  showMatchingScreen = true,
+}: {
+  priceTiers: PriceTier[];
+  /** wizard 가 채운 FormData 를 받아 finalize → nextHref 또는 errorMessage 반환. */
+  onSubmit: (fd: FormData) => Promise<Step1SubmitOutcome>;
+  /**
+   * submit 직후 "맞춤 설계사를 찾고 있어요" 매칭 로딩 화면을 보일지. default true.
+   *
+   * v1 흐름은 wizard submit 이 곧 finalize 라 후보 산출이라는 의미가 있어 매칭
+   * 화면이 자연스럽다. v2 풀 path (PRD §4.3) 는 wizard submit 다음 화면이
+   * candidates 선택이라 "찾는 중" 화면이 의미상 중복 — false 로 끄면 MatchingScreen
+   * 도 안 보이고 MIN_MATCHING_MS 인공 지연도 적용 안 됨 (submit button 의 pending
+   * state 만 짧게 노출 후 곧장 다음 화면).
+   */
+  showMatchingScreen?: boolean;
+}) {
   const router = useRouter();
   const budgetOptions = toBudgetOptions(priceTiers);
   const [phaseIdx, setPhaseIdx] = useState(0);
@@ -131,35 +162,34 @@ export function Step1Wizard({ priceTiers }: { priceTiers: PriceTier[] }) {
 
     startTransition(async () => {
       const startedAt = Date.now();
-      const result = await submitStep1(undefined, fd);
-      const elapsed = Date.now() - startedAt;
-      const remaining = Math.max(0, MIN_MATCHING_MS - elapsed);
-      await new Promise((r) => setTimeout(r, remaining));
+      const outcome = await onSubmit(fd);
+      // MatchingScreen 노출 시에만 최소 노출 시간 보장 — 끄면 즉시 다음 화면으로 직진.
+      if (showMatchingScreen) {
+        const elapsed = Date.now() - startedAt;
+        const remaining = Math.max(0, MIN_MATCHING_MS - elapsed);
+        await new Promise((r) => setTimeout(r, remaining));
+      }
 
-      if (result && "ok" in result && result.ok) {
+      if (outcome.ok) {
         // Next.js Router Cache 가 client state 를 보존하므로 navigate 직전에
-        // 초기화 — 다음에 /plan-request/new 로 돌아왔을 때 폼이 처음부터 보이도록.
-        // isPending 이 router.replace 완료까지 true 라 form view 가 flash 되지
-        // 않고 MatchingScreen 이 유지됨. replace 로 /plan-request/new 가 history 에
-        // 남지 않게 함.
+        // 초기화 — 다음에 wizard 로 돌아왔을 때 폼이 처음부터 보이도록. isPending 이
+        // router.replace 완료까지 true 라 form view 가 flash 되지 않고 MatchingScreen
+        // 이 유지됨 (matching screen 끈 경우엔 submit button 의 pending state 유지).
+        // replace 로 wizard URL 이 history 에 남지 않게 함.
         setPhaseIdx(0);
         setData({ medicalHistory: [], focusedConcerns: [] });
-        router.replace(`/plan-request/${result.requestId}/candidates`);
+        router.replace(outcome.nextHref as never);
         return;
       }
 
-      const msg =
-        result && "errors" in result && result.errors?._form?.[0]
-          ? result.errors._form[0]
-          : "매칭에 실패했습니다. 다시 시도해주세요.";
-      setServerError(msg);
+      setServerError(outcome.errorMessage);
     });
   }
 
-  if (isPending) return <MatchingScreen />;
+  if (isPending && showMatchingScreen) return <MatchingScreen />;
 
   return (
-    <main className="flex flex-col flex-1 px-6 pt-10 pb-8 bg-white">
+    <main className="flex flex-col flex-1 px-6 pt-10 bg-white">
       <BrandMark />
       <h1 className="mt-3 text-2xl font-bold leading-[1.22] tracking-tight text-black">
         설계사가 제안하고,
@@ -212,25 +242,31 @@ export function Step1Wizard({ priceTiers }: { priceTiers: PriceTier[] }) {
         </p>
       )}
 
-      <div className="pt-6 flex items-stretch gap-3">
-        {phaseIdx > 0 && (
-          <button
+      <StickyBottomBar>
+        <div className="flex items-stretch gap-3">
+          {phaseIdx > 0 && (
+            <button
+              type="button"
+              onClick={prev}
+              className="h-14 px-6 rounded-full text-sm font-medium bg-[#efefef] text-black hover:bg-[#e2e2e2] transition-colors"
+            >
+              이전
+            </button>
+          )}
+          <Button
             type="button"
-            onClick={prev}
-            className="h-14 px-6 rounded-full text-sm font-medium bg-[#efefef] text-black hover:bg-[#e2e2e2] transition-colors"
+            onClick={isLast ? handleSubmit : next}
+            disabled={!canProceed || isPending}
+            className="flex-1 h-14 rounded-full text-base font-medium"
           >
-            이전
-          </button>
-        )}
-        <Button
-          type="button"
-          onClick={isLast ? handleSubmit : next}
-          disabled={!canProceed}
-          className="flex-1 h-14 rounded-full text-base font-medium"
-        >
-          {isLast ? "설계사 찾기" : "다음"}
-        </Button>
-      </div>
+            {isPending
+              ? "이동 중..."
+              : isLast
+                ? "설계사 찾기"
+                : "다음"}
+          </Button>
+        </div>
+      </StickyBottomBar>
     </main>
   );
 }

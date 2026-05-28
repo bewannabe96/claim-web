@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState, useTransition } from "react";
 
 import { NO_TRACK_CLASS } from "@/components/analytics/no-track";
 import { BrandMark } from "@/components/brand-mark";
+import { StickyBottomBar } from "@/components/sticky-bottom-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { finalizeRequest, sendOtp } from "@/features/plan-requests/actions";
@@ -147,7 +148,7 @@ export function ConfirmWizard({
   }
 
   return (
-    <main className="flex flex-col flex-1 px-6 pt-10 pb-8 bg-white">
+    <main className="flex flex-col flex-1 px-6 pt-10 bg-white">
       <BrandMark />
       <p className="mt-2 text-xs text-[#4b4b4b]">
         선택하신{" "}
@@ -345,27 +346,29 @@ export function ConfirmWizard({
       )}
 
       {/* CTA */}
-      <form action={formAction} className="pt-6 mt-auto">
-        {/* consentThirdParty 는 UI 항목이 숨겨져 항상 "off" 로 전송 — 액션이 값
-            그대로 DB 에 false 로 저장. UI 복원 시 ConsentRow 추가 + 이 hidden 을
-            조건부 ("on" when checked) 로 바꿀 것. */}
-        <input type="hidden" name="consentThirdParty" value="off" />
-        {data.consentMessaging && (
-          <input type="hidden" name="consentMessaging" value="on" />
-        )}
-        <input type="hidden" name="name" value={data.name} />
-        <input type="hidden" name="rrnFront" value={data.rrnFront} />
-        <input type="hidden" name="rrnBack1" value={data.rrnBack1} />
-        <input type="hidden" name="phone" value={data.phone} />
-        <input type="hidden" name="code" value={data.otpCode} />
-        <Button
-          type="submit"
-          disabled={!canSubmit || pending}
-          className="w-full h-14 rounded-full text-base font-medium"
-        >
-          {pending ? "확인 중..." : "본인 인증하고 요청 보내기"}
-        </Button>
-      </form>
+      <StickyBottomBar>
+        <form action={formAction}>
+          {/* consentThirdParty 는 UI 항목이 숨겨져 항상 "off" 로 전송 — 액션이 값
+              그대로 DB 에 false 로 저장. UI 복원 시 ConsentRow 추가 + 이 hidden 을
+              조건부 ("on" when checked) 로 바꿀 것. */}
+          <input type="hidden" name="consentThirdParty" value="off" />
+          {data.consentMessaging && (
+            <input type="hidden" name="consentMessaging" value="on" />
+          )}
+          <input type="hidden" name="name" value={data.name} />
+          <input type="hidden" name="rrnFront" value={data.rrnFront} />
+          <input type="hidden" name="rrnBack1" value={data.rrnBack1} />
+          <input type="hidden" name="phone" value={data.phone} />
+          <input type="hidden" name="code" value={data.otpCode} />
+          <Button
+            type="submit"
+            disabled={!canSubmit || pending}
+            className="w-full h-14 rounded-full text-base font-medium"
+          >
+            {pending ? "확인 중..." : "본인 인증하고 요청 보내기"}
+          </Button>
+        </form>
+      </StickyBottomBar>
     </main>
   );
 }
