@@ -1,31 +1,48 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
 import { BrandMark } from "@/components/brand-mark";
+import { StickyBottomBar } from "@/components/sticky-bottom-bar";
 import { Button } from "@/components/ui/button";
 import { PartnerAvatar } from "@/features/partners/ui/partner-avatar";
-import { submitStep2 } from "@/features/plan-requests/actions";
 import type { PartnerCard } from "@/features/partners/schema";
 import { cn } from "@/lib/utils";
 
+/**
+ * Candidates 선택의 종결 — finalize 책임을 호출자에게 위임하기 위한 contract.
+ *
+ * v1 실 라우트 (현재 #125 의 frontend auto-skip 모드라 미사용): `submitStep2`
+ * server action 호출 + `/plan-request/{id}/confirm` 으로 redirect.
+ * v2 풀 path (PRD §4.3, §5.4): 회원 컨텍스트 finalize + dispatched 페이지로 직진.
+ *
+ * step1-wizard 의 `Step1SubmitOutcome` 과 동일한 outcome 패턴 — caller 가 navigate
+ * target 과 errorMessage 만 책임지고 selector 는 form / pending / disabled 만 책임.
+ */
+export type Step2SubmitOutcome =
+  | { ok: true; nextHref: string }
+  | { ok: false; errorMessage: string };
+
 export function CandidatesSelector({
-  requestId,
   candidates,
   selectLimit,
   subtitle,
+  onSubmit,
 }: {
-  requestId: string;
   candidates: PartnerCard[];
   selectLimit: number;
   subtitle: string;
+  /** 선택된 partnerIds 를 받아 finalize → nextHref 또는 errorMessage 반환. */
+  onSubmit: (partnerIds: string[]) => Promise<Step2SubmitOutcome>;
 }) {
+  const router = useRouter();
   const [selected, setSelected] = useState<string[]>([]);
-  const submitWithId = submitStep2.bind(null, requestId);
-  const [state, formAction, pending] = useActionState(submitWithId, undefined);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const atLimit = selected.length >= selectLimit;
-  const canSubmit = selected.length > 0 && !pending;
+  const canSubmit = selected.length > 0 && !isPending;
 
   function toggle(id: string) {
     setSelected((s) => {
@@ -35,8 +52,21 @@ export function CandidatesSelector({
     });
   }
 
+  function handleSubmit() {
+    if (!canSubmit) return;
+    setErrorMessage(null);
+    startTransition(async () => {
+      const outcome = await onSubmit(selected);
+      if (outcome.ok) {
+        router.push(outcome.nextHref as never);
+        return;
+      }
+      setErrorMessage(outcome.errorMessage);
+    });
+  }
+
   return (
-    <main className="flex flex-col flex-1 px-6 pt-10 pb-32 bg-white">
+    <main className="flex flex-col flex-1 px-6 pt-10 bg-white">
       <BrandMark />
       <header className="mt-3 flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold leading-[1.22] tracking-tight text-black">
@@ -68,36 +98,26 @@ export function CandidatesSelector({
         ))}
       </ul>
 
-      {state?.errors?._form && (
+      {errorMessage && (
         <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mt-4">
-          {state.errors._form[0]}
-        </p>
-      )}
-      {state?.errors?.partnerIds && (
-        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mt-4">
-          {state.errors.partnerIds[0]}
+          {errorMessage}
         </p>
       )}
 
-      {/* CTA — viewport 하단 고정 (480px 모바일 컨테이너 기준) */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] px-6 pt-3 pb-4 bg-white border-t border-[#efefef] shadow-[0_-4px_16px_rgba(0,0,0,0.04)] z-50">
-        <form action={formAction}>
-          {selected.map((id) => (
-            <input key={id} type="hidden" name="partnerIds" value={id} />
-          ))}
-          <Button
-            type="submit"
-            disabled={!canSubmit}
-            className="w-full h-14 rounded-full text-base font-medium"
-          >
-            {pending
-              ? "다음 단계로 이동 중..."
-              : selected.length === 0
-                ? "설계사를 선택해주세요"
-                : `${selected.length}명에게 제안서 받기`}
-          </Button>
-        </form>
-      </div>
+      <StickyBottomBar>
+        <Button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          className="w-full h-14 rounded-full text-base font-medium"
+        >
+          {isPending
+            ? "다음 단계로 이동 중..."
+            : selected.length === 0
+              ? "설계사를 선택해주세요"
+              : `${selected.length}명에게 제안서 받기`}
+        </Button>
+      </StickyBottomBar>
     </main>
   );
 }
