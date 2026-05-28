@@ -58,6 +58,8 @@ PostToolUse hook ([mark-pr-self-review.sh](../../scripts/hooks/mark-pr-self-revi
 - 사용자가 [CLAUDE.md "PR 만들기 전 필수 절차"](../../CLAUDE.md) 를 변경하면 정책 표류 위험 → ADR 갱신 의무
 - 향후 테스트 러너 도입 시 ci.yml 에 추가 단계 (현재 테스트 코드 없음)
 - 향후 자격증명 vault 분리 ([P1 로드맵](#)) 시 lint/build 의 dummy env 도 일관성 검토
+- CI build 의 dummy env 는 best-effort — 모듈 top-level 에서 새 env 를 읽는 코드가 추가되면 build fail 가능. 첫 PR 에서 발견되면 ci.yml 의 env 블록을 보강.
+- hook 의 `gh pr create` 패턴 매칭은 sentinel 기반 휴리스틱 — quoted-string 컨텍스트는 회피하지만 완벽한 shell 파싱은 아님. 새 false positive 발견 시 패턴 정교화.
 
 ## Alternatives considered
 

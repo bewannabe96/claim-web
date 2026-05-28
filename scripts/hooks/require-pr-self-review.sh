@@ -24,8 +24,11 @@ fi
 input=$(cat)
 command=$(printf '%s' "$input" | jq -r '.tool_input.command // ""')
 
-# `gh pr create` 패턴이 아니면 통과. 단어 경계 매칭으로 우발적 substring 무시.
-if ! printf '%s' "$command" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+create\b'; then
+# `gh pr create` 패턴이 아니면 통과.
+# - 명령 시작 또는 sentinel (`;`, `&&`, `||`, `|`, 줄바꿈, `(`, `nohup`/`time`/`exec` 직후) 직후만 매칭.
+# - 커밋 메시지 / heredoc / quoted string 안의 'gh pr create' 텍스트는 무시 (false positive 방지).
+#   shell tokenization 까지는 안 함 — 실용적 휴리스틱.
+if ! printf '%s' "$command" | grep -qE '(^|[;&|()]|[[:space:]](nohup|time|exec))[[:space:]]*gh[[:space:]]+pr[[:space:]]+create\b'; then
   exit 0
 fi
 
