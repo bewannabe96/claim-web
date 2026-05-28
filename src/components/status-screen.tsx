@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Route } from "next";
 
 import { BrandMark } from "@/components/brand-mark";
+import { StickyBottomBar } from "@/components/sticky-bottom-bar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +35,7 @@ export function StatusScreen({
   showBrand?: boolean;
 }) {
   return (
-    <main className="flex flex-col flex-1 px-6 pt-10 pb-8 bg-white">
+    <main className="flex flex-col flex-1 px-6 pt-10 bg-white">
       {showBrand && <BrandMark />}
 
       <div
@@ -65,27 +66,29 @@ export function StatusScreen({
       </div>
 
       {(primary || secondary) && (
-        <div className="mt-auto pt-10 flex flex-col gap-2.5">
-          {primary && (
-            <Button
-              render={<Link href={primary.href} />}
-              nativeButton={false}
-              className="w-full h-14 rounded-full text-base font-medium"
-            >
-              {primary.label}
-            </Button>
-          )}
-          {secondary && (
-            <Button
-              variant="secondary"
-              render={<Link href={secondary.href} />}
-              nativeButton={false}
-              className="w-full h-14 rounded-full text-base font-medium"
-            >
-              {secondary.label}
-            </Button>
-          )}
-        </div>
+        <StickyBottomBar>
+          <div className="flex flex-col gap-2.5">
+            {primary && (
+              <Button
+                render={<Link href={primary.href} />}
+                nativeButton={false}
+                className="w-full h-14 rounded-full text-base font-medium"
+              >
+                {primary.label}
+              </Button>
+            )}
+            {secondary && (
+              <Button
+                variant="secondary"
+                render={<Link href={secondary.href} />}
+                nativeButton={false}
+                className="w-full h-14 rounded-full text-base font-medium"
+              >
+                {secondary.label}
+              </Button>
+            )}
+          </div>
+        </StickyBottomBar>
       )}
     </main>
   );
