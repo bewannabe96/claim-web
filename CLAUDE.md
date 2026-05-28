@@ -16,6 +16,18 @@
 
 코드 / 주석 / 내부 문서에서 `매칭`, `요청`, `배정`, `Plan*` 등 도메인 용어를 사용하기 전에 **[docs/domain-glossary.md](docs/domain-glossary.md) 를 확인**할 것. 엔티티 캐노니컬 이름 / 어휘 정책 / 명명 컨벤션의 단일 진실 공급원.
 
+## 결정의 *왜*
+
+규칙은 CLAUDE.md / docs/ 에 있고, **그 규칙이 왜 그렇게 되었는지는 [docs/decisions/](docs/decisions/README.md) 의 ADR**. 다음 중 하나에 해당하면 ADR 작성 의무:
+
+1. 새 아키텍처 선택 (디렉토리/모듈/추상화/라이브러리)
+2. 트레이드오프 판단 (둘 이상의 합리적 대안 중 선택)
+3. 옛 결정 번복 (`Superseded by ADR-NNNN`)
+4. 외부 의존성 입출
+5. 코드 자체로 설명 안 되는 관습
+
+전체 정책은 [ADR-0001](docs/decisions/0001-adr-policy.md).
+
 ## 가장 자주 틀리는 항목
 
 - `params`, `searchParams`, `cookies()`, `headers()` **모두 async** — `await` 필요.
@@ -94,3 +106,38 @@ pnpm cleanup:orphan-db-containers # 사라진 worktree 의 고아 컨테이너 +
 6. **`pnpm build` 통과 확인** (typedRoutes/cacheComponents가 잡아주는 것 많음).
 
 deprecation 경고는 무시하지 않고 즉시 새 API로 마이그레이션.
+
+## PR 만들기 전 필수 절차
+
+`gh pr create` 직전에 **반드시 `/pr-self-review` skill 호출**. 최초 요청된 작업을 얼마나 잘 수행했는지 스스로 평가하는 단계. PreToolUse hook ([scripts/hooks/require-pr-self-review.sh](scripts/hooks/require-pr-self-review.sh)) 가 현재 HEAD SHA 기준으로 강제 — 리뷰 후 추가 커밋하면 stale 로 판정돼 다시 돌려야 함. 우회 수단 없음.
+
+### Findings 처리 정책 — 적극 자체 처리 + 수렴 루프
+
+`/pr-self-review` 가 finding 을 리포트하면 **사용자 개입 없이 알아서 처리** 후 `/pr-self-review` 를 다시 돌리는 게 기본 흐름. SHA 마커 게이트가 stale 을 만들어 루프를 자연스럽게 강제한다.
+
+```
+/pr-self-review → finding 처리 (자체 or 사용자 확인) → 커밋 → 마커 stale
+                                                                    ↓
+                                                       /pr-self-review 재실행
+                                                                    ↓
+                                                       clean → gh pr create
+```
+
+**자체 처리** (기본):
+- stale 주석/문서, dead code, 누락 import, typo
+- 일관성 회복 (네이밍, 패턴, [docs/domain-glossary.md](docs/domain-glossary.md) 어휘)
+- 명확성 개선, over-engineering 제거, 단순 리팩토링
+- 누락된 가드 (인증 check, zod validation, error handling)
+- 누락된 deprecation 마이그레이션 (Next 16 API)
+- **누락된 ADR** — 변경이 [ADR 트리거](docs/decisions/0001-adr-policy.md) 에 해당하는데 `docs/decisions/` 갱신 없으면 ADR 추가
+
+**사용자 확인 후 처리** — finding 이 다음 중 하나면 멈추고 묻기:
+- 최초 요구사항의 **해석/범위 변경**이 필요 (요청 의도 모호 or 보강 시 스코프 확장)
+- **도메인 판단** 필요 (UX 트레이드오프, 데이터 모델 변경, 비즈니스 규칙)
+- 두 개 이상의 **합리적 해결책이 갈리고** 사용자 선호가 결과를 좌우
+
+**루프 상한 3회**. 3회 안에 수렴 못 하면 현재 상태 + 잔여 finding 을 사용자에게 공유 후 중단. 무한 루프 방지.
+
+### 서버측 검수
+
+PR 진입 시 [ci.yml](.github/workflows/ci.yml) 가 lint + build 자동 실행.

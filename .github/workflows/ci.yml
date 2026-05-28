@@ -1,0 +1,49 @@
+name: ci
+
+# PR 진입 시 lint + build 자동 검수. 24/7 AI 개발 흐름의 서버측 게이트.
+# pr-self-review 는 PR 생성 *전* 로컬 hook 가 따로 강제 (scripts/hooks/require-pr-self-review.sh).
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+# 같은 PR 에 push 가 연달아 올라오면 직전 run 취소 — 빌드 큐 절약.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-build:
+    name: lint + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        # 외부 서비스에 닿지 않게 더미 env 주입.
+        # 모듈 top-level 에서 process.env 읽는 코드가 있으면 build 깨지므로 안전망.
+        # 실제 가맹/결제/SMS 자격증명은 Vercel runtime 에만 존재.
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=claim
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci?schema=claim
+          SUPABASE_URL: https://ci.supabase.co
+          SUPABASE_PUBLISHABLE_KEY: ci-publishable-key
+          PUBLIC_BASE_URL: https://example.com
+        run: pnpm build
