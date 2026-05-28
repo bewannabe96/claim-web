@@ -55,3 +55,6 @@ supabase/.temp
 
 # Worktree bootstrap log (Claude Code session)
 .claude/workspace-bootstrap.log
+
+# pr-self-review marker — HEAD SHA pinned per worktree, not shared.
+.claude/.pr-self-review-marker

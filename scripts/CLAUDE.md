@@ -12,7 +12,9 @@ set-workspace-env-vars.sh ←─ source ─┬─ write-env-local.sh
                                      ├─ db-container/reset.sh
                                      ├─ db-container/cleanup-orphans.sh    (source 안 함 — git-common-dir + 자체 to_safe)
                                      ├─ hooks/worktree-session-start.sh    (백그라운드 setup-workspace-env.sh 호출)
-                                     └─ hooks/worktree-session-end.sh      (worktree 한정 down -v)
+                                     ├─ hooks/worktree-session-end.sh      (worktree 한정 down -v)
+                                     ├─ hooks/require-pr-self-review.sh    (PreToolUse on Bash — `gh pr create` 차단)
+                                     └─ hooks/mark-pr-self-review.sh       (PostToolUse on Skill — 마커 기록)
 ```
 
 `set-workspace-env-vars.sh` 가 **단일 진실 공급원** — 다른 모든 스크립트가 source 해서 env 받아옴.
@@ -158,3 +160,39 @@ set-workspace-env-vars.sh ←─ source ─┬─ write-env-local.sh
 - 메인 리포에서는 동작 안 함 (개인 작업 + 다른 worktree 컨테이너 영향 X).
 
 **등록 위치**: [.claude/settings.json](../../.claude/settings.json) 의 `hooks.SessionEnd` (matcher: `*`, timeout: 30s).
+
+---
+
+## scripts/hooks/require-pr-self-review.sh
+
+**무엇을**: Claude Code 의 `PreToolUse` hook (matcher: `Bash`). `gh pr create` 호출 직전에 가로채서 `/pr-self-review` 가 현재 HEAD 에 대해 실행되었는지 검사. 미실행 또는 stale 이면 exit 2 로 차단.
+
+**판단**:
+1. `tool_input.command` 에 `gh pr create` 패턴 (단어 경계) 없으면 통과.
+2. `.claude/.pr-self-review-marker` 파일 없음 → 차단 + Claude 에게 "/pr-self-review 먼저 실행" 안내.
+3. 마커 SHA != 현재 HEAD SHA → 차단 + stale 안내 (리뷰 후 추가 커밋/amend 발생).
+4. SHA 일치 → 통과.
+
+**우회 없음**: 정책상 escape hatch 미제공. tiny doc PR 도 동일하게 적용.
+
+**자동 수렴 루프와의 결합**: SHA stale 차단이 단순히 "리뷰 안 거친 PR" 을 막는 것 외에, **finding 자체 처리 → 재리뷰** 루프를 강제하는 역할도 함. 정책은 [CLAUDE.md](../CLAUDE.md) §"Findings 처리 정책" 참고.
+
+**의존성**: `jq` 필수 (input JSON parse). 없으면 fail-loud (exit 2) — silent 우회 방지.
+
+**등록 위치**: [.claude/settings.json](../../.claude/settings.json) 의 `hooks.PreToolUse` (matcher: `Bash`).
+
+---
+
+## scripts/hooks/mark-pr-self-review.sh
+
+**무엇을**: Claude Code 의 `PostToolUse` hook (matcher: `Skill`). `pr-self-review` skill 호출이 끝나는 순간 현재 HEAD SHA 를 `.claude/.pr-self-review-marker` 에 기록.
+
+**판단**:
+1. `tool_input.skill` 이 `pr-self-review` 또는 `*:pr-self-review` (플러그인 네임스페이스 포함) 가 아니면 통과.
+2. 맞으면 `git rev-parse HEAD` 결과를 마커 파일에 덮어쓰기.
+
+**fail-soft**: jq 없거나 git rev-parse 실패 시 조용히 exit 0. 마커 갱신 실패는 require hook 가 stale 로 감지하므로 다음 PR 시도에서 자연스럽게 잡힘.
+
+**마커 파일**: `.claude/.pr-self-review-marker` — worktree-local, `.gitignore` 등록됨.
+
+**등록 위치**: [.claude/settings.json](../../.claude/settings.json) 의 `hooks.PostToolUse` (matcher: `Skill`).
