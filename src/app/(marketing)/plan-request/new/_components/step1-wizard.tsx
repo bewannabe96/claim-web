@@ -131,6 +131,11 @@ export function Step1Wizard({
   });
   const [serverError, setServerError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // submit 성공 후 router.replace 가 다음 화면으로 갈아끼울 때까지 true 유지.
+  // async transition 은 router.replace 호출 직후 resolve 되어 navigate 완료 전에
+  // isPending 이 false 로 떨어진다 — 그 한 프레임 동안 reset 된 1단계 form 이 flash
+  // 되는 걸 막는 게이트. replace 가 이 컴포넌트를 unmount 하며 자연히 해제된다.
+  const [navigating, setNavigating] = useState(false);
 
   const total = PHASE_KEYS.length;
   const phaseKey = PHASE_KEYS[phaseIdx];
@@ -171,13 +176,21 @@ export function Step1Wizard({
       }
 
       if (outcome.ok) {
-        // Next.js Router Cache 가 client state 를 보존하므로 navigate 직전에
-        // 초기화 — 다음에 wizard 로 돌아왔을 때 폼이 처음부터 보이도록. isPending 이
-        // router.replace 완료까지 true 라 form view 가 flash 되지 않고 MatchingScreen
-        // 이 유지됨 (matching screen 끈 경우엔 submit button 의 pending state 유지).
+        // navigate 완료(=이 컴포넌트 unmount)까지 켜 두는 게이트. async transition 은
+        // router.replace 호출 직후 resolve 돼 isPending 이 navigate 전에 풀리므로,
+        // 그 사이 커버(MatchingScreen)·pending button 을 유지하려면 별도 플래그가 필요.
+        setNavigating(true);
+        if (showMatchingScreen) {
+          // v1: MatchingScreen 이 navigate 동안 화면을 덮으므로 여기서 phase/data 를
+          // 리셋해도 사용자에게 안 보인다. Router Cache 가 client state 를 보존하는
+          // 환경에서 다음 진입을 fresh 하게 만드는 안전장치 (CLAUDE.md 의 reset 패턴).
+          setPhaseIdx(0);
+          setData({ medicalHistory: [], focusedConcerns: [] });
+        }
+        // v2 풀 path 는 덮개가 없다 — 여기서 리셋하면 reset 된 1단계가 그대로 노출되고
+        // 그게 곧 flash 다. 마지막 phase 를 유지한 채 candidates 로 직행한다. cross-route
+        // replace 가 wizard 를 unmount 하므로 다음 진입은 어차피 새 mount(=초기 state).
         // replace 로 wizard URL 이 history 에 남지 않게 함.
-        setPhaseIdx(0);
-        setData({ medicalHistory: [], focusedConcerns: [] });
         router.replace(outcome.nextHref as never);
         return;
       }
@@ -186,7 +199,11 @@ export function Step1Wizard({
     });
   }
 
-  if (isPending && showMatchingScreen) return <MatchingScreen />;
+  // v1: navigate fetch 끝(=unmount)까지 MatchingScreen 유지 — isPending 은 replace
+  // 직후 풀리므로 navigating 으로 연장. "맞춤 설계사를 찾고 있어요" 는 v1 의 의도된 화면.
+  if (showMatchingScreen && (isPending || navigating)) return <MatchingScreen />;
+  // v2 풀 path 는 별도 전환 화면 없음 — 마지막 phase 를 그대로 유지(리셋 안 함)하고
+  // 제출 button 만 navigating 동안 pending 으로 둔다. candidates 가 그려지면 자연히 swap.
 
   return (
     <main className="flex flex-col flex-1 px-6 pt-10 bg-white">
@@ -256,10 +273,10 @@ export function Step1Wizard({
           <Button
             type="button"
             onClick={isLast ? handleSubmit : next}
-            disabled={!canProceed || isPending}
+            disabled={!canProceed || isPending || navigating}
             className="flex-1 h-14 rounded-full text-base font-medium"
           >
-            {isPending
+            {isPending || navigating
               ? "이동 중..."
               : isLast
                 ? "설계사 찾기"
