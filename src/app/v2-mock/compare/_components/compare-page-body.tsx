@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { createPendingSlot, MOCK_SLOTS } from "../../_lib/mock-slots";
 import {
@@ -48,7 +48,11 @@ export function ComparePageBody({
   hasPendingSlot: boolean;
 }) {
   const router = useRouter();
-  const [trigger, setTrigger] = useState<SignupTrigger | null>(null);
+  // initialGate (데모 URL ?gate=...) 가 있으면 mount 시 해당 trigger 로 시작 —
+  // lazy initializer 로 한 번만 평가, set-state-in-effect 회피.
+  const [trigger, setTrigger] = useState<SignupTrigger | null>(
+    () => (initialGate ? (URL_TO_TRIGGER[initialGate] ?? null) : null),
+  );
   const [addSlotOpen, setAddSlotOpen] = useState(false);
 
   // pending 슬롯 (분석 중) prepend — 업로드 직후 workspace 자동 복귀 시 활용.
@@ -57,12 +61,6 @@ export function ComparePageBody({
     if (!hasPendingSlot) return MOCK_SLOTS;
     return [createPendingSlot(), ...MOCK_SLOTS];
   }, [hasPendingSlot]);
-
-  useEffect(() => {
-    if (initialGate && URL_TO_TRIGGER[initialGate]) {
-      setTrigger(URL_TO_TRIGGER[initialGate]);
-    }
-  }, [initialGate]);
 
   function handleSelectUpload(authed: boolean) {
     setAddSlotOpen(false);
