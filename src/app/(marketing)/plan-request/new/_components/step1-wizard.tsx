@@ -133,8 +133,9 @@ export function Step1Wizard({
   const [isPending, startTransition] = useTransition();
   // submit 성공 후 router.replace 가 다음 화면으로 갈아끼울 때까지 true 유지.
   // async transition 은 router.replace 호출 직후 resolve 되어 navigate 완료 전에
-  // isPending 이 false 로 떨어진다 — 그 한 프레임 동안 reset 된 1단계 form 이 flash
-  // 되는 걸 막는 게이트. replace 가 이 컴포넌트를 unmount 하며 자연히 해제된다.
+  // isPending 이 false 로 떨어진다 — 그 한 프레임을 메우는 게이트. v1 은 MatchingScreen
+  // 을, v2 는 제출 button 의 pending 상태를 navigate 완료까지 연장한다. replace 가 이
+  // 컴포넌트를 unmount 하며 자연히 해제된다.
   const [navigating, setNavigating] = useState(false);
 
   const total = PHASE_KEYS.length;
