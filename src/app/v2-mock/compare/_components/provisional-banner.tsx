@@ -1,8 +1,11 @@
 "use client";
 
 import { HelpCircle, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
+
+/** useSyncExternalStore 용 no-op subscribe — client mount 후 snapshot(true) 전환만. */
+const subscribeNoop = () => () => {};
 
 /* ============================================================
  * 임시 분석 배너 — v2 PRD §4.2 의 soft CTA + 분석 종류 시그널.
@@ -98,8 +101,7 @@ function ProvisionalDetailSheet({
   fallbackTermsLabel?: string;
 }) {
   // SSR 안전 — portal 은 client mount 후에만.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
   if (!open || !mounted) return null;
 

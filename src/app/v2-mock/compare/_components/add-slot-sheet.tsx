@@ -1,10 +1,13 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
 import { EntryCard } from "../../_components/entry-card";
+
+/** useSyncExternalStore 용 no-op subscribe — client mount 후 snapshot(true) 전환만. */
+const subscribeNoop = () => () => {};
 
 /* ============================================================
  * AddSlotSheet — 채워진 워크스페이스의 chip [+ 제안서 추가] picker.
@@ -38,15 +41,16 @@ export function AddSlotSheet({
   /** [클레임 파트너로부터 받기] 선택. `authed` 에 따라 호출자가 wizard 또는 modal 분기. */
   onSelectPool: (authed: boolean) => void;
 }) {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const [authed, setAuthed] = useState(false);
 
-  useEffect(() => setMounted(true), []);
-
   // open 토글 시 mock authed 상태 리셋 (기본 비회원).
-  useEffect(() => {
+  // 렌더 중 prev 추적으로 조정 — set-state-in-effect 회피 (React 권장 패턴).
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) setAuthed(false);
-  }, [open]);
+  }
 
   if (!open || !mounted) return null;
 
